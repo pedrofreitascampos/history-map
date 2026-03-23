@@ -1,7 +1,7 @@
 {
-  "name": "history-map",
+  "name": "oikumene",
   "version": "1.0.0",
-  "description": "Interactive world travel & location tracking map",
+  "description": "Oikumene — Your inhabited world. Track, discover, and remember every place.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

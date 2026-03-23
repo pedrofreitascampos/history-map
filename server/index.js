@@ -288,5 +288,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`History Map server running on port ${PORT}`);
+  console.log(`Oikumene server running on port ${PORT}`);
 });

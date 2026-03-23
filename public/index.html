@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>History Map — Your World, Mapped</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<title>Oikumene — Your Inhabited World</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -973,8 +973,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 <!-- ═══════════════════════ LOGIN ═══════════════════════ -->
 <div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">🧭 History Map</div>
-    <div class="login-sub">Your world, mapped.</div>
+    <div class="login-logo">🌍 Oikumene</div>
+    <div class="login-sub">Your inhabited world.</div>
     <div class="login-tabs">
       <button class="login-tab active" onclick="switchLoginTab('login')">Sign In</button>
       <button class="login-tab" onclick="switchLoginTab('register')">Register</button>
@@ -1008,7 +1008,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <circle cx="14" cy="14" r="3" fill="currentColor"/>
       <path d="M14 2v4M14 22v4M2 14h4M22 14h4" stroke="currentColor" stroke-width="1" opacity="0.3"/>
     </svg>
-    History Map
+    Oikumene
   </div>
 
   <nav class="nav-tabs">
@@ -3877,7 +3877,7 @@ function handleFiles(files) {
 function parseJSON(content) {
   const data = JSON.parse(content);
 
-  // 1. History Map export format
+  // 1. Oikumene export format
   if (data.exportDate && Array.isArray(data.locations) && data.locations[0]?.category) {
     state.pendingRestoreTrips = data.trips || [];
     state.pendingRestoreCollections = data.collections || [];
@@ -4184,7 +4184,7 @@ function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
   const isRestore = items[0]?._isFullRestore;
   const hasVisits = items.some(i => i.visits?.length);
-  const format = isRestore ? '🔄 History Map Backup' :
+  const format = isRestore ? '🔄 Oikumene Backup' :
     hasVisits ? '📅 Google Timeline' :
     items[0]?._googleUrl !== undefined ? '⭐ Google Saved Places' :
     items[0]?._folderName ? '🗺️ Google My Maps' : '📁 File Import';
@@ -4303,7 +4303,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'history-map-export.json'; a.click();
+  a.href = url; a.download = 'oikumene-export.json'; a.click();
   URL.revokeObjectURL(url);
 }
 
