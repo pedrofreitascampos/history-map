@@ -1269,6 +1269,7 @@ let state = {
   modalStatus: 'been',
   heatmapOn: false,
   pendingImport: [],
+  pendingRestoreTrips: [],
   contextMenuLatLng: null,
 };
 
@@ -2237,6 +2238,29 @@ function handleFiles(files) {
 
 function parseJSON(content) {
   const data = JSON.parse(content);
+
+  // Detect History Map export format (has exportDate + locations array with full fields)
+  if (data.exportDate && Array.isArray(data.locations) && data.locations[0]?.category) {
+    state.pendingRestoreTrips = data.trips || [];
+    return data.locations.map(item => ({
+      name: item.name, lat: item.lat, lng: item.lng,
+      category: item.category || 'location',
+      address: item.address || '',
+      status: item.status || 'been',
+      googleRating: item.googleRating || null,
+      myRating: item.myRating || 0,
+      people: item.people || [],
+      visits: item.visits || [],
+      notes: item.notes || '',
+      needsApproval: item.needsApproval || false,
+      suggestedCategory: item.suggestedCategory || null,
+      createdAt: item.createdAt || '',
+      _restoreTripId: item.tripId, // preserve for trip remapping
+      _isFullRestore: true,
+    })).filter(l => l.lat && l.lng);
+  }
+
+  // Generic JSON / GeoJSON
   const arr = Array.isArray(data) ? data : (data.features || data.locations || [data]);
   return arr.map(item => ({
     name: item.name || item.title || item.properties?.name || 'Unknown',
@@ -2339,14 +2363,36 @@ function cancelImport() {
 
 async function confirmImport() {
   const count = state.pendingImport.length;
-  const toImport = state.pendingImport.map(item => ({
-    name: item.name, address: item.address || '',
-    lat: item.lat, lng: item.lng, category: item.category, status: item.status,
-    googleRating: null, myRating: 0, tripId: null, people: [],
-    visits: [], notes: '', needsApproval: true, suggestedCategory: item.category,
-    createdAt: new Date().toISOString().split('T')[0],
-  }));
+  const isFullRestore = state.pendingImport[0]?._isFullRestore;
+
   try {
+    // Full restore: re-create trips first, remap IDs
+    let tripIdMap = {};
+    if (isFullRestore && state.pendingRestoreTrips?.length) {
+      for (const t of state.pendingRestoreTrips) {
+        const oldId = t.id || t._id;
+        const { id: _drop, _id: _drop2, userId: _drop3, ...tripData } = t;
+        const saved = mapId(await api('POST', '/trips', tripData));
+        tripIdMap[oldId] = saved.id;
+        state.trips.push(saved);
+      }
+      state.pendingRestoreTrips = [];
+    }
+
+    const toImport = state.pendingImport.map(item => {
+      if (isFullRestore) {
+        const { _restoreTripId, _isFullRestore, id, _id, userId, ...rest } = item;
+        return { ...rest, tripId: tripIdMap[_restoreTripId] || null };
+      }
+      return {
+        name: item.name, address: item.address || '',
+        lat: item.lat, lng: item.lng, category: item.category, status: item.status,
+        googleRating: null, myRating: 0, tripId: null, people: [],
+        visits: [], notes: '', needsApproval: true, suggestedCategory: item.category,
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+    });
+
     const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
     state.locations.push(...saved);
     state.pendingImport = [];
@@ -2354,7 +2400,7 @@ async function confirmImport() {
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
-    alert(`Imported ${count} locations! Check the Approval tab.`);
+    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Check the Approval tab.'}`);
   } catch (err) { alert('Import failed: ' + err.message); }
 }
 
