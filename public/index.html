@@ -1531,7 +1531,7 @@ function getFilteredLocations() {
     if (state.filters.categories.size > 0 && !state.filters.categories.has(loc.category)) return false;
     if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
     if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
-    if (state.filters.minRating > 0 && (loc.myRating || 0) < state.filters.minRating) return false;
+    if (state.filters.minRating > 0 && loc.status === 'been' && (loc.myRating || 0) < state.filters.minRating) return false;
     return true;
   });
 }
