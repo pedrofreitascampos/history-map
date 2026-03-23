@@ -965,7 +965,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Trip</h4>
+      <h4>Trip <span class="clear-btn" onclick="openTripManager()">manage</span></h4>
       <select class="filter-select" id="trip-filter" onchange="applyFilters()">
         <option value="">All Trips</option>
       </select>
@@ -1267,6 +1267,27 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <div></div>
       <button class="btn btn-secondary" onclick="closePeopleManager()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Trips Manager Modal -->
+<div class="modal-overlay" id="trips-modal">
+  <div class="modal" style="width:480px;">
+    <div class="modal-header">
+      <h2>Manage Trips</h2>
+      <button class="modal-close" onclick="closeTripManager()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Rename, edit dates, or delete trips. Deleting a trip unlinks it from its locations (locations are kept).</p>
+      <div id="trips-manager-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div class="empty-state" id="trips-manager-empty" style="display:none;padding:24px;">
+        <p>No trips created yet.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="openAddTripFromManager()">+ Add Trip</button>
+      <button class="btn btn-secondary" onclick="closeTripManager()">Done</button>
     </div>
   </div>
 </div>
@@ -2089,6 +2110,95 @@ async function renamePerson(oldName) {
   renderPeopleManager();
   populateFilterDropdowns();
   renderMarkers();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* TRIPS MANAGER                                                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function openTripManager() {
+  renderTripManager();
+  document.getElementById('trips-modal').classList.add('open');
+}
+function closeTripManager() {
+  document.getElementById('trips-modal').classList.remove('open');
+}
+function renderTripManager() {
+  const container = document.getElementById('trips-manager-list');
+  const empty = document.getElementById('trips-manager-empty');
+  if (state.trips.length === 0) {
+    container.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  container.innerHTML = state.trips.map(t => {
+    const locCount = state.locations.filter(l => l.tripId === t.id).length;
+    const dates = [t.startDate, t.endDate].filter(Boolean).join(' → ') || 'No dates';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);background:var(--bg-tertiary);flex-wrap:wrap;">
+      <span style="width:12px;height:12px;border-radius:50%;background:${t.color || 'var(--accent)'};flex-shrink:0;"></span>
+      <div style="flex:1;min-width:120px;">
+        <div style="font-size:13px;font-weight:500;">${t.name}</div>
+        <div style="font-size:11px;color:var(--text-muted);">${dates} · ${locCount} place${locCount!==1?'s':''}</div>
+      </div>
+      <button class="add-small-btn" onclick="renameTrip('${t.id}')" style="border-style:solid;padding:4px 8px;">rename</button>
+      <button class="add-small-btn" onclick="editTripDates('${t.id}')" style="border-style:solid;padding:4px 8px;">dates</button>
+      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:11px;font-family:var(--font-body);" onclick="deleteTrip('${t.id}')">delete</button>
+    </div>`;
+  }).join('');
+}
+
+async function renameTrip(id) {
+  const trip = state.trips.find(t => t.id === id);
+  if (!trip) return;
+  const newName = prompt('Rename trip:', trip.name);
+  if (!newName || newName === trip.name) return;
+  trip.name = newName;
+  await api('PUT', '/trips/' + id, { name: newName });
+  renderTripManager();
+  populateFilterDropdowns();
+  populateModalTrips();
+}
+
+async function editTripDates(id) {
+  const trip = state.trips.find(t => t.id === id);
+  if (!trip) return;
+  const start = prompt('Start date (YYYY-MM-DD):', trip.startDate || '');
+  if (start === null) return;
+  const end = prompt('End date (YYYY-MM-DD):', trip.endDate || '');
+  if (end === null) return;
+  trip.startDate = start;
+  trip.endDate = end;
+  await api('PUT', '/trips/' + id, { startDate: start, endDate: end });
+  renderTripManager();
+}
+
+async function deleteTrip(id) {
+  const trip = state.trips.find(t => t.id === id);
+  if (!trip) return;
+  const locCount = state.locations.filter(l => l.tripId === id).length;
+  if (!confirm(`Delete trip "${trip.name}"? ${locCount} location${locCount!==1?'s':''} will be unlinked (not deleted).`)) return;
+  // Unlink locations
+  const updates = [];
+  state.locations.forEach(l => {
+    if (l.tripId === id) {
+      l.tripId = null;
+      updates.push(api('PUT', '/locations/' + l.id, { tripId: null }));
+    }
+  });
+  await Promise.all(updates);
+  await api('DELETE', '/trips/' + id);
+  state.trips = state.trips.filter(t => t.id !== id);
+  renderTripManager();
+  populateFilterDropdowns();
+  populateModalTrips();
+  renderMarkers();
+}
+
+function openAddTripFromManager() {
+  closeTripManager();
+  promptNewTrip().then(() => {
+    openTripManager();
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
