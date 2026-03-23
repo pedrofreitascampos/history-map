@@ -492,11 +492,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 /* ═══════════════════════════════════════════════════════════ */
 /* APPROVAL VIEW                                              */
 /* ═══════════════════════════════════════════════════════════ */
-#approval-view {
-  flex-direction: column; background: var(--bg-primary);
-  overflow-y: auto; padding: 24px;
-}
-
 .approval-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 24px;
@@ -961,10 +956,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab active" data-view="map-view" onclick="switchView('map-view')">
       🗺️ <span class="tab-label">Map</span>
     </button>
-    <button class="nav-tab" data-view="approval-view" onclick="switchView('approval-view')">
-      📋 <span class="tab-label">Approval</span>
-      <span class="badge" id="approval-badge" style="display:none">0</span>
-    </button>
     <button class="nav-tab" data-view="stats-view" onclick="switchView('stats-view')">
       📊 <span class="tab-label">Stats</span>
     </button>
@@ -979,6 +970,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </button>
     <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
       📥 <span class="tab-label">Import</span>
+      <span class="badge" id="approval-badge" style="display:none">0</span>
     </button>
   </nav>
 
@@ -1067,17 +1059,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">◀</button>
 
   <!-- APPROVAL VIEW -->
-  <div class="view" id="approval-view">
-    <div class="approval-header">
-      <h1>Approval Queue</h1>
-      <div class="bulk-actions">
-        <span class="approval-count" id="approval-count-label">0 pending</span>
-        <button class="btn btn-primary" onclick="bulkApprove()" id="bulk-approve-btn">Approve All Suggestions</button>
-      </div>
-    </div>
-    <div id="approval-list" class="approval-grid"></div>
-  </div>
-
   <!-- STATISTICS VIEW -->
   <div class="view" id="stats-view">
     <div class="stats-header">
@@ -1217,6 +1198,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Approval Queue (inline) -->
+    <div id="approval-section" style="margin-top:24px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3 style="font-family:var(--font-display);font-size:20px;display:flex;align-items:center;gap:10px;">
+          📋 Approval Queue
+          <span class="approval-count" id="approval-count-label">0 pending</span>
+        </h3>
+        <button class="btn btn-primary" onclick="bulkApprove()" id="bulk-approve-btn" style="font-size:12px;padding:8px 14px;">Approve All Suggestions</button>
+      </div>
+      <div id="approval-list" class="approval-grid"></div>
     </div>
   </div>
 </div>
@@ -1882,7 +1875,7 @@ function switchView(viewId) {
   document.getElementById('sidebar-toggle').style.display = showSidebar ? '' : 'none';
 
   if (viewId === 'map-view') setTimeout(() => map.invalidateSize(), 100);
-  if (viewId === 'approval-view') renderApproval();
+  if (viewId === 'import-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
   if (viewId === 'collections-view') renderCollections();
@@ -2355,16 +2348,15 @@ function updateApprovalBadge() {
 
 function renderApproval() {
   const pending = state.locations.filter(l => l.needsApproval);
+  const section = document.getElementById('approval-section');
   const container = document.getElementById('approval-list');
   document.getElementById('approval-count-label').textContent = pending.length + ' pending';
   document.getElementById('bulk-approve-btn').style.display = pending.length > 0 ? '' : 'none';
 
+  // Hide entire section if nothing pending
+  section.style.display = pending.length > 0 ? '' : 'none';
   if (pending.length === 0) {
-    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
-      <div class="empty-icon">✅</div>
-      <h3>All Caught Up</h3>
-      <p>No locations need categorization. Sync with Google Maps to bring in new places.</p>
-    </div>`;
+    container.innerHTML = '';
     return;
   }
 
