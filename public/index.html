@@ -1175,7 +1175,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="drop-zone" id="drop-zone">
           <div class="dz-icon">📂</div>
           <div class="dz-text">Drag & drop files here or click to browse</div>
-          <div class="dz-formats">Supports CSV, JSON, KML, GeoJSON</div>
+          <div class="dz-formats">CSV, JSON, KML, GeoJSON · Google Takeout · Google Timeline · My Maps</div>
           <input type="file" id="file-input" accept=".csv,.json,.kml,.geojson,.kmz" multiple>
         </div>
         <div class="import-preview" id="import-preview">
@@ -1197,21 +1197,25 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
 
       <div class="import-section">
-        <h3>🔄 Google Maps Sync</h3>
-        <div class="sync-status">
-          <div class="sync-dot disconnected" id="sync-dot"></div>
-          <div class="sync-info">
-            <div class="sync-label" id="sync-label">Not Connected</div>
-            <div class="sync-time" id="sync-time">Connect to start syncing</div>
+        <h3>📍 Google Data Guide</h3>
+        <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-direction:column;gap:12px;">
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">⭐ Saved Places</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Maps (My Places)</strong> → export. Import the <code>Saved Places.json</code> GeoJSON file.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">🗺️ My Maps</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Open your My Map → ⋮ menu → <strong>Export to KML</strong>. Import the <code>.kml</code> file. Folder names become categories.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">📅 Timeline / Location History</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Location History</strong> → export. Import the monthly <code>.json</code> files from <code>Semantic Location History</code> folder. Visit dates and durations are preserved.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">📱 Android Apps</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Apps like "Been There Done That", "Visited", or "Places Been" export as CSV or KML. Use their export feature and import the file here.</p>
           </div>
         </div>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
-          Google Maps Takeout integration: export your saved places from Google Takeout and import the JSON file above.
-          New locations will be flagged for categorization in the Approval tab.
-        </p>
-        <button class="btn btn-secondary" onclick="simulateGoogleSync()" style="width:100%;">
-          🔄 Simulate Google Maps Sync
-        </button>
       </div>
     </div>
   </div>
@@ -3109,7 +3113,7 @@ function handleFiles(files) {
 function parseJSON(content) {
   const data = JSON.parse(content);
 
-  // Detect History Map export format (has exportDate + locations array with full fields)
+  // 1. History Map export format
   if (data.exportDate && Array.isArray(data.locations) && data.locations[0]?.category) {
     state.pendingRestoreTrips = data.trips || [];
     state.pendingRestoreCollections = data.collections || [];
@@ -3134,7 +3138,32 @@ function parseJSON(content) {
     })).filter(l => l.lat && l.lng);
   }
 
-  // Generic JSON / GeoJSON
+  // 2. Google Takeout Saved Places (GeoJSON with google_maps_url)
+  if (data.type === 'FeatureCollection' && data.features?.[0]?.properties?.google_maps_url) {
+    return parseGoogleSavedPlaces(data);
+  }
+
+  // 3. Google Timeline — Semantic Location History (old format with timelineObjects)
+  if (data.timelineObjects) {
+    return parseGoogleTimelineOld(data);
+  }
+
+  // 4. Google Timeline — new format (array of objects with visit/activity)
+  if (Array.isArray(data) && data[0]?.visit) {
+    return parseGoogleTimelineNew(data);
+  }
+
+  // 5. Google Timeline — new format wrapped in object
+  if (data.semanticSegments || data.rawSignals) {
+    return parseGoogleTimelineSegments(data);
+  }
+
+  // 6. Generic GeoJSON
+  if (data.type === 'FeatureCollection' && data.features) {
+    return parseGeoJSON(content);
+  }
+
+  // 7. Generic JSON array or object
   const arr = Array.isArray(data) ? data : (data.features || data.locations || [data]);
   return arr.map(item => ({
     name: item.name || item.title || item.properties?.name || 'Unknown',
@@ -3144,6 +3173,136 @@ function parseJSON(content) {
     address: item.address || item.properties?.address || '',
     status: 'been',
   })).filter(l => l.lat && l.lng);
+}
+
+// ── Google Takeout: Saved Places (GeoJSON) ──────────────
+function parseGoogleSavedPlaces(data) {
+  return data.features.map(f => {
+    const props = f.properties || {};
+    const loc = props.location || {};
+    const coords = f.geometry?.coordinates || [];
+    const name = props.Title || loc.name || props.name || 'Unknown';
+    const address = loc.address || props.address || '';
+    return {
+      name, lat: coords[1] || 0, lng: coords[0] || 0,
+      category: inferCategory(name + ' ' + address),
+      address,
+      status: 'been',
+      notes: props.Comment || '',
+      _googleUrl: props.google_maps_url || '',
+    };
+  }).filter(l => l.lat && l.lng);
+}
+
+// ── Google Timeline: Old format (timelineObjects) ───────
+function parseGoogleTimelineOld(data) {
+  const seen = new Map(); // deduplicate by name+coords
+  const results = [];
+  (data.timelineObjects || []).forEach(obj => {
+    const pv = obj.placeVisit;
+    if (!pv || !pv.location) return;
+    const loc = pv.location;
+    const lat = loc.latitudeE7 ? loc.latitudeE7 / 1e7 : (loc.latitude || 0);
+    const lng = loc.longitudeE7 ? loc.longitudeE7 / 1e7 : (loc.longitude || 0);
+    if (!lat || !lng) return;
+    const name = loc.name || loc.address || 'Unknown';
+    const key = name + '|' + lat.toFixed(4) + '|' + lng.toFixed(4);
+    const startDate = pv.duration?.startTimestamp || pv.duration?.startTimestampMs;
+    const visitDate = startDate ? new Date(typeof startDate === 'string' ? startDate : parseInt(startDate)).toISOString().split('T')[0] : '';
+
+    if (seen.has(key)) {
+      // Add visit to existing location
+      const existing = seen.get(key);
+      if (visitDate && !existing.visits.find(v => v.date === visitDate)) {
+        existing.visits.push({ date: visitDate, notes: '' });
+      }
+    } else {
+      const entry = {
+        name, lat, lng,
+        category: inferCategory(name + ' ' + (loc.address || '')),
+        address: loc.address || '',
+        status: 'been',
+        visits: visitDate ? [{ date: visitDate, notes: '' }] : [],
+      };
+      seen.set(key, entry);
+      results.push(entry);
+    }
+  });
+  return results;
+}
+
+// ── Google Timeline: New format (array with visit objects) ──
+function parseGoogleTimelineNew(data) {
+  const seen = new Map();
+  const results = [];
+  data.forEach(item => {
+    const visit = item.visit;
+    if (!visit?.topCandidate?.placeLocation) return;
+    const locStr = visit.topCandidate.placeLocation.latLng || '';
+    const [latStr, lngStr] = locStr.split(',').map(s => s.trim());
+    const lat = parseFloat(latStr) || 0;
+    const lng = parseFloat(lngStr) || 0;
+    if (!lat || !lng) return;
+    const name = visit.topCandidate.semanticType?.replace('TYPE_', '').replace(/_/g, ' ').toLowerCase() || 'Unknown';
+    const visitDate = item.startTime ? new Date(item.startTime).toISOString().split('T')[0] : '';
+    const key = lat.toFixed(4) + '|' + lng.toFixed(4);
+
+    if (seen.has(key)) {
+      const existing = seen.get(key);
+      if (visitDate && !existing.visits.find(v => v.date === visitDate)) {
+        existing.visits.push({ date: visitDate, notes: '' });
+      }
+    } else {
+      const entry = {
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        lat, lng,
+        category: inferCategory(name),
+        address: '',
+        status: 'been',
+        visits: visitDate ? [{ date: visitDate, notes: '' }] : [],
+        _placeId: visit.topCandidate.placeId || '',
+      };
+      seen.set(key, entry);
+      results.push(entry);
+    }
+  });
+  return results;
+}
+
+// ── Google Timeline: semanticSegments format ────────────
+function parseGoogleTimelineSegments(data) {
+  const segments = data.semanticSegments || [];
+  const seen = new Map();
+  const results = [];
+  segments.forEach(seg => {
+    const visit = seg.visit;
+    if (!visit?.topCandidate?.placeLocation) return;
+    const latLng = visit.topCandidate.placeLocation;
+    const lat = latLng.latLng ? parseFloat(latLng.latLng.split(',')[0]) : (latLng.lat || latLng.latitude || 0);
+    const lng = latLng.latLng ? parseFloat(latLng.latLng.split(',')[1]) : (latLng.lng || latLng.longitude || 0);
+    if (!lat || !lng) return;
+    const name = visit.topCandidate.placeLocation.name || visit.topCandidate.semanticType?.replace('TYPE_', '').replace(/_/g, ' ') || 'Unknown';
+    const visitDate = seg.startTime ? new Date(seg.startTime).toISOString().split('T')[0] : '';
+    const key = lat.toFixed(4) + '|' + lng.toFixed(4);
+
+    if (seen.has(key)) {
+      const existing = seen.get(key);
+      if (visitDate && !existing.visits.find(v => v.date === visitDate)) {
+        existing.visits.push({ date: visitDate, notes: '' });
+      }
+    } else {
+      const entry = {
+        name: typeof name === 'string' ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : 'Unknown',
+        lat, lng,
+        category: inferCategory(name || ''),
+        address: '', status: 'been',
+        visits: visitDate ? [{ date: visitDate, notes: '' }] : [],
+      };
+      seen.set(key, entry);
+      results.push(entry);
+    }
+  });
+  return results;
 }
 
 function parseCSV(content) {
@@ -3240,18 +3399,25 @@ function inferCategory(text) {
 
 function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
-  document.getElementById('import-count').textContent = items.length;
+  const isRestore = items[0]?._isFullRestore;
+  const hasVisits = items.some(i => i.visits?.length);
+  const format = isRestore ? '🔄 History Map Backup' :
+    hasVisits ? '📅 Google Timeline' :
+    items[0]?._googleUrl !== undefined ? '⭐ Google Saved Places' :
+    items[0]?._folderName ? '🗺️ Google My Maps' : '📁 File Import';
+  document.getElementById('import-count').textContent = `${items.length} locations — ${format}`;
   const tbody = document.getElementById('import-tbody');
-  tbody.innerHTML = items.map(item => {
+  tbody.innerHTML = items.slice(0, 200).map(item => {
     const cat = CATEGORIES[item.category] || CATEGORIES.location;
+    const visits = (item.visits || []).length;
     return `<tr>
       <td>${item.name}</td>
       <td>${cat.emoji} ${cat.label}</td>
       <td>${item.lat.toFixed(4)}</td>
       <td>${item.lng.toFixed(4)}</td>
-      <td>${item.status}</td>
+      <td>${item.status}${visits ? ` · ${visits} visit${visits>1?'s':''}` : ''}</td>
     </tr>`;
-  }).join('');
+  }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>` : '');
 }
 
 function cancelImport() {
@@ -3300,11 +3466,11 @@ async function confirmImport() {
         name: item.name, address: item.address || '',
         lat: item.lat, lng: item.lng, category: item.category, status: item.status,
         googleRating: null, myRating: 0, tripId: null, people: [],
-        visits: [], notes: '',
+        visits: item.visits || [], notes: item.notes || '',
         tags: item._folderName ? [item._folderName] : [],
         needsApproval: !autoApprove,
         suggestedCategory: autoApprove ? null : item.category,
-        createdAt: new Date().toISOString().split('T')[0],
+        createdAt: (item.visits?.[0]?.date) || new Date().toISOString().split('T')[0],
       };
     });
 
