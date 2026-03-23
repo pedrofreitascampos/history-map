@@ -979,6 +979,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
+      <h4>Tags <span class="clear-btn" onclick="clearTagFilter()">clear</span></h4>
+      <div class="filter-chips" id="tag-filters" style="max-height:120px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="filter-section">
+      <h4>Price Level</h4>
+      <div class="filter-group">
+        <button class="filter-group-btn active" data-price="0" onclick="setPriceFilter(0, this)">All</button>
+        <button class="filter-group-btn" data-price="1" onclick="setPriceFilter(1, this)">€</button>
+        <button class="filter-group-btn" data-price="2" onclick="setPriceFilter(2, this)">€€</button>
+        <button class="filter-group-btn" data-price="3" onclick="setPriceFilter(3, this)">€€€</button>
+        <button class="filter-group-btn" data-price="4" onclick="setPriceFilter(4, this)">€€€€</button>
+      </div>
+    </div>
+
+    <div class="filter-section">
       <h4>My Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
@@ -1081,6 +1097,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             </table>
           </div>
           <div class="import-actions">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:auto;">
+              <input type="checkbox" id="import-auto-approve"> Auto-approve categories
+            </label>
             <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
             <button class="btn btn-primary" onclick="confirmImport()">Import All</button>
           </div>
@@ -1141,6 +1160,28 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-group">
         <label>Category</label>
         <div class="category-grid" id="modal-categories"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Tags</label>
+        <div class="people-tags" id="loc-tag-chips"></div>
+        <div id="loc-tag-suggestions" class="filter-chips" style="margin-bottom:8px;"></div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="form-input" id="loc-tag-input" placeholder="Add custom tag" style="flex:1;"
+            onkeydown="if(event.key==='Enter'){addTag(); event.preventDefault();}">
+          <button class="add-small-btn" onclick="addTag()">Add</button>
+        </div>
+      </div>
+
+      <div class="form-group" id="price-group" style="display:none;">
+        <label>Price Level</label>
+        <div class="filter-group" id="price-selector">
+          <button class="filter-group-btn active" data-price="0" onclick="setModalPrice(0, this)">None</button>
+          <button class="filter-group-btn" data-price="1" onclick="setModalPrice(1, this)">€</button>
+          <button class="filter-group-btn" data-price="2" onclick="setModalPrice(2, this)">€€</button>
+          <button class="filter-group-btn" data-price="3" onclick="setModalPrice(3, this)">€€€</button>
+          <button class="filter-group-btn" data-price="4" onclick="setModalPrice(4, this)">€€€€</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1241,32 +1282,55 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 /* DATA MODEL & CONSTANTS                                                */
 /* ═══════════════════════════════════════════════════════════════════════ */
 const CATEGORIES = {
-  restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)' },
-  hotel:      { emoji: '🛏️', label: 'Hotel / Sleep', color: 'var(--cat-hotel)' },
-  bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)' },
-  club:       { emoji: '🪩', label: 'Club', color: 'var(--cat-club)' },
-  monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)' },
-  unesco:     { emoji: '🏰', label: 'UNESCO Site', color: 'var(--cat-unesco)' },
-  park:       { emoji: '🌿', label: 'Natural Park', color: 'var(--cat-park)' },
-  stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)' },
-  event:      { emoji: '🎪', label: 'Event', color: 'var(--cat-event)' },
-  location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)' },
-  airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)' },
-  entertainment: { emoji: '🎭', label: 'Entertainment', color: 'var(--cat-entertainment)' },
-  shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)' },
-  cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)' },
+  restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)', hasPrice: true,
+    suggestedTags: ['Italian','Japanese','Portuguese','French','Mexican','Indian','Chinese','Thai','Korean','Mediterranean','Seafood','Steakhouse','Vegan','Brunch','Fine Dining','Street Food','Tapas','Sushi','Pizza','Burger'] },
+  hotel:      { emoji: '🛏️', label: 'Hotel / Sleep', color: 'var(--cat-hotel)', hasPrice: true,
+    suggestedTags: ['Hotel','Hostel','Airbnb','Resort','B&B','Boutique','Camping','Villa'] },
+  bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)', hasPrice: true,
+    suggestedTags: ['Cocktail','Wine Bar','Rooftop','Dive Bar','Speakeasy','Beer Garden','Pub','Sports Bar'] },
+  club:       { emoji: '🪩', label: 'Club', color: 'var(--cat-club)', hasPrice: true,
+    suggestedTags: ['Techno','House','Hip-Hop','Latin','Jazz','Live Music','Karaoke'] },
+  monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)',
+    suggestedTags: ['Castle','Church','Temple','Mosque','Palace','Tower','Bridge','Ruins','Statue','Museum'] },
+  unesco:     { emoji: '🏰', label: 'UNESCO Site', color: 'var(--cat-unesco)',
+    suggestedTags: ['Cultural','Natural','Mixed','Historic Centre','Archaeological'] },
+  park:       { emoji: '🌿', label: 'Natural Park', color: 'var(--cat-park)',
+    suggestedTags: ['National Park','Beach','Mountain','Lake','Forest','Waterfall','Desert','Island','Garden','Hiking'] },
+  stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)',
+    suggestedTags: ['Football','Basketball','Tennis','Baseball','Rugby','Olympic','Motorsport','Cricket'] },
+  event:      { emoji: '🎪', label: 'Event', color: 'var(--cat-event)',
+    suggestedTags: ['Festival','Conference','Concert','Exhibition','Sports Event','Market','Carnival'] },
+  location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)',
+    suggestedTags: ['Viewpoint','Neighborhood','Square','Street','Landmark'] },
+  airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)',
+    suggestedTags: ['International','Domestic','Layover','Lounge'] },
+  entertainment: { emoji: '🎭', label: 'Entertainment', color: 'var(--cat-entertainment)',
+    suggestedTags: ['Theatre','Cinema','Museum','Gallery','Amusement Park','Zoo','Aquarium','Comedy','Opera'] },
+  shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)', hasPrice: true,
+    suggestedTags: ['Market','Mall','Boutique','Vintage','Souvenir','Bookshop','Local Crafts'] },
+  cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)', hasPrice: true,
+    suggestedTags: ['Specialty Coffee','Bakery','Tea House','Brunch','Coworking','Pastry'] },
 };
+
+const PRICE_LEVELS = [
+  { value: 1, label: '€', desc: 'Budget' },
+  { value: 2, label: '€€', desc: 'Moderate' },
+  { value: 3, label: '€€€', desc: 'Upscale' },
+  { value: 4, label: '€€€€', desc: 'Fine Dining' },
+];
 
 let state = {
   locations: [],
   trips: [],
-  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0 },
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, tags: new Set(), maxPrice: 0 },
   editingId: null,
   modalPeople: [],
   modalVisits: [],
   modalRating: 0,
   modalCategory: '',
   modalStatus: 'been',
+  modalTags: [],
+  modalPrice: 0,
   heatmapOn: false,
   pendingImport: [],
   pendingRestoreTrips: [],
@@ -1490,13 +1554,17 @@ function createPopupContent(loc) {
   const myStars = loc.myRating ? '★ ' + loc.myRating + '/5' : '—';
   const peopleTags = (loc.people || []).map(p => `<span class="popup-tag">${p}</span>`).join('');
 
+  const priceStr = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
+  const tagChips = (loc.tags || []).map(t => `<span class="popup-tag">${t}</span>`).join('');
+
   return `<div class="popup-inner">
     <h3>${cat.emoji} ${loc.name}</h3>
-    <div class="popup-cat">${cat.label} · ${loc.status === 'been' ? '✅ Been' : '⭐ Bucket List'}</div>
+    <div class="popup-cat">${cat.label}${priceStr} · ${loc.status === 'been' ? '✅ Been' : '⭐ Bucket List'}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
       <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
     </div>
+    ${tagChips ? `<div class="popup-tags">${tagChips}</div>` : ''}
     ${visitDates ? `<div class="popup-meta">📅 ${visitDates}</div>` : ''}
     ${trip ? `<div class="popup-meta">🧳 ${trip.name}</div>` : ''}
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
@@ -1532,6 +1600,8 @@ function getFilteredLocations() {
     if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
     if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
     if (state.filters.minRating > 0 && loc.status === 'been' && (loc.myRating || 0) < state.filters.minRating) return false;
+    if (state.filters.tags.size > 0 && !([...(loc.tags || [])].some(t => state.filters.tags.has(t)))) return false;
+    if (state.filters.maxPrice > 0 && (loc.priceLevel || 0) > 0 && loc.priceLevel > state.filters.maxPrice) return false;
     return true;
   });
 }
@@ -1589,6 +1659,40 @@ function populateFilterDropdowns() {
   const peopleSel = document.getElementById('people-filter');
   peopleSel.innerHTML = '<option value="">Everyone</option>' +
     [...allPeople].sort().map(p => `<option value="${p}">${p}</option>`).join('');
+
+  buildTagFilters();
+}
+
+function buildTagFilters() {
+  const allTags = {};
+  state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0) + 1; }));
+  const sorted = Object.entries(allTags).sort((a,b) => b[1] - a[1]);
+  const container = document.getElementById('tag-filters');
+  container.innerHTML = sorted.map(([tag, count]) => {
+    const active = state.filters.tags.has(tag) ? ' active' : '';
+    return `<button class="filter-chip${active}" onclick="toggleTagFilter('${tag.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 8px;">${tag} <span style="opacity:0.5">${count}</span></button>`;
+  }).join('') || '<span style="font-size:11px;color:var(--text-muted);">No tags yet</span>';
+}
+
+function toggleTagFilter(tag) {
+  if (state.filters.tags.has(tag)) state.filters.tags.delete(tag);
+  else state.filters.tags.add(tag);
+  buildTagFilters();
+  applyFilters();
+}
+
+function clearTagFilter() {
+  state.filters.tags.clear();
+  buildTagFilters();
+  applyFilters();
+}
+
+function setPriceFilter(val, btn) {
+  state.filters.maxPrice = val;
+  btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.price) === val);
+  });
+  applyFilters();
 }
 
 function applyFilters() {
@@ -1645,6 +1749,8 @@ function buildModalCategories() {
       document.querySelectorAll('.category-option').forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
       state.modalCategory = key;
+      renderModalTags();
+      updatePriceVisibility();
     };
     grid.appendChild(opt);
   });
@@ -1663,6 +1769,8 @@ function openAddModal(lat, lng) {
   state.modalRating = 0;
   state.modalCategory = '';
   state.modalStatus = 'been';
+  state.modalTags = [];
+  state.modalPrice = 0;
 
   document.getElementById('modal-title').textContent = 'Add Location';
   document.getElementById('delete-loc-btn').style.display = 'none';
@@ -1681,6 +1789,9 @@ function openAddModal(lat, lng) {
   updateStars(0);
   renderPeopleTags();
   renderVisitFields();
+  renderModalTags();
+  updatePriceVisibility();
+  setModalPrice(0);
   populateModalTrips();
 
   document.getElementById('edit-modal').classList.add('open');
@@ -1696,6 +1807,8 @@ function openEditModal(id) {
   state.modalRating = loc.myRating || 0;
   state.modalCategory = loc.category;
   state.modalStatus = loc.status;
+  state.modalTags = [...(loc.tags || [])];
+  state.modalPrice = loc.priceLevel || 0;
 
   document.getElementById('modal-title').textContent = 'Edit Location';
   document.getElementById('delete-loc-btn').style.display = '';
@@ -1718,6 +1831,9 @@ function openEditModal(id) {
   updateStars(state.modalRating);
   renderPeopleTags();
   renderVisitFields();
+  renderModalTags();
+  updatePriceVisibility();
+  setModalPrice(state.modalPrice);
 
   // Close any popup
   map.closePopup();
@@ -1783,6 +1899,54 @@ function removeVisit(i) {
   renderVisitFields();
 }
 
+/* ── Tags & Price (modal) ── */
+function renderModalTags() {
+  // Render active tags
+  const container = document.getElementById('loc-tag-chips');
+  container.innerHTML = state.modalTags.map((t, i) =>
+    `<span class="people-tag">${t}<span class="remove-tag" onclick="removeTag(${i})">&times;</span></span>`
+  ).join('');
+
+  // Render suggested tags for current category
+  const cat = CATEGORIES[state.modalCategory];
+  const suggestions = cat?.suggestedTags || [];
+  const sugContainer = document.getElementById('loc-tag-suggestions');
+  sugContainer.innerHTML = suggestions
+    .filter(t => !state.modalTags.includes(t))
+    .map(t => `<button class="filter-chip" onclick="addTagDirect('${t.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 8px;">${t}</button>`)
+    .join('');
+}
+function addTag() {
+  const input = document.getElementById('loc-tag-input');
+  const tag = input.value.trim();
+  if (tag && !state.modalTags.includes(tag)) {
+    state.modalTags.push(tag);
+    renderModalTags();
+  }
+  input.value = '';
+}
+function addTagDirect(tag) {
+  if (!state.modalTags.includes(tag)) {
+    state.modalTags.push(tag);
+    renderModalTags();
+  }
+}
+function removeTag(i) {
+  state.modalTags.splice(i, 1);
+  renderModalTags();
+}
+
+function updatePriceVisibility() {
+  const cat = CATEGORIES[state.modalCategory];
+  document.getElementById('price-group').style.display = cat?.hasPrice ? '' : 'none';
+}
+function setModalPrice(val, btn) {
+  state.modalPrice = val;
+  document.querySelectorAll('#price-selector .filter-group-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.price) === val);
+  });
+}
+
 async function saveLocation() {
   const name = document.getElementById('loc-name').value.trim();
   const lat = parseFloat(document.getElementById('loc-lat').value);
@@ -1804,6 +1968,8 @@ async function saveLocation() {
     people: [...state.modalPeople],
     visits: state.modalVisits.filter(v => v.date),
     notes: document.getElementById('loc-notes').value.trim(),
+    tags: [...state.modalTags],
+    priceLevel: state.modalPrice || null,
     needsApproval: false,
     suggestedCategory: null,
   };
@@ -2307,19 +2473,43 @@ function parseGeoJSON(content) {
 function parseKML(content) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, 'text/xml');
-  const placemarks = doc.querySelectorAll('Placemark');
-  return [...placemarks].map(pm => {
+  const results = [];
+
+  // Google My Maps uses Folder elements as layers/categories
+  const folders = doc.querySelectorAll('Folder');
+  if (folders.length > 0) {
+    folders.forEach(folder => {
+      const folderName = folder.querySelector(':scope > name')?.textContent || '';
+      const folderCategory = inferCategory(folderName);
+      const placemarks = folder.querySelectorAll('Placemark');
+      placemarks.forEach(pm => {
+        const name = pm.querySelector('name')?.textContent || 'Unknown';
+        const coords = pm.querySelector('coordinates')?.textContent?.trim().split(',');
+        const desc = pm.querySelector('description')?.textContent || '';
+        // Use folder name for category inference first, then fall back to place name
+        const category = folderCategory !== 'location' ? folderCategory : inferCategory(name + ' ' + desc);
+        results.push({
+          name, lng: parseFloat(coords?.[0] || 0), lat: parseFloat(coords?.[1] || 0),
+          category, address: desc.replace(/<[^>]*>/g, '').trim(), status: 'been',
+          _folderName: folderName, // preserve for tag
+        });
+      });
+    });
+  }
+
+  // Also get any placemarks not inside folders
+  const topPlacemarks = doc.querySelectorAll(':scope > Document > Placemark, kml > Placemark');
+  topPlacemarks.forEach(pm => {
     const name = pm.querySelector('name')?.textContent || 'Unknown';
     const coords = pm.querySelector('coordinates')?.textContent?.trim().split(',');
-    return {
-      name,
-      lng: parseFloat(coords?.[0] || 0),
-      lat: parseFloat(coords?.[1] || 0),
-      category: inferCategory(name),
-      address: pm.querySelector('description')?.textContent || '',
+    results.push({
+      name, lng: parseFloat(coords?.[0] || 0), lat: parseFloat(coords?.[1] || 0),
+      category: inferCategory(name), address: pm.querySelector('description')?.textContent?.replace(/<[^>]*>/g, '').trim() || '',
       status: 'been',
-    };
-  }).filter(l => l.lat && l.lng);
+    });
+  });
+
+  return results.filter(l => l.lat && l.lng);
 }
 
 function inferCategory(text) {
@@ -2364,6 +2554,7 @@ function cancelImport() {
 async function confirmImport() {
   const count = state.pendingImport.length;
   const isFullRestore = state.pendingImport[0]?._isFullRestore;
+  const autoApprove = document.getElementById('import-auto-approve')?.checked || false;
 
   try {
     // Full restore: re-create trips first, remap IDs
@@ -2388,7 +2579,10 @@ async function confirmImport() {
         name: item.name, address: item.address || '',
         lat: item.lat, lng: item.lng, category: item.category, status: item.status,
         googleRating: null, myRating: 0, tripId: null, people: [],
-        visits: [], notes: '', needsApproval: true, suggestedCategory: item.category,
+        visits: [], notes: '',
+        tags: item._folderName ? [item._folderName] : [],
+        needsApproval: !autoApprove,
+        suggestedCategory: autoApprove ? null : item.category,
         createdAt: new Date().toISOString().split('T')[0],
       };
     });
