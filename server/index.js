@@ -6,10 +6,13 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 const JWT_SECRET = process.env.JWT_SECRET || 'history-map-dev-secret-change-me';
 
 // Middleware
@@ -71,6 +74,45 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => {
   res.json({ username: req.user.username });
+});
+
+// Google OAuth client ID (for frontend)
+app.get('/api/auth/google-client-id', (req, res) => {
+  res.json({ clientId: GOOGLE_CLIENT_ID || null });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  if (!googleClient) return res.status(501).json({ error: 'Google OAuth not configured' });
+  try {
+    const { credential } = req.body;
+    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+    const email = payload.email;
+    const googleId = payload.sub;
+
+    // Find or create user by Google ID
+    let user = await db.users.findOne({ googleId });
+    if (!user) {
+      // Check if email matches an existing password user — link accounts
+      user = await db.users.findOne({ username: email });
+      if (user) {
+        await db.users.update({ _id: user._id }, { $set: { googleId } });
+      } else {
+        user = await db.users.insert({
+          username: email,
+          googleId,
+          name: payload.name || email,
+          picture: payload.picture || null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '90d' });
+    res.json({ token, username: user.username, picture: user.picture });
+  } catch (err) {
+    console.error('Google auth error:', err.message);
+    res.status(401).json({ error: 'Google authentication failed' });
+  }
 });
 
 // ── Locations CRUD ───────────────────────────────────────
