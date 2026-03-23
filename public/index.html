@@ -816,11 +816,90 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   opacity: 0.015;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* LOGIN SCREEN                                               */
+/* ═══════════════════════════════════════════════════════════ */
+#login-screen {
+  position: fixed; inset: 0; z-index: 10000;
+  background: var(--bg-primary);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+}
+#login-screen.hidden { display: none; }
+.login-box {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-xl); padding: 40px;
+  width: 380px; max-width: 90vw; box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.login-box .login-logo {
+  font-family: var(--font-display); font-size: 28px;
+  color: var(--accent); margin-bottom: 4px;
+}
+.login-box .login-sub {
+  font-size: 13px; color: var(--text-muted); margin-bottom: 28px;
+}
+.login-box .form-group { text-align: left; }
+.login-box .btn-primary { width: 100%; margin-top: 8px; padding: 12px; font-size: 14px; }
+.login-tabs { display: flex; gap: 0; margin-bottom: 20px; }
+.login-tab {
+  flex: 1; padding: 8px; border: none; background: none;
+  color: var(--text-muted); font-size: 13px; font-weight: 500;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  font-family: var(--font-body); transition: var(--transition);
+}
+.login-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.login-error {
+  color: var(--danger); font-size: 12px; margin-top: 8px;
+  min-height: 18px;
+}
+.login-box .user-badge {
+  display: none; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted);
+  margin-top: 12px; justify-content: center;
+}
+#topbar .user-info {
+  font-size: 12px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 8px;
+}
+#topbar .user-info .username { color: var(--accent); font-weight: 500; }
+.btn-logout {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 11px; padding: 4px 10px;
+  border-radius: var(--radius); cursor: pointer;
+  font-family: var(--font-body); transition: var(--transition);
+}
+.btn-logout:hover { border-color: var(--danger); color: var(--danger); }
 </style>
 </head>
 <body>
 
 <div class="noise-overlay"></div>
+
+<!-- ═══════════════════════ LOGIN ═══════════════════════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">🧭 History Map</div>
+    <div class="login-sub">Your world, mapped.</div>
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchLoginTab('login')">Sign In</button>
+      <button class="login-tab" onclick="switchLoginTab('register')">Register</button>
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" class="form-input" id="auth-username" placeholder="username"
+        onkeydown="if(event.key==='Enter') document.getElementById('auth-password').focus()">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" class="form-input" id="auth-password" placeholder="••••••••"
+        onkeydown="if(event.key==='Enter') doAuth()">
+    </div>
+    <button class="btn btn-primary" onclick="doAuth()">Sign In</button>
+    <div class="login-error" id="auth-error"></div>
+  </div>
+</div>
 
 <!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
 <header id="topbar">
@@ -856,6 +935,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="topbar-actions">
     <button class="btn-icon" onclick="exportData()" title="Export Data">💾</button>
     <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">🌙</button>
+    <div class="user-info">
+      <span class="username" id="display-username"></span>
+      <button class="btn-logout" onclick="logout()">Sign out</button>
+    </div>
   </div>
 </header>
 
@@ -1193,57 +1276,124 @@ let map, markersLayer, heatLayer;
 let chartRatings, chartActivity;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
-/* STORAGE                                                               */
+/* AUTH & API LAYER                                                      */
 /* ═══════════════════════════════════════════════════════════════════════ */
-function save() {
-  localStorage.setItem('hm_locations', JSON.stringify(state.locations));
-  localStorage.setItem('hm_trips', JSON.stringify(state.trips));
+let authToken = localStorage.getItem('hm_token') || null;
+let authMode = 'login';
+
+function apiHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken };
 }
-function load() {
+
+async function api(method, path, body) {
+  const opts = { method, headers: apiHeaders() };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  if (res.status === 401) { logout(); throw new Error('Session expired'); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'API error'); }
+  return res.json();
+}
+
+// Map NeDB _id → id for frontend consistency
+function mapId(doc) {
+  if (doc && doc._id && !doc.id) { doc.id = doc._id; }
+  return doc;
+}
+function mapIds(docs) { return docs.map(mapId); }
+
+function switchLoginTab(mode) {
+  authMode = mode;
+  document.querySelectorAll('.login-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(mode)));
+  document.querySelector('.login-box .btn-primary').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
+}
+
+async function doAuth() {
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'Please fill in all fields'; return; }
   try {
-    const locs = localStorage.getItem('hm_locations');
-    const trips = localStorage.getItem('hm_trips');
-    if (locs) state.locations = JSON.parse(locs);
-    if (trips) state.trips = JSON.parse(trips);
-  } catch(e) { console.warn('Storage load failed:', e); }
+    const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+    const data = await api('POST', endpoint, { username, password });
+    authToken = data.token;
+    localStorage.setItem('hm_token', authToken);
+    await startApp(data.username);
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
 }
+
+function logout() {
+  authToken = null;
+  localStorage.removeItem('hm_token');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('auth-password').value = '';
+  document.getElementById('auth-error').textContent = '';
+}
+
+async function checkAuth() {
+  if (!authToken) return false;
+  try {
+    const data = await api('GET', '/auth/me');
+    return data.username;
+  } catch { return false; }
+}
+
+async function loadFromServer() {
+  const [locs, trips] = await Promise.all([
+    api('GET', '/locations'),
+    api('GET', '/trips'),
+  ]);
+  state.locations = mapIds(locs);
+  state.trips = mapIds(trips);
+}
+
+// Legacy save() — now a no-op; individual mutations call API directly
+function save() {}
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* SAMPLE DATA                                                           */
 /* ═══════════════════════════════════════════════════════════════════════ */
-function generateSampleData() {
-  state.trips = [
-    { id: 't1', name: 'Portugal Summer 2024', startDate: '2024-07-10', endDate: '2024-07-24', color: '#ffc144' },
-    { id: 't2', name: 'Japan Golden Week 2023', startDate: '2023-04-28', endDate: '2023-05-07', color: '#f472b6' },
-    { id: 't3', name: 'NYC Weekend 2024', startDate: '2024-03-15', endDate: '2024-03-18', color: '#60a5fa' },
-    { id: 't4', name: 'Italy Road Trip 2022', startDate: '2022-09-01', endDate: '2022-09-14', color: '#4ade80' },
+async function generateSampleData() {
+  const tripDefs = [
+    { name: 'Portugal Summer 2024', startDate: '2024-07-10', endDate: '2024-07-24', color: '#ffc144' },
+    { name: 'Japan Golden Week 2023', startDate: '2023-04-28', endDate: '2023-05-07', color: '#f472b6' },
+    { name: 'NYC Weekend 2024', startDate: '2024-03-15', endDate: '2024-03-18', color: '#60a5fa' },
+    { name: 'Italy Road Trip 2022', startDate: '2022-09-01', endDate: '2022-09-14', color: '#4ade80' },
   ];
-  state.locations = [
-    { id:'l1', name:'Time Out Market', address:'Lisbon, Portugal', lat:38.7068, lng:-9.1453, category:'restaurant', status:'been', googleRating:4.4, myRating:5, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-12',notes:'Amazing seafood!'}], notes:'Best food hall in Europe', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-12' },
-    { id:'l2', name:'Tsukiji Outer Market', address:'Tokyo, Japan', lat:35.6654, lng:139.7707, category:'restaurant', status:'been', googleRating:4.5, myRating:5, tripId:'t2', people:['Yuki','Ana'], visits:[{date:'2023-04-29',notes:'Fresh sushi at 7am'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-29' },
-    { id:'l3', name:'Belém Tower', address:'Lisbon, Portugal', lat:38.6916, lng:-9.2160, category:'monument', status:'been', googleRating:4.6, myRating:4, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-14',notes:''}], notes:'Beautiful at sunset', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-14' },
-    { id:'l4', name:'Fushimi Inari Shrine', address:'Kyoto, Japan', lat:34.9671, lng:135.7727, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:'t2', people:['Yuki'], visits:[{date:'2023-05-02',notes:'Went early to avoid crowds'}], notes:'Thousands of torii gates', needsApproval:false, suggestedCategory:null, createdAt:'2023-05-02' },
-    { id:'l5', name:'Le Comptoir', address:'Paris, France', lat:48.8530, lng:2.3392, category:'restaurant', status:'bucket', googleRating:4.3, myRating:0, tripId:null, people:[], visits:[], notes:'Recommended by Pierre', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
-    { id:'l6', name:'Sintra National Palace', address:'Sintra, Portugal', lat:38.7976, lng:-9.3907, category:'unesco', status:'been', googleRating:4.5, myRating:5, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-16',notes:''}], notes:'Fairy tale palace', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-16' },
-    { id:'l7', name:'Brooklyn Bridge', address:'New York, USA', lat:40.7061, lng:-73.9969, category:'monument', status:'been', googleRating:4.7, myRating:4, tripId:'t3', people:['Carlos','Sofia'], visits:[{date:'2024-03-16',notes:'Walked across at night'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2024-03-16' },
-    { id:'l8', name:'Shibuya Crossing', address:'Tokyo, Japan', lat:35.6595, lng:139.7004, category:'location', status:'been', googleRating:4.5, myRating:4, tripId:'t2', people:['Yuki','Ana'], visits:[{date:'2023-04-30',notes:''}], notes:'Iconic', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-30' },
-    { id:'l9', name:'Berghain', address:'Berlin, Germany', lat:52.5112, lng:13.4432, category:'club', status:'bucket', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[], notes:'Legendary techno club', needsApproval:false, suggestedCategory:null, createdAt:'2024-02-01' },
-    { id:'l10', name:'Colosseum', address:'Rome, Italy', lat:41.8902, lng:12.4922, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:'t4', people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-03',notes:''}], notes:'Absolutely breathtaking', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-03' },
-    { id:'l11', name:'Narita Airport', address:'Tokyo, Japan', lat:35.7720, lng:140.3929, category:'airport', status:'been', googleRating:4.1, myRating:3, tripId:'t2', people:['Ana'], visits:[{date:'2023-04-28',notes:'Long immigration queue'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-28' },
-    { id:'l12', name:'Bar Lobo', address:'Barcelona, Spain', lat:41.3809, lng:2.1701, category:'bar', status:'been', googleRating:4.1, myRating:4, tripId:null, people:['Carlos'], visits:[{date:'2023-08-12',notes:''}], notes:'Great cocktails near La Rambla', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-12' },
-    { id:'l13', name:'Plitvice Lakes', address:'Croatia', lat:44.8654, lng:15.5820, category:'park', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Must visit in autumn', needsApproval:false, suggestedCategory:null, createdAt:'2024-06-01' },
-    { id:'l14', name:'Camp Nou', address:'Barcelona, Spain', lat:41.3809, lng:2.1228, category:'stadium', status:'been', googleRating:4.6, myRating:5, tripId:null, people:['Carlos','Marco'], visits:[{date:'2023-08-13',notes:'El Clásico!'}], notes:'Dream come true', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-13' },
-    { id:'l15', name:'Grand Bazaar', address:'Istanbul, Turkey', lat:41.0107, lng:28.9680, category:'shopping', status:'bucket', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[], notes:'Want to buy ceramics', needsApproval:false, suggestedCategory:null, createdAt:'2024-04-20' },
-    { id:'l16', name:'Tomorrowland', address:'Boom, Belgium', lat:51.0924, lng:4.3700, category:'event', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Get tickets early!', needsApproval:false, suggestedCategory:null, createdAt:'2024-05-10' },
-    { id:'l17', name:'Café de Flore', address:'Paris, France', lat:48.8541, lng:2.3326, category:'cafe', status:'bucket', googleRating:4.1, myRating:0, tripId:null, people:[], visits:[], notes:'Classic Parisian café', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
-    { id:'l18', name:'Pensão Amor', address:'Lisbon, Portugal', lat:38.7075, lng:-9.1448, category:'bar', status:'been', googleRating:4.3, myRating:4, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-13',notes:'Amazing atmosphere'}], notes:'Former brothel turned bar', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-13' },
-    { id:'l19', name:'Pompei', address:'Naples, Italy', lat:40.7508, lng:14.4869, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:'t4', people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-06',notes:''}], notes:'Eerily preserved', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-06' },
+  const savedTrips = [];
+  for (const t of tripDefs) { savedTrips.push(mapId(await api('POST', '/trips', t))); }
+  const tid = (i) => savedTrips[i]?.id || null;
+
+  const locDefs = [
+    { name:'Time Out Market', address:'Lisbon, Portugal', lat:38.7068, lng:-9.1453, category:'restaurant', status:'been', googleRating:4.4, myRating:5, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-12',notes:'Amazing seafood!'}], notes:'Best food hall in Europe', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-12' },
+    { name:'Tsukiji Outer Market', address:'Tokyo, Japan', lat:35.6654, lng:139.7707, category:'restaurant', status:'been', googleRating:4.5, myRating:5, tripId:tid(1), people:['Yuki','Ana'], visits:[{date:'2023-04-29',notes:'Fresh sushi at 7am'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-29' },
+    { name:'Belém Tower', address:'Lisbon, Portugal', lat:38.6916, lng:-9.2160, category:'monument', status:'been', googleRating:4.6, myRating:4, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-14',notes:''}], notes:'Beautiful at sunset', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-14' },
+    { name:'Fushimi Inari Shrine', address:'Kyoto, Japan', lat:34.9671, lng:135.7727, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:tid(1), people:['Yuki'], visits:[{date:'2023-05-02',notes:'Went early to avoid crowds'}], notes:'Thousands of torii gates', needsApproval:false, suggestedCategory:null, createdAt:'2023-05-02' },
+    { name:'Le Comptoir', address:'Paris, France', lat:48.8530, lng:2.3392, category:'restaurant', status:'bucket', googleRating:4.3, myRating:0, tripId:null, people:[], visits:[], notes:'Recommended by Pierre', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
+    { name:'Sintra National Palace', address:'Sintra, Portugal', lat:38.7976, lng:-9.3907, category:'unesco', status:'been', googleRating:4.5, myRating:5, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-16',notes:''}], notes:'Fairy tale palace', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-16' },
+    { name:'Brooklyn Bridge', address:'New York, USA', lat:40.7061, lng:-73.9969, category:'monument', status:'been', googleRating:4.7, myRating:4, tripId:tid(2), people:['Carlos','Sofia'], visits:[{date:'2024-03-16',notes:'Walked across at night'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2024-03-16' },
+    { name:'Shibuya Crossing', address:'Tokyo, Japan', lat:35.6595, lng:139.7004, category:'location', status:'been', googleRating:4.5, myRating:4, tripId:tid(1), people:['Yuki','Ana'], visits:[{date:'2023-04-30',notes:''}], notes:'Iconic', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-30' },
+    { name:'Berghain', address:'Berlin, Germany', lat:52.5112, lng:13.4432, category:'club', status:'bucket', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[], notes:'Legendary techno club', needsApproval:false, suggestedCategory:null, createdAt:'2024-02-01' },
+    { name:'Colosseum', address:'Rome, Italy', lat:41.8902, lng:12.4922, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-03',notes:''}], notes:'Absolutely breathtaking', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-03' },
+    { name:'Narita Airport', address:'Tokyo, Japan', lat:35.7720, lng:140.3929, category:'airport', status:'been', googleRating:4.1, myRating:3, tripId:tid(1), people:['Ana'], visits:[{date:'2023-04-28',notes:'Long immigration queue'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-28' },
+    { name:'Bar Lobo', address:'Barcelona, Spain', lat:41.3809, lng:2.1701, category:'bar', status:'been', googleRating:4.1, myRating:4, tripId:null, people:['Carlos'], visits:[{date:'2023-08-12',notes:''}], notes:'Great cocktails near La Rambla', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-12' },
+    { name:'Plitvice Lakes', address:'Croatia', lat:44.8654, lng:15.5820, category:'park', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Must visit in autumn', needsApproval:false, suggestedCategory:null, createdAt:'2024-06-01' },
+    { name:'Camp Nou', address:'Barcelona, Spain', lat:41.3809, lng:2.1228, category:'stadium', status:'been', googleRating:4.6, myRating:5, tripId:null, people:['Carlos','Marco'], visits:[{date:'2023-08-13',notes:'El Clásico!'}], notes:'Dream come true', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-13' },
+    { name:'Grand Bazaar', address:'Istanbul, Turkey', lat:41.0107, lng:28.9680, category:'shopping', status:'bucket', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[], notes:'Want to buy ceramics', needsApproval:false, suggestedCategory:null, createdAt:'2024-04-20' },
+    { name:'Tomorrowland', address:'Boom, Belgium', lat:51.0924, lng:4.3700, category:'event', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Get tickets early!', needsApproval:false, suggestedCategory:null, createdAt:'2024-05-10' },
+    { name:'Café de Flore', address:'Paris, France', lat:48.8541, lng:2.3326, category:'cafe', status:'bucket', googleRating:4.1, myRating:0, tripId:null, people:[], visits:[], notes:'Classic Parisian café', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
+    { name:'Pensão Amor', address:'Lisbon, Portugal', lat:38.7075, lng:-9.1448, category:'bar', status:'been', googleRating:4.3, myRating:4, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-13',notes:'Amazing atmosphere'}], notes:'Former brothel turned bar', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-13' },
+    { name:'Pompei', address:'Naples, Italy', lat:40.7508, lng:14.4869, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-06',notes:''}], notes:'Eerily preserved', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-06' },
     // Approval items
-    { id:'l20', name:'Some Restaurant in Lisbon', address:'Lisbon, Portugal', lat:38.7167, lng:-9.1395, category:'location', status:'been', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[{date:'2024-07-15',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'restaurant', createdAt:'2024-07-15' },
-    { id:'l21', name:'Tokyo Tower Area', address:'Tokyo, Japan', lat:35.6586, lng:139.7454, category:'location', status:'been', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[{date:'2023-05-01',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'monument', createdAt:'2023-05-01' },
-    { id:'l22', name:'Central Park Jog', address:'New York, USA', lat:40.7829, lng:-73.9654, category:'location', status:'been', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[{date:'2024-03-17',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'park', createdAt:'2024-03-17' },
+    { name:'Some Restaurant in Lisbon', address:'Lisbon, Portugal', lat:38.7167, lng:-9.1395, category:'location', status:'been', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[{date:'2024-07-15',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'restaurant', createdAt:'2024-07-15' },
+    { name:'Tokyo Tower Area', address:'Tokyo, Japan', lat:35.6586, lng:139.7454, category:'location', status:'been', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[{date:'2023-05-01',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'monument', createdAt:'2023-05-01' },
+    { name:'Central Park Jog', address:'New York, USA', lat:40.7829, lng:-73.9654, category:'location', status:'been', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[{date:'2024-03-17',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'park', createdAt:'2024-03-17' },
   ];
-  save();
+  const savedLocs = mapIds(await api('POST', '/locations/bulk', { locations: locDefs }));
+  state.trips = savedTrips;
+  state.locations = savedLocs;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -1632,7 +1782,7 @@ function removeVisit(i) {
   renderVisitFields();
 }
 
-function saveLocation() {
+async function saveLocation() {
   const name = document.getElementById('loc-name').value.trim();
   const lat = parseFloat(document.getElementById('loc-lat').value);
   const lng = parseFloat(document.getElementById('loc-lng').value);
@@ -1657,52 +1807,51 @@ function saveLocation() {
     suggestedCategory: null,
   };
 
-  if (state.editingId) {
-    const idx = state.locations.findIndex(l => l.id === state.editingId);
-    if (idx >= 0) {
-      state.locations[idx] = { ...state.locations[idx], ...data };
+  try {
+    if (state.editingId) {
+      const updated = mapId(await api('PUT', '/locations/' + state.editingId, data));
+      const idx = state.locations.findIndex(l => l.id === state.editingId);
+      if (idx >= 0) state.locations[idx] = updated;
+    } else {
+      data.createdAt = new Date().toISOString().split('T')[0];
+      const saved = mapId(await api('POST', '/locations', data));
+      state.locations.push(saved);
     }
-  } else {
-    data.id = 'l' + Date.now();
-    data.createdAt = new Date().toISOString().split('T')[0];
-    state.locations.push(data);
-  }
-
-  save();
-  closeModal();
-  renderMarkers();
-  populateFilterDropdowns();
-  updateApprovalBadge();
+    closeModal();
+    renderMarkers();
+    populateFilterDropdowns();
+    updateApprovalBadge();
+  } catch (err) { alert('Save failed: ' + err.message); }
 }
 
-function deleteLocation() {
+async function deleteLocation() {
   if (!state.editingId) return;
   if (!confirm('Delete this location?')) return;
-  state.locations = state.locations.filter(l => l.id !== state.editingId);
-  save();
-  closeModal();
-  renderMarkers();
-  populateFilterDropdowns();
-  updateApprovalBadge();
+  try {
+    await api('DELETE', '/locations/' + state.editingId);
+    state.locations = state.locations.filter(l => l.id !== state.editingId);
+    closeModal();
+    renderMarkers();
+    populateFilterDropdowns();
+    updateApprovalBadge();
+  } catch (err) { alert('Delete failed: ' + err.message); }
 }
 
-function promptNewTrip() {
+async function promptNewTrip() {
   const name = prompt('Trip name:');
   if (!name) return;
   const start = prompt('Start date (YYYY-MM-DD):');
   const end = prompt('End date (YYYY-MM-DD):');
-  const trip = {
-    id: 't' + Date.now(),
-    name,
-    startDate: start || '',
-    endDate: end || '',
-    color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),
-  };
-  state.trips.push(trip);
-  save();
-  populateModalTrips();
-  document.getElementById('loc-trip').value = trip.id;
-  populateFilterDropdowns();
+  try {
+    const trip = mapId(await api('POST', '/trips', {
+      name, startDate: start || '', endDate: end || '',
+      color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),
+    }));
+    state.trips.push(trip);
+    populateModalTrips();
+    document.getElementById('loc-trip').value = trip.id;
+    populateFilterDropdowns();
+  } catch (err) { alert('Failed to create trip: ' + err.message); }
 }
 
 function addPinHere() {
@@ -1745,23 +1894,31 @@ function renderPeopleManager() {
     </div>`
   ).join('');
 }
-function removePersonGlobal(name) {
+async function removePersonGlobal(name) {
   if (!confirm('Remove "' + name + '" from all locations?')) return;
+  const updates = [];
   state.locations.forEach(l => {
-    if (l.people) l.people = l.people.filter(p => p !== name);
+    if (l.people && l.people.includes(name)) {
+      l.people = l.people.filter(p => p !== name);
+      updates.push(api('PUT', '/locations/' + l.id, { people: l.people }));
+    }
   });
-  save();
+  await Promise.all(updates);
   renderPeopleManager();
   populateFilterDropdowns();
   renderMarkers();
 }
-function renamePerson(oldName) {
+async function renamePerson(oldName) {
   const newName = prompt('Rename "' + oldName + '" to:', oldName);
   if (!newName || newName === oldName) return;
+  const updates = [];
   state.locations.forEach(l => {
-    if (l.people) l.people = l.people.map(p => p === oldName ? newName : p);
+    if (l.people && l.people.includes(oldName)) {
+      l.people = l.people.map(p => p === oldName ? newName : p);
+      updates.push(api('PUT', '/locations/' + l.id, { people: l.people }));
+    }
   });
-  save();
+  await Promise.all(updates);
   renderPeopleManager();
   populateFilterDropdowns();
   renderMarkers();
@@ -1810,27 +1967,27 @@ function renderApproval() {
   }).join('');
 }
 
-function approveLocation(id) {
+async function approveLocation(id) {
   const loc = state.locations.find(l => l.id === id);
   if (!loc) return;
-  if (loc.suggestedCategory) loc.category = loc.suggestedCategory;
-  loc.needsApproval = false;
-  loc.suggestedCategory = null;
-  save();
+  const updates = { needsApproval: false, suggestedCategory: null };
+  if (loc.suggestedCategory) updates.category = loc.suggestedCategory;
+  Object.assign(loc, updates);
+  await api('PUT', '/locations/' + id, updates);
   renderApproval();
   updateApprovalBadge();
   renderMarkers();
 }
 
-function bulkApprove() {
-  state.locations.forEach(loc => {
-    if (loc.needsApproval) {
-      if (loc.suggestedCategory) loc.category = loc.suggestedCategory;
-      loc.needsApproval = false;
-      loc.suggestedCategory = null;
-    }
+async function bulkApprove() {
+  const pending = state.locations.filter(l => l.needsApproval);
+  const updates = pending.map(loc => {
+    const u = { needsApproval: false, suggestedCategory: null };
+    if (loc.suggestedCategory) u.category = loc.suggestedCategory;
+    Object.assign(loc, u);
+    return api('PUT', '/locations/' + loc.id, u);
   });
-  save();
+  await Promise.all(updates);
   renderApproval();
   updateApprovalBadge();
   renderMarkers();
@@ -2180,57 +2337,52 @@ function cancelImport() {
   document.getElementById('import-preview').classList.remove('active');
 }
 
-function confirmImport() {
-  state.pendingImport.forEach(item => {
-    state.locations.push({
-      id: 'l' + Date.now() + Math.random().toString(36).slice(2,6),
-      name: item.name,
-      address: item.address || '',
-      lat: item.lat, lng: item.lng,
-      category: item.category,
-      status: item.status,
-      googleRating: null, myRating: 0,
-      tripId: null, people: [],
-      visits: [], notes: '',
-      needsApproval: true,
-      suggestedCategory: item.category,
-      createdAt: new Date().toISOString().split('T')[0],
-    });
-  });
-  save();
-  state.pendingImport = [];
-  document.getElementById('import-preview').classList.remove('active');
-  renderMarkers();
-  populateFilterDropdowns();
-  updateApprovalBadge();
-  alert(`Imported ${state.pendingImport.length || 'all'} locations! Check the Approval tab.`);
+async function confirmImport() {
+  const count = state.pendingImport.length;
+  const toImport = state.pendingImport.map(item => ({
+    name: item.name, address: item.address || '',
+    lat: item.lat, lng: item.lng, category: item.category, status: item.status,
+    googleRating: null, myRating: 0, tripId: null, people: [],
+    visits: [], notes: '', needsApproval: true, suggestedCategory: item.category,
+    createdAt: new Date().toISOString().split('T')[0],
+  }));
+  try {
+    const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
+    state.locations.push(...saved);
+    state.pendingImport = [];
+    document.getElementById('import-preview').classList.remove('active');
+    renderMarkers();
+    populateFilterDropdowns();
+    updateApprovalBadge();
+    alert(`Imported ${count} locations! Check the Approval tab.`);
+  } catch (err) { alert('Import failed: ' + err.message); }
 }
 
-function simulateGoogleSync() {
+async function simulateGoogleSync() {
   const fakeLocations = [
     { name: 'Mysterious Café Downtown', lat: 48.8566 + Math.random()*0.01, lng: 2.3522 + Math.random()*0.01, category: 'cafe' },
     { name: 'Hidden Rooftop Bar', lat: 41.3874 + Math.random()*0.01, lng: 2.1686 + Math.random()*0.01, category: 'bar' },
     { name: 'Local Favorite Restaurant', lat: 38.7223 + Math.random()*0.01, lng: -9.1393 + Math.random()*0.01, category: 'restaurant' },
   ];
-  fakeLocations.forEach(item => {
-    state.locations.push({
-      id: 'l' + Date.now() + Math.random().toString(36).slice(2,6),
-      name: item.name, address: '', lat: item.lat, lng: item.lng,
-      category: 'location', status: 'been',
-      googleRating: (3.5 + Math.random() * 1.5).toFixed(1) * 1,
-      myRating: 0, tripId: null, people: [], visits: [],
-      notes: 'Synced from Google Maps',
-      needsApproval: true, suggestedCategory: item.category,
-      createdAt: new Date().toISOString().split('T')[0],
-    });
-  });
-  save();
-  document.getElementById('sync-dot').className = 'sync-dot connected';
-  document.getElementById('sync-label').textContent = 'Connected';
-  document.getElementById('sync-time').textContent = 'Last sync: just now';
-  renderMarkers();
-  updateApprovalBadge();
-  alert('Synced 3 new locations! Check the Approval tab to categorize them.');
+  const toSync = fakeLocations.map(item => ({
+    name: item.name, address: '', lat: item.lat, lng: item.lng,
+    category: 'location', status: 'been',
+    googleRating: +(3.5 + Math.random() * 1.5).toFixed(1),
+    myRating: 0, tripId: null, people: [], visits: [],
+    notes: 'Synced from Google Maps',
+    needsApproval: true, suggestedCategory: item.category,
+    createdAt: new Date().toISOString().split('T')[0],
+  }));
+  try {
+    const saved = mapIds(await api('POST', '/locations/bulk', { locations: toSync }));
+    state.locations.push(...saved);
+    document.getElementById('sync-dot').className = 'sync-dot connected';
+    document.getElementById('sync-label').textContent = 'Connected';
+    document.getElementById('sync-time').textContent = 'Last sync: just now';
+    renderMarkers();
+    updateApprovalBadge();
+    alert('Synced 3 new locations! Check the Approval tab to categorize them.');
+  } catch (err) { alert('Sync failed: ' + err.message); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2275,9 +2427,12 @@ function toggleTheme() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* INIT                                                                  */
 /* ═══════════════════════════════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', () => {
-  load();
-  if (state.locations.length === 0) generateSampleData();
+async function startApp(username) {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('display-username').textContent = username;
+
+  await loadFromServer();
+  if (state.locations.length === 0) await generateSampleData();
 
   buildCategoryFilters();
   buildModalCategories();
@@ -2285,7 +2440,16 @@ document.addEventListener('DOMContentLoaded', () => {
   initImport();
   updateApprovalBadge();
 
-  initMap();
+  if (!map) initMap();
+  else { renderMarkers(); setTimeout(() => map.invalidateSize(), 100); }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const username = await checkAuth();
+  if (username) {
+    await startApp(username);
+  }
+  // else login screen is already visible
 });
 </script>
 </body>
