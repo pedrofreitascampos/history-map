@@ -1222,8 +1222,19 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             oninput="previewGuideLocations()">
         </div>
         <div class="form-group" style="margin-bottom:0;">
+          <label>Radius (km)</label>
+          <input type="number" class="form-input" id="guide-radius" value="50" min="1" max="500" step="5"
+            oninput="previewGuideLocations()">
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <div class="form-group" style="margin-bottom:0;">
           <label>Number of Days</label>
           <input type="number" class="form-input" id="guide-days" value="3" min="1" max="30">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Max Stops per Day</label>
+          <input type="number" class="form-input" id="guide-max-per-day" value="8" min="1" max="20">
         </div>
       </div>
       <div class="form-row" style="margin-bottom:12px;">
@@ -3245,15 +3256,41 @@ function setGuideInclude(val, btn) {
 
 function getGuideLocations() {
   const region = document.getElementById('guide-region').value.trim().toLowerCase();
+  const radiusKm = parseFloat(document.getElementById('guide-radius').value) || 50;
   const minGoogle = parseFloat(document.getElementById('guide-min-google').value) || 0;
   const minMine = parseFloat(document.getElementById('guide-min-mine').value) || 0;
 
+  // First pass: find locations matching region name
+  let regionMatches = state.locations.filter(l => {
+    if (l.needsApproval) return false;
+    if (guideInclude === 'been' && l.status !== 'been') return false;
+    if (guideInclude === 'bucket' && l.status !== 'bucket') return false;
+    if (region && !(l.address || '').toLowerCase().includes(region) && !(l.name || '').toLowerCase().includes(region)) return false;
+    return true;
+  });
+
+  // Calculate center point from text-matched locations
+  let center = null;
+  if (regionMatches.length > 0) {
+    center = {
+      lat: regionMatches.reduce((s, l) => s + l.lat, 0) / regionMatches.length,
+      lng: regionMatches.reduce((s, l) => s + l.lng, 0) / regionMatches.length,
+    };
+  }
+
+  // Second pass: apply radius filter from center + rating filter
   return state.locations.filter(l => {
     if (l.needsApproval) return false;
     if (guideInclude === 'been' && l.status !== 'been') return false;
     if (guideInclude === 'bucket' && l.status !== 'bucket') return false;
-    // Region match
-    if (region && !(l.address || '').toLowerCase().includes(region) && !(l.name || '').toLowerCase().includes(region)) return false;
+    // Radius from center (if we have a center)
+    if (center) {
+      const dist = haversineKm(center.lat, center.lng, l.lat, l.lng);
+      if (dist > radiusKm) return false;
+    } else if (region) {
+      // No center found, fall back to text match
+      if (!(l.address || '').toLowerCase().includes(region) && !(l.name || '').toLowerCase().includes(region)) return false;
+    }
     // Rating: meets EITHER threshold
     const meetsGoogle = (l.googleRating || 0) >= minGoogle;
     const meetsMine = (l.myRating || 0) >= minMine;
@@ -3268,8 +3305,10 @@ function previewGuideLocations() {
 }
 
 function generateGuide() {
-  const locs = getGuideLocations();
+  let locs = getGuideLocations();
   const numDays = parseInt(document.getElementById('guide-days').value) || 3;
+  const maxPerDay = parseInt(document.getElementById('guide-max-per-day').value) || 8;
+  const maxTotal = numDays * maxPerDay;
   const region = document.getElementById('guide-region').value.trim();
 
   if (locs.length === 0) {
@@ -3277,11 +3316,24 @@ function generateGuide() {
     return;
   }
 
+  // Sort by best rating and cap total
+  locs.sort((a, b) => {
+    const scoreA = Math.max(a.myRating || 0, (a.googleRating || 0));
+    const scoreB = Math.max(b.myRating || 0, (b.googleRating || 0));
+    return scoreB - scoreA;
+  });
+  if (locs.length > maxTotal) {
+    locs = locs.slice(0, maxTotal);
+  }
+
   // Cluster locations into days by geographic proximity
   const days = clusterIntoDays(locs, numDays);
 
+  // Cap each day
+  const cappedDays = days.map(d => d.slice(0, maxPerDay));
+
   // Render the guide
-  renderGuideOutput(region || 'Your Guide', days);
+  renderGuideOutput(region || 'Your Guide', cappedDays);
 }
 
 function clusterIntoDays(locations, numDays) {
