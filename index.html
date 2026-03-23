@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>History Map — Your World, Mapped</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════ */
+/* CSS VARIABLES & RESET                                      */
+/* ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1a2235;
+  --bg-card: rgba(17, 24, 39, 0.85);
+  --bg-glass: rgba(17, 24, 39, 0.72);
+  --bg-glass-hover: rgba(26, 34, 53, 0.85);
+  --border: rgba(255, 193, 68, 0.12);
+  --border-strong: rgba(255, 193, 68, 0.25);
+  --text-primary: #f0ebe3;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --accent: #ffc144;
+  --accent-dim: rgba(255, 193, 68, 0.15);
+  --accent-glow: rgba(255, 193, 68, 0.3);
+  --danger: #ef4444;
+  --success: #22c55e;
+  --info: #3b82f6;
+  --cat-restaurant: #ff6b6b;
+  --cat-hotel: #a78bfa;
+  --cat-bar: #fb923c;
+  --cat-club: #e879f9;
+  --cat-monument: #fbbf24;
+  --cat-unesco: #f59e0b;
+  --cat-park: #4ade80;
+  --cat-stadium: #60a5fa;
+  --cat-event: #f472b6;
+  --cat-location: #94a3b8;
+  --cat-airport: #38bdf8;
+  --cat-entertainment: #c084fc;
+  --cat-shopping: #fb7185;
+  --cat-cafe: #a3866a;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --shadow: 0 8px 32px rgba(0,0,0,0.4);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'DM Sans', -apple-system, sans-serif;
+  --sidebar-width: 320px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* TOP NAVIGATION BAR                                         */
+/* ═══════════════════════════════════════════════════════════ */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  height: 56px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+}
+
+.logo {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 20px;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 10px;
+}
+.logo svg { width: 28px; height: 28px; }
+
+.nav-tabs {
+  display: flex; gap: 2px;
+  background: rgba(255,255,255,0.04);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+.nav-tab {
+  padding: 7px 18px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer; border: none; background: none;
+  transition: var(--transition);
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+}
+.nav-tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
+.nav-tab.active { color: var(--accent); background: var(--accent-dim); }
+.nav-tab .badge {
+  background: var(--danger);
+  color: white; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 10px;
+  min-width: 18px; text-align: center;
+}
+
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.btn-icon {
+  width: 36px; height: 36px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-glass);
+  color: var(--text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition); font-size: 16px;
+}
+.btn-icon:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* MAIN CONTENT AREA                                          */
+/* ═══════════════════════════════════════════════════════════ */
+#app {
+  position: fixed; top: 56px; left: 0; right: 0; bottom: 0;
+}
+
+.view { display: none; width: 100%; height: 100%; }
+.view.active { display: flex; }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* MAP VIEW                                                   */
+/* ═══════════════════════════════════════════════════════════ */
+#map { width: 100%; height: 100%; z-index: 1; }
+
+/* Leaflet overrides */
+.leaflet-control-zoom { border: none !important; }
+.leaflet-control-zoom a {
+  background: var(--bg-glass) !important; color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important; backdrop-filter: blur(12px);
+  width: 36px !important; height: 36px !important; line-height: 36px !important;
+  font-size: 16px !important;
+}
+.leaflet-control-zoom a:hover { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent) !important; }
+.leaflet-control-attribution { display: none !important; }
+
+/* Custom marker */
+.marker-icon {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; border-radius: 50%;
+  width: 38px !important; height: 38px !important;
+  margin-left: -19px !important; margin-top: -19px !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+  transition: transform 0.2s;
+  position: relative;
+}
+.marker-icon:hover { transform: scale(1.25); z-index: 9999 !important; }
+.marker-icon.been { border: 2.5px solid; }
+.marker-icon.bucket { border: 2.5px dashed; opacity: 0.8; }
+.marker-icon.needs-approval {
+  border: 2.5px solid var(--danger);
+  animation: pulse-approval 2s infinite;
+}
+@keyframes pulse-approval {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+/* Popup */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+  color: var(--text-primary) !important;
+  padding: 0 !important;
+  min-width: 280px;
+}
+.leaflet-popup-tip { background: var(--bg-secondary) !important; border: 1px solid var(--border) !important; }
+.leaflet-popup-content { margin: 0 !important; width: 100% !important; }
+.popup-inner { padding: 16px; }
+.popup-inner h3 { font-family: var(--font-display); font-size: 17px; margin-bottom: 4px; }
+.popup-cat { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.popup-ratings { display: flex; gap: 16px; margin-bottom: 10px; }
+.popup-rating-item { font-size: 12px; color: var(--text-secondary); }
+.popup-rating-item span { color: var(--accent); font-weight: 600; }
+.popup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.popup-tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px;
+  background: var(--accent-dim); color: var(--accent); font-weight: 500;
+}
+.popup-btn {
+  width: 100%; padding: 8px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--bg-tertiary);
+  color: var(--text-primary); cursor: pointer; font-size: 12px;
+  font-family: var(--font-body); transition: var(--transition);
+}
+.popup-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* FILTER SIDEBAR                                             */
+/* ═══════════════════════════════════════════════════════════ */
+#sidebar {
+  position: fixed; top: 56px; left: 0; bottom: 0; z-index: 500;
+  width: var(--sidebar-width);
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  transform: translateX(0);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 16px;
+}
+#sidebar.collapsed { transform: translateX(calc(-1 * var(--sidebar-width))); }
+
+.sidebar-toggle {
+  position: fixed; top: 72px; z-index: 501;
+  width: 32px; height: 32px; border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-glass); border: 1px solid var(--border); border-left: none;
+  color: var(--text-secondary); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition); font-size: 14px;
+  backdrop-filter: blur(12px);
+  left: var(--sidebar-width);
+}
+#sidebar.collapsed ~ .sidebar-toggle { left: 0; }
+.sidebar-toggle:hover { color: var(--accent); }
+
+.filter-section { margin-bottom: 20px; }
+.filter-section h4 {
+  font-family: var(--font-display); font-size: 13px;
+  color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: 1.5px; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.filter-section h4 .clear-btn {
+  font-family: var(--font-body); font-size: 10px; text-transform: none;
+  letter-spacing: 0; color: var(--accent); cursor: pointer;
+  opacity: 0; transition: var(--transition);
+}
+.filter-section:hover h4 .clear-btn { opacity: 1; }
+
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 20px;
+  font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary);
+  transition: var(--transition); user-select: none;
+}
+.filter-chip:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.filter-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.filter-chip .chip-emoji { font-size: 14px; }
+
+.filter-group { display: flex; gap: 4px; }
+.filter-group-btn {
+  flex: 1; padding: 7px; border-radius: var(--radius);
+  font-size: 12px; cursor: pointer; font-weight: 500;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); transition: var(--transition);
+  font-family: var(--font-body);
+}
+.filter-group-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.filter-group-btn:hover:not(.active) { border-color: var(--border-strong); }
+
+.rating-filter { display: flex; align-items: center; gap: 8px; }
+.rating-filter label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.rating-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 2px; background: var(--bg-tertiary);
+  outline: none;
+}
+.rating-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.rating-value { font-size: 12px; color: var(--accent); font-weight: 600; min-width: 20px; text-align: right; }
+
+select.filter-select {
+  width: 100%; padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-tertiary);
+  color: var(--text-primary); font-size: 12px;
+  font-family: var(--font-body); cursor: pointer; outline: none;
+}
+select.filter-select:focus { border-color: var(--accent); }
+
+.heatmap-toggle {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); cursor: pointer;
+  transition: var(--transition);
+}
+.heatmap-toggle:hover { border-color: var(--border-strong); }
+.heatmap-toggle.active { border-color: var(--accent); background: var(--accent-dim); }
+.heatmap-toggle span { font-size: 12px; color: var(--text-secondary); }
+.toggle-switch {
+  width: 36px; height: 20px; border-radius: 10px;
+  background: var(--bg-primary); position: relative;
+  transition: var(--transition); flex-shrink: 0;
+}
+.toggle-switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text-muted); transition: var(--transition);
+}
+.heatmap-toggle.active .toggle-switch { background: var(--accent); }
+.heatmap-toggle.active .toggle-switch::after { left: 19px; background: var(--bg-primary); }
+
+.sidebar-add-btn {
+  width: 100%; padding: 10px; border-radius: var(--radius);
+  border: 1px dashed var(--accent); background: var(--accent-dim);
+  color: var(--accent); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: var(--transition);
+  font-family: var(--font-body); margin-top: 8px;
+}
+.sidebar-add-btn:hover { background: rgba(255,193,68,0.25); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* MODAL                                                      */
+/* ═══════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.modal-overlay.open { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  width: 560px; max-width: 95vw; max-height: 85vh;
+  overflow-y: auto; box-shadow: var(--shadow-lg);
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+.modal-header {
+  padding: 20px 24px 0; display: flex;
+  align-items: center; justify-content: space-between;
+}
+.modal-header h2 { font-family: var(--font-display); font-size: 22px; }
+.modal-close {
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.06); color: var(--text-secondary);
+  cursor: pointer; font-size: 18px; display: flex;
+  align-items: center; justify-content: center; transition: var(--transition);
+}
+.modal-close:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+
+.modal-body { padding: 20px 24px; }
+
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block; font-size: 12px; font-weight: 500;
+  color: var(--text-secondary); margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.form-input {
+  width: 100%; padding: 10px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-tertiary);
+  color: var(--text-primary); font-size: 14px;
+  font-family: var(--font-body); outline: none;
+  transition: var(--transition);
+}
+.form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+textarea.form-input { min-height: 80px; resize: vertical; }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.category-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px;
+}
+.category-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--border); cursor: pointer;
+  font-size: 12px; transition: var(--transition);
+  background: transparent;
+}
+.category-option:hover { border-color: var(--border-strong); }
+.category-option.selected { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.category-option .cat-emoji { font-size: 16px; }
+
+.status-toggle { display: flex; gap: 8px; }
+.status-option {
+  flex: 1; padding: 10px; border-radius: var(--radius);
+  border: 1px solid var(--border); cursor: pointer;
+  text-align: center; font-size: 13px; font-weight: 500;
+  transition: var(--transition); background: transparent;
+  color: var(--text-secondary); font-family: var(--font-body);
+}
+.status-option.selected { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+
+.star-rating { display: flex; gap: 4px; }
+.star-rating .star {
+  font-size: 24px; cursor: pointer; color: var(--bg-tertiary);
+  transition: var(--transition); user-select: none;
+}
+.star-rating .star.filled { color: var(--accent); }
+.star-rating .star:hover { color: var(--accent-glow); }
+
+.people-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.people-tag {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 16px;
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 12px; font-weight: 500;
+}
+.people-tag .remove-tag {
+  cursor: pointer; font-size: 14px; opacity: 0.7;
+  transition: var(--transition);
+}
+.people-tag .remove-tag:hover { opacity: 1; }
+
+.visits-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.visit-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: var(--radius);
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+}
+.visit-item input { flex: 1; }
+.visit-item .remove-visit {
+  color: var(--danger); cursor: pointer; font-size: 16px;
+  opacity: 0.6; transition: var(--transition);
+}
+.visit-item .remove-visit:hover { opacity: 1; }
+
+.add-small-btn {
+  padding: 5px 12px; border-radius: var(--radius);
+  border: 1px dashed var(--border); background: transparent;
+  color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; transition: var(--transition);
+  font-family: var(--font-body);
+}
+.add-small-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.modal-footer {
+  padding: 0 24px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.btn {
+  padding: 10px 20px; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: var(--transition); border: none;
+  font-family: var(--font-body);
+}
+.btn-primary { background: var(--accent); color: var(--bg-primary); }
+.btn-primary:hover { background: #e5ad3b; }
+.btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--border-strong); }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+.btn-danger:hover { background: rgba(239,68,68,0.1); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* APPROVAL VIEW                                              */
+/* ═══════════════════════════════════════════════════════════ */
+#approval-view {
+  flex-direction: column; background: var(--bg-primary);
+  overflow-y: auto; padding: 24px;
+}
+
+.approval-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.approval-header h1 { font-family: var(--font-display); font-size: 28px; }
+.approval-count {
+  background: var(--danger); color: white; padding: 4px 12px;
+  border-radius: 16px; font-size: 13px; font-weight: 600;
+}
+
+.approval-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+.approval-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px; position: relative;
+  border-left: 4px solid var(--danger);
+  transition: var(--transition);
+}
+.approval-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+.approval-card h3 { font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+.approval-card .addr { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.approval-suggestion {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px; border-radius: var(--radius);
+  background: var(--accent-dim); margin-bottom: 12px;
+}
+.approval-suggestion .sugg-emoji { font-size: 20px; }
+.approval-suggestion .sugg-text { font-size: 12px; color: var(--accent); }
+.approval-suggestion .sugg-conf {
+  margin-left: auto; font-size: 11px;
+  color: var(--text-muted); font-weight: 500;
+}
+.approval-actions { display: flex; gap: 8px; }
+.approval-actions .btn { flex: 1; padding: 8px; font-size: 12px; }
+
+.bulk-actions {
+  display: flex; gap: 8px; align-items: center;
+}
+
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state h3 { font-family: var(--font-display); color: var(--text-secondary); margin-bottom: 8px; }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* STATISTICS VIEW                                            */
+/* ═══════════════════════════════════════════════════════════ */
+#stats-view {
+  flex-direction: column; background: var(--bg-primary);
+  overflow-y: auto; padding: 24px;
+}
+.stats-header {
+  margin-bottom: 24px;
+}
+.stats-header h1 { font-family: var(--font-display); font-size: 28px; margin-bottom: 4px; }
+.stats-header p { color: var(--text-muted); font-size: 14px; }
+
+.stats-top-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px;
+  text-align: center;
+}
+.stat-card .stat-value {
+  font-family: var(--font-display); font-size: 32px;
+  font-weight: 700; color: var(--accent);
+}
+.stat-card .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) { .stats-grid { grid-template-columns: 1fr; } }
+
+.stats-panel {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px;
+}
+.stats-panel h3 {
+  font-family: var(--font-display); font-size: 16px;
+  margin-bottom: 16px; color: var(--text-primary);
+}
+.stats-panel canvas { width: 100% !important; max-height: 250px; }
+
+.category-stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.cat-stat-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.cat-stat-emoji { font-size: 28px; }
+.cat-stat-info { flex: 1; }
+.cat-stat-info .cat-stat-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.cat-stat-info .cat-stat-counts { font-size: 11px; color: var(--text-muted); }
+.cat-stat-bar {
+  height: 4px; border-radius: 2px; background: var(--bg-primary);
+  margin-top: 6px; overflow: hidden;
+}
+.cat-stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+
+.people-leaderboard { display: flex; flex-direction: column; gap: 8px; }
+.people-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: var(--radius);
+  background: var(--bg-tertiary);
+}
+.people-row .rank { font-family: var(--font-display); font-size: 16px; color: var(--accent); width: 24px; }
+.people-row .name { flex: 1; font-size: 13px; }
+.people-row .count { font-size: 12px; color: var(--text-muted); }
+
+.top-rated-list { display: flex; flex-direction: column; gap: 6px; }
+.top-rated-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: var(--radius);
+}
+.top-rated-item:hover { background: var(--bg-tertiary); }
+.top-rated-item .tr-emoji { font-size: 18px; }
+.top-rated-item .tr-name { flex: 1; font-size: 13px; }
+.top-rated-item .tr-rating { color: var(--accent); font-weight: 600; font-size: 13px; }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* CHRONOLOGY VIEW                                            */
+/* ═══════════════════════════════════════════════════════════ */
+#chrono-view {
+  flex-direction: column; background: var(--bg-primary);
+  overflow-y: auto; padding: 24px;
+}
+.chrono-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.chrono-header h1 { font-family: var(--font-display); font-size: 28px; }
+.chrono-filters { display: flex; gap: 8px; }
+.chrono-filters select {
+  padding: 6px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-tertiary);
+  color: var(--text-primary); font-size: 12px;
+  font-family: var(--font-body); cursor: pointer;
+}
+
+.timeline { position: relative; padding-left: 40px; }
+.timeline::before {
+  content: ''; position: absolute; left: 18px; top: 0; bottom: 0;
+  width: 2px; background: var(--border);
+}
+.timeline-year {
+  font-family: var(--font-display); font-size: 22px;
+  color: var(--accent); margin: 24px 0 12px;
+  position: relative;
+}
+.timeline-year::before {
+  content: ''; position: absolute; left: -26px; top: 50%;
+  transform: translateY(-50%);
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg-primary);
+}
+.timeline-item {
+  position: relative; margin-bottom: 12px;
+  padding: 14px 18px; border-radius: var(--radius-lg);
+  background: var(--bg-card); border: 1px solid var(--border);
+  cursor: pointer; transition: var(--transition);
+}
+.timeline-item:hover { border-color: var(--border-strong); transform: translateX(4px); }
+.timeline-item::before {
+  content: ''; position: absolute; left: -28px; top: 18px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted); border: 2px solid var(--bg-primary);
+}
+.timeline-item .ti-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.timeline-item .ti-emoji { font-size: 18px; }
+.timeline-item .ti-name { font-size: 14px; font-weight: 500; }
+.timeline-item .ti-date { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.timeline-item .ti-bottom { display: flex; gap: 8px; }
+.timeline-item .ti-trip {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  background: var(--accent-dim); color: var(--accent);
+}
+.timeline-item .ti-people { font-size: 11px; color: var(--text-muted); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* IMPORT VIEW                                                */
+/* ═══════════════════════════════════════════════════════════ */
+#import-view {
+  flex-direction: column; background: var(--bg-primary);
+  overflow-y: auto; padding: 24px;
+}
+.import-header { margin-bottom: 24px; }
+.import-header h1 { font-family: var(--font-display); font-size: 28px; margin-bottom: 4px; }
+.import-header p { color: var(--text-muted); font-size: 14px; }
+
+.import-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .import-sections { grid-template-columns: 1fr; } }
+
+.import-section {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px;
+}
+.import-section h3 {
+  font-family: var(--font-display); font-size: 18px;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: var(--radius-lg);
+  padding: 40px 20px; text-align: center;
+  transition: var(--transition); cursor: pointer;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+.drop-zone .dz-icon { font-size: 36px; margin-bottom: 8px; }
+.drop-zone .dz-text { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+.drop-zone .dz-formats { font-size: 11px; color: var(--text-muted); }
+.drop-zone input[type="file"] { display: none; }
+
+.sync-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px; border-radius: var(--radius);
+  background: var(--bg-tertiary); margin-bottom: 16px;
+}
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.sync-dot.connected { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.4); }
+.sync-dot.disconnected { background: var(--text-muted); }
+.sync-info { flex: 1; }
+.sync-info .sync-label { font-size: 13px; font-weight: 500; }
+.sync-info .sync-time { font-size: 11px; color: var(--text-muted); }
+
+.import-preview {
+  margin-top: 16px; display: none;
+}
+.import-preview.active { display: block; }
+.import-preview h4 { font-size: 14px; margin-bottom: 12px; color: var(--text-secondary); }
+.import-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.import-table th {
+  text-align: left; padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;
+}
+.import-table td {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.import-table tr:hover td { background: var(--bg-tertiary); }
+
+.import-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* CONTEXT MENU (right-click to add pin)                      */
+/* ═══════════════════════════════════════════════════════════ */
+.context-menu {
+  position: fixed; z-index: 3000;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: 6px; min-width: 180px; display: none;
+}
+.context-menu.open { display: block; }
+.context-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--text-secondary);
+  transition: var(--transition);
+}
+.context-menu-item:hover { background: var(--accent-dim); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* RESPONSIVE                                                  */
+/* ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  #sidebar { width: 280px; }
+  .sidebar-toggle { left: 280px; }
+  #sidebar.collapsed ~ .sidebar-toggle { left: 0; }
+  .nav-tab span.tab-label { display: none; }
+  .modal { width: 95vw; }
+  .stats-top-row { grid-template-columns: repeat(2, 1fr); }
+  .category-stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* ANIMATIONS                                                  */
+/* ═══════════════════════════════════════════════════════════ */
+@keyframes stagger-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger > * {
+  animation: stagger-in 0.4s ease both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger > *:nth-child(6) { animation-delay: 0.3s; }
+.stagger > *:nth-child(7) { animation-delay: 0.35s; }
+.stagger > *:nth-child(8) { animation-delay: 0.4s; }
+
+/* Noise texture overlay */
+.noise-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+</style>
+</head>
+<body>
+
+<div class="noise-overlay"></div>
+
+<!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
+<header id="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="12" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6 14c0-4 3.5-8 8-8s8 4 8 8-3.5 8-8 8-8-4-8-8z" stroke="currentColor" stroke-width="1" opacity="0.5"/>
+      <circle cx="14" cy="14" r="3" fill="currentColor"/>
+      <path d="M14 2v4M14 22v4M2 14h4M22 14h4" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+    </svg>
+    History Map
+  </div>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-view="map-view" onclick="switchView('map-view')">
+      🗺️ <span class="tab-label">Map</span>
+    </button>
+    <button class="nav-tab" data-view="approval-view" onclick="switchView('approval-view')">
+      📋 <span class="tab-label">Approval</span>
+      <span class="badge" id="approval-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-tab" data-view="stats-view" onclick="switchView('stats-view')">
+      📊 <span class="tab-label">Stats</span>
+    </button>
+    <button class="nav-tab" data-view="chrono-view" onclick="switchView('chrono-view')">
+      📅 <span class="tab-label">Chronology</span>
+    </button>
+    <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
+      📥 <span class="tab-label">Import</span>
+    </button>
+  </nav>
+
+  <div class="topbar-actions">
+    <button class="btn-icon" onclick="exportData()" title="Export Data">💾</button>
+    <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">🌙</button>
+  </div>
+</header>
+
+<!-- ═══════════════════════ MAP VIEW ═══════════════════════ -->
+<div id="app">
+  <div class="view active" id="map-view">
+    <div id="map"></div>
+  </div>
+
+  <!-- FILTER SIDEBAR -->
+  <aside id="sidebar">
+    <div class="filter-section">
+      <h4>Status <span class="clear-btn" onclick="clearStatusFilter()">clear</span></h4>
+      <div class="filter-group">
+        <button class="filter-group-btn active" data-status="all" onclick="setStatusFilter('all', this)">All</button>
+        <button class="filter-group-btn" data-status="been" onclick="setStatusFilter('been', this)">✅ Been</button>
+        <button class="filter-group-btn" data-status="bucket" onclick="setStatusFilter('bucket', this)">⭐ Bucket</button>
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <h4>Categories <span class="clear-btn" onclick="clearCategoryFilter()">clear all</span></h4>
+      <div class="filter-chips" id="category-filters"></div>
+    </div>
+
+    <div class="filter-section">
+      <h4>Trip</h4>
+      <select class="filter-select" id="trip-filter" onchange="applyFilters()">
+        <option value="">All Trips</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <h4>People</h4>
+      <select class="filter-select" id="people-filter" onchange="applyFilters()">
+        <option value="">Everyone</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <h4>My Rating</h4>
+      <div class="rating-filter">
+        <label>Min</label>
+        <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" oninput="document.getElementById('rating-value').textContent=this.value;applyFilters()">
+        <span class="rating-value" id="rating-value">0</span>
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <h4>Heatmap</h4>
+      <div class="heatmap-toggle" id="heatmap-toggle" onclick="toggleHeatmap()">
+        <div class="toggle-switch"></div>
+        <span>Show heat overlay</span>
+      </div>
+    </div>
+
+    <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
+  </aside>
+
+  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">◀</button>
+
+  <!-- APPROVAL VIEW -->
+  <div class="view" id="approval-view">
+    <div class="approval-header">
+      <h1>Approval Queue</h1>
+      <div class="bulk-actions">
+        <span class="approval-count" id="approval-count-label">0 pending</span>
+        <button class="btn btn-primary" onclick="bulkApprove()" id="bulk-approve-btn">Approve All Suggestions</button>
+      </div>
+    </div>
+    <div id="approval-list" class="approval-grid"></div>
+  </div>
+
+  <!-- STATISTICS VIEW -->
+  <div class="view" id="stats-view">
+    <div class="stats-header">
+      <h1>Your Journey in Numbers</h1>
+      <p>A snapshot of everywhere you've been and everywhere you dream of going.</p>
+    </div>
+
+    <div class="stats-top-row stagger" id="stats-top-cards"></div>
+
+    <h3 style="font-family:var(--font-display);margin-bottom:16px;">Per Category</h3>
+    <div class="category-stats-grid stagger" id="category-stats"></div>
+
+    <div class="stats-grid">
+      <div class="stats-panel">
+        <h3>Rating Distribution</h3>
+        <canvas id="chart-ratings"></canvas>
+      </div>
+      <div class="stats-panel">
+        <h3>Activity Over Time</h3>
+        <canvas id="chart-activity"></canvas>
+      </div>
+      <div class="stats-panel">
+        <h3>Top Rated Places</h3>
+        <div id="top-rated-list" class="top-rated-list"></div>
+      </div>
+      <div class="stats-panel">
+        <h3>Most Traveled With</h3>
+        <div id="people-leaderboard" class="people-leaderboard"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHRONOLOGY VIEW -->
+  <div class="view" id="chrono-view">
+    <div class="chrono-header">
+      <h1>Chronology</h1>
+      <div class="chrono-filters">
+        <select id="chrono-year" onchange="renderChronology()"><option value="">All Years</option></select>
+        <select id="chrono-cat" onchange="renderChronology()"><option value="">All Categories</option></select>
+        <select id="chrono-trip" onchange="renderChronology()"><option value="">All Trips</option></select>
+      </div>
+    </div>
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <!-- IMPORT VIEW -->
+  <div class="view" id="import-view">
+    <div class="import-header">
+      <h1>Import & Sync</h1>
+      <p>Bring in your location data from various sources.</p>
+    </div>
+    <div class="import-sections">
+      <div class="import-section">
+        <h3>📁 File Import</h3>
+        <div class="drop-zone" id="drop-zone">
+          <div class="dz-icon">📂</div>
+          <div class="dz-text">Drag & drop files here or click to browse</div>
+          <div class="dz-formats">Supports CSV, JSON, KML, GeoJSON</div>
+          <input type="file" id="file-input" accept=".csv,.json,.kml,.geojson,.kmz" multiple>
+        </div>
+        <div class="import-preview" id="import-preview">
+          <h4>Preview (<span id="import-count">0</span> locations)</h4>
+          <div style="max-height:300px;overflow:auto;">
+            <table class="import-table">
+              <thead><tr><th>Name</th><th>Category</th><th>Lat</th><th>Lng</th><th>Status</th></tr></thead>
+              <tbody id="import-tbody"></tbody>
+            </table>
+          </div>
+          <div class="import-actions">
+            <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmImport()">Import All</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="import-section">
+        <h3>🔄 Google Maps Sync</h3>
+        <div class="sync-status">
+          <div class="sync-dot disconnected" id="sync-dot"></div>
+          <div class="sync-info">
+            <div class="sync-label" id="sync-label">Not Connected</div>
+            <div class="sync-time" id="sync-time">Connect to start syncing</div>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+          Google Maps Takeout integration: export your saved places from Google Takeout and import the JSON file above.
+          New locations will be flagged for categorization in the Approval tab.
+        </p>
+        <button class="btn btn-secondary" onclick="simulateGoogleSync()" style="width:100%;">
+          🔄 Simulate Google Maps Sync
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ EDIT MODAL ═══════════════════════ -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Add Location</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" class="form-input" id="loc-name" placeholder="Location name">
+        </div>
+        <div class="form-group">
+          <label>Address</label>
+          <input type="text" class="form-input" id="loc-address" placeholder="Address or city">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Latitude</label>
+          <input type="number" class="form-input" id="loc-lat" step="any" placeholder="0.0">
+        </div>
+        <div class="form-group">
+          <label>Longitude</label>
+          <input type="number" class="form-input" id="loc-lng" step="any" placeholder="0.0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Category</label>
+        <div class="category-grid" id="modal-categories"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Status</label>
+        <div class="status-toggle">
+          <button class="status-option selected" data-status="been" onclick="selectStatus('been', this)">✅ Been There</button>
+          <button class="status-option" data-status="bucket" onclick="selectStatus('bucket', this)">⭐ Bucket List</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Google Maps Rating</label>
+          <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="4.5" readonly style="opacity:0.6">
+        </div>
+        <div class="form-group">
+          <label>My Rating</label>
+          <div class="star-rating" id="my-rating">
+            <span class="star" data-val="1" onclick="setRating(1)">★</span>
+            <span class="star" data-val="2" onclick="setRating(2)">★</span>
+            <span class="star" data-val="3" onclick="setRating(3)">★</span>
+            <span class="star" data-val="4" onclick="setRating(4)">★</span>
+            <span class="star" data-val="5" onclick="setRating(5)">★</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Trip</label>
+        <div style="display:flex;gap:8px;">
+          <select class="filter-select" id="loc-trip" style="flex:1;">
+            <option value="">No trip</option>
+          </select>
+          <button class="add-small-btn" onclick="promptNewTrip()">+ New</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>People</label>
+        <div class="people-tags" id="loc-people-tags"></div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="form-input" id="loc-person-input" placeholder="Add a person" style="flex:1;"
+            onkeydown="if(event.key==='Enter'){addPerson(); event.preventDefault();}">
+          <button class="add-small-btn" onclick="addPerson()">Add</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Visits</label>
+        <div class="visits-list" id="loc-visits"></div>
+        <button class="add-small-btn" onclick="addVisitField()">+ Add Visit</button>
+      </div>
+
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea class="form-input" id="loc-notes" placeholder="Your notes, memories, thoughts..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="delete-loc-btn" onclick="deleteLocation()" style="display:none">Delete</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveLocation()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div class="context-menu" id="context-menu">
+  <div class="context-menu-item" onclick="addPinHere()">📌 Add location here</div>
+</div>
+
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* DATA MODEL & CONSTANTS                                                */
+/* ═══════════════════════════════════════════════════════════════════════ */
+const CATEGORIES = {
+  restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)' },
+  hotel:      { emoji: '🛏️', label: 'Hotel / Sleep', color: 'var(--cat-hotel)' },
+  bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)' },
+  club:       { emoji: '🪩', label: 'Club', color: 'var(--cat-club)' },
+  monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)' },
+  unesco:     { emoji: '🏰', label: 'UNESCO Site', color: 'var(--cat-unesco)' },
+  park:       { emoji: '🌿', label: 'Natural Park', color: 'var(--cat-park)' },
+  stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)' },
+  event:      { emoji: '🎪', label: 'Event', color: 'var(--cat-event)' },
+  location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)' },
+  airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)' },
+  entertainment: { emoji: '🎭', label: 'Entertainment', color: 'var(--cat-entertainment)' },
+  shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)' },
+  cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)' },
+};
+
+let state = {
+  locations: [],
+  trips: [],
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0 },
+  editingId: null,
+  modalPeople: [],
+  modalVisits: [],
+  modalRating: 0,
+  modalCategory: '',
+  modalStatus: 'been',
+  heatmapOn: false,
+  pendingImport: [],
+  contextMenuLatLng: null,
+};
+
+let map, markersLayer, heatLayer;
+let chartRatings, chartActivity;
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* STORAGE                                                               */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function save() {
+  localStorage.setItem('hm_locations', JSON.stringify(state.locations));
+  localStorage.setItem('hm_trips', JSON.stringify(state.trips));
+}
+function load() {
+  try {
+    const locs = localStorage.getItem('hm_locations');
+    const trips = localStorage.getItem('hm_trips');
+    if (locs) state.locations = JSON.parse(locs);
+    if (trips) state.trips = JSON.parse(trips);
+  } catch(e) { console.warn('Storage load failed:', e); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* SAMPLE DATA                                                           */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function generateSampleData() {
+  state.trips = [
+    { id: 't1', name: 'Portugal Summer 2024', startDate: '2024-07-10', endDate: '2024-07-24', color: '#ffc144' },
+    { id: 't2', name: 'Japan Golden Week 2023', startDate: '2023-04-28', endDate: '2023-05-07', color: '#f472b6' },
+    { id: 't3', name: 'NYC Weekend 2024', startDate: '2024-03-15', endDate: '2024-03-18', color: '#60a5fa' },
+    { id: 't4', name: 'Italy Road Trip 2022', startDate: '2022-09-01', endDate: '2022-09-14', color: '#4ade80' },
+  ];
+  state.locations = [
+    { id:'l1', name:'Time Out Market', address:'Lisbon, Portugal', lat:38.7068, lng:-9.1453, category:'restaurant', status:'been', googleRating:4.4, myRating:5, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-12',notes:'Amazing seafood!'}], notes:'Best food hall in Europe', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-12' },
+    { id:'l2', name:'Tsukiji Outer Market', address:'Tokyo, Japan', lat:35.6654, lng:139.7707, category:'restaurant', status:'been', googleRating:4.5, myRating:5, tripId:'t2', people:['Yuki','Ana'], visits:[{date:'2023-04-29',notes:'Fresh sushi at 7am'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-29' },
+    { id:'l3', name:'Belém Tower', address:'Lisbon, Portugal', lat:38.6916, lng:-9.2160, category:'monument', status:'been', googleRating:4.6, myRating:4, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-14',notes:''}], notes:'Beautiful at sunset', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-14' },
+    { id:'l4', name:'Fushimi Inari Shrine', address:'Kyoto, Japan', lat:34.9671, lng:135.7727, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:'t2', people:['Yuki'], visits:[{date:'2023-05-02',notes:'Went early to avoid crowds'}], notes:'Thousands of torii gates', needsApproval:false, suggestedCategory:null, createdAt:'2023-05-02' },
+    { id:'l5', name:'Le Comptoir', address:'Paris, France', lat:48.8530, lng:2.3392, category:'restaurant', status:'bucket', googleRating:4.3, myRating:0, tripId:null, people:[], visits:[], notes:'Recommended by Pierre', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
+    { id:'l6', name:'Sintra National Palace', address:'Sintra, Portugal', lat:38.7976, lng:-9.3907, category:'unesco', status:'been', googleRating:4.5, myRating:5, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-16',notes:''}], notes:'Fairy tale palace', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-16' },
+    { id:'l7', name:'Brooklyn Bridge', address:'New York, USA', lat:40.7061, lng:-73.9969, category:'monument', status:'been', googleRating:4.7, myRating:4, tripId:'t3', people:['Carlos','Sofia'], visits:[{date:'2024-03-16',notes:'Walked across at night'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2024-03-16' },
+    { id:'l8', name:'Shibuya Crossing', address:'Tokyo, Japan', lat:35.6595, lng:139.7004, category:'location', status:'been', googleRating:4.5, myRating:4, tripId:'t2', people:['Yuki','Ana'], visits:[{date:'2023-04-30',notes:''}], notes:'Iconic', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-30' },
+    { id:'l9', name:'Berghain', address:'Berlin, Germany', lat:52.5112, lng:13.4432, category:'club', status:'bucket', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[], notes:'Legendary techno club', needsApproval:false, suggestedCategory:null, createdAt:'2024-02-01' },
+    { id:'l10', name:'Colosseum', address:'Rome, Italy', lat:41.8902, lng:12.4922, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:'t4', people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-03',notes:''}], notes:'Absolutely breathtaking', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-03' },
+    { id:'l11', name:'Narita Airport', address:'Tokyo, Japan', lat:35.7720, lng:140.3929, category:'airport', status:'been', googleRating:4.1, myRating:3, tripId:'t2', people:['Ana'], visits:[{date:'2023-04-28',notes:'Long immigration queue'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-28' },
+    { id:'l12', name:'Bar Lobo', address:'Barcelona, Spain', lat:41.3809, lng:2.1701, category:'bar', status:'been', googleRating:4.1, myRating:4, tripId:null, people:['Carlos'], visits:[{date:'2023-08-12',notes:''}], notes:'Great cocktails near La Rambla', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-12' },
+    { id:'l13', name:'Plitvice Lakes', address:'Croatia', lat:44.8654, lng:15.5820, category:'park', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Must visit in autumn', needsApproval:false, suggestedCategory:null, createdAt:'2024-06-01' },
+    { id:'l14', name:'Camp Nou', address:'Barcelona, Spain', lat:41.3809, lng:2.1228, category:'stadium', status:'been', googleRating:4.6, myRating:5, tripId:null, people:['Carlos','Marco'], visits:[{date:'2023-08-13',notes:'El Clásico!'}], notes:'Dream come true', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-13' },
+    { id:'l15', name:'Grand Bazaar', address:'Istanbul, Turkey', lat:41.0107, lng:28.9680, category:'shopping', status:'bucket', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[], notes:'Want to buy ceramics', needsApproval:false, suggestedCategory:null, createdAt:'2024-04-20' },
+    { id:'l16', name:'Tomorrowland', address:'Boom, Belgium', lat:51.0924, lng:4.3700, category:'event', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Get tickets early!', needsApproval:false, suggestedCategory:null, createdAt:'2024-05-10' },
+    { id:'l17', name:'Café de Flore', address:'Paris, France', lat:48.8541, lng:2.3326, category:'cafe', status:'bucket', googleRating:4.1, myRating:0, tripId:null, people:[], visits:[], notes:'Classic Parisian café', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
+    { id:'l18', name:'Pensão Amor', address:'Lisbon, Portugal', lat:38.7075, lng:-9.1448, category:'bar', status:'been', googleRating:4.3, myRating:4, tripId:'t1', people:['Ana','Marco'], visits:[{date:'2024-07-13',notes:'Amazing atmosphere'}], notes:'Former brothel turned bar', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-13' },
+    { id:'l19', name:'Pompei', address:'Naples, Italy', lat:40.7508, lng:14.4869, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:'t4', people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-06',notes:''}], notes:'Eerily preserved', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-06' },
+    // Approval items
+    { id:'l20', name:'Some Restaurant in Lisbon', address:'Lisbon, Portugal', lat:38.7167, lng:-9.1395, category:'location', status:'been', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[{date:'2024-07-15',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'restaurant', createdAt:'2024-07-15' },
+    { id:'l21', name:'Tokyo Tower Area', address:'Tokyo, Japan', lat:35.6586, lng:139.7454, category:'location', status:'been', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[{date:'2023-05-01',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'monument', createdAt:'2023-05-01' },
+    { id:'l22', name:'Central Park Jog', address:'New York, USA', lat:40.7829, lng:-73.9654, category:'location', status:'been', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[{date:'2024-03-17',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'park', createdAt:'2024-03-17' },
+  ];
+  save();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* MAP INITIALIZATION                                                    */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function initMap() {
+  map = L.map('map', {
+    center: [30, 0], zoom: 3,
+    zoomControl: true,
+    attributionControl: false,
+  });
+
+  // Dark tiles
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+  }).addTo(map);
+
+  markersLayer = L.markerClusterGroup({
+    maxClusterRadius: 40,
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      return L.divIcon({
+        html: `<div style="background:var(--accent);color:var(--bg-primary);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;font-family:var(--font-body);box-shadow:0 3px 12px rgba(0,0,0,0.4);">${count}</div>`,
+        className: '', iconSize: [36, 36]
+      });
+    }
+  });
+  map.addLayer(markersLayer);
+
+  heatLayer = L.heatLayer([], { radius: 25, blur: 20, maxZoom: 10, gradient: {0.4:'#0a0e17',0.6:'#ffc14466',0.8:'#ffc144',1:'#fff'} });
+
+  // Context menu
+  map.on('contextmenu', function(e) {
+    e.originalEvent.preventDefault();
+    state.contextMenuLatLng = e.latlng;
+    const cm = document.getElementById('context-menu');
+    cm.style.left = e.originalEvent.pageX + 'px';
+    cm.style.top = e.originalEvent.pageY + 'px';
+    cm.classList.add('open');
+  });
+
+  document.addEventListener('click', () => {
+    document.getElementById('context-menu').classList.remove('open');
+  });
+
+  renderMarkers();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* MARKERS                                                               */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function createMarkerIcon(loc) {
+  const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+  const cssColor = cat.color;
+  // Resolve CSS var to hex for border
+  const colorMap = {
+    'var(--cat-restaurant)':'#ff6b6b','var(--cat-hotel)':'#a78bfa','var(--cat-bar)':'#fb923c',
+    'var(--cat-club)':'#e879f9','var(--cat-monument)':'#fbbf24','var(--cat-unesco)':'#f59e0b',
+    'var(--cat-park)':'#4ade80','var(--cat-stadium)':'#60a5fa','var(--cat-event)':'#f472b6',
+    'var(--cat-location)':'#94a3b8','var(--cat-airport)':'#38bdf8','var(--cat-entertainment)':'#c084fc',
+    'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
+  };
+  const hex = colorMap[cssColor] || '#94a3b8';
+  const cls = loc.needsApproval ? 'needs-approval' : loc.status;
+  const bg = loc.status === 'been' ? hex + '22' : 'rgba(10,14,23,0.8)';
+
+  return L.divIcon({
+    className: '',
+    html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};">${cat.emoji}</div>`,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+    popupAnchor: [0, -22],
+  });
+}
+
+function createPopupContent(loc) {
+  const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+  const trip = state.trips.find(t => t.id === loc.tripId);
+  const visitDates = (loc.visits || []).map(v => v.date).filter(Boolean).join(', ');
+  const googleStars = loc.googleRating ? '⭐ ' + loc.googleRating : '—';
+  const myStars = loc.myRating ? '★ ' + loc.myRating + '/5' : '—';
+  const peopleTags = (loc.people || []).map(p => `<span class="popup-tag">${p}</span>`).join('');
+
+  return `<div class="popup-inner">
+    <h3>${cat.emoji} ${loc.name}</h3>
+    <div class="popup-cat">${cat.label} · ${loc.status === 'been' ? '✅ Been' : '⭐ Bucket List'}</div>
+    <div class="popup-ratings">
+      <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
+      <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
+    </div>
+    ${visitDates ? `<div class="popup-meta">📅 ${visitDates}</div>` : ''}
+    ${trip ? `<div class="popup-meta">🧳 ${trip.name}</div>` : ''}
+    ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
+    ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${loc.notes}</div>` : ''}
+    <button class="popup-btn" onclick="openEditModal('${loc.id}')">✏️ Edit Details</button>
+  </div>`;
+}
+
+function renderMarkers() {
+  markersLayer.clearLayers();
+  const filtered = getFilteredLocations();
+
+  filtered.forEach(loc => {
+    const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+    marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+    markersLayer.addLayer(marker);
+  });
+
+  // Heatmap
+  if (state.heatmapOn) {
+    const beenLocs = filtered.filter(l => l.status === 'been');
+    heatLayer.setLatLngs(beenLocs.map(l => [l.lat, l.lng, 1]));
+    if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+  } else {
+    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+  }
+}
+
+function getFilteredLocations() {
+  return state.locations.filter(loc => {
+    if (state.filters.status !== 'all' && loc.status !== state.filters.status) return false;
+    if (state.filters.categories.size > 0 && !state.filters.categories.has(loc.category)) return false;
+    if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
+    if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
+    if (state.filters.minRating > 0 && (loc.myRating || 0) < state.filters.minRating) return false;
+    return true;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* FILTERS                                                               */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function buildCategoryFilters() {
+  const container = document.getElementById('category-filters');
+  container.innerHTML = '';
+  Object.entries(CATEGORIES).forEach(([key, cat]) => {
+    const chip = document.createElement('button');
+    chip.className = 'filter-chip';
+    chip.dataset.cat = key;
+    chip.innerHTML = `<span class="chip-emoji">${cat.emoji}</span> ${cat.label}`;
+    chip.onclick = () => {
+      chip.classList.toggle('active');
+      if (state.filters.categories.has(key)) state.filters.categories.delete(key);
+      else state.filters.categories.add(key);
+      applyFilters();
+    };
+    container.appendChild(chip);
+  });
+}
+
+function setStatusFilter(status, btn) {
+  document.querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.filters.status = status;
+  applyFilters();
+}
+
+function clearStatusFilter() {
+  state.filters.status = 'all';
+  document.querySelectorAll('.filter-group-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.status === 'all');
+  });
+  applyFilters();
+}
+
+function clearCategoryFilter() {
+  state.filters.categories.clear();
+  document.querySelectorAll('#category-filters .filter-chip').forEach(c => c.classList.remove('active'));
+  applyFilters();
+}
+
+function populateFilterDropdowns() {
+  const tripSel = document.getElementById('trip-filter');
+  const tripOpts = '<option value="">All Trips</option>' +
+    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  tripSel.innerHTML = tripOpts;
+
+  const allPeople = new Set();
+  state.locations.forEach(l => (l.people || []).forEach(p => allPeople.add(p)));
+  const peopleSel = document.getElementById('people-filter');
+  peopleSel.innerHTML = '<option value="">Everyone</option>' +
+    [...allPeople].sort().map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function applyFilters() {
+  state.filters.trip = document.getElementById('trip-filter').value;
+  state.filters.person = document.getElementById('people-filter').value;
+  state.filters.minRating = parseFloat(document.getElementById('rating-filter').value);
+  renderMarkers();
+}
+
+function toggleHeatmap() {
+  state.heatmapOn = !state.heatmapOn;
+  document.getElementById('heatmap-toggle').classList.toggle('active', state.heatmapOn);
+  renderMarkers();
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('sidebar-toggle').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  setTimeout(() => map.invalidateSize(), 350);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* VIEW SWITCHING                                                        */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function switchView(viewId) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(viewId).classList.add('active');
+  document.querySelector(`[data-view="${viewId}"]`).classList.add('active');
+
+  const showSidebar = viewId === 'map-view';
+  document.getElementById('sidebar').style.display = showSidebar ? '' : 'none';
+  document.getElementById('sidebar-toggle').style.display = showSidebar ? '' : 'none';
+
+  if (viewId === 'map-view') setTimeout(() => map.invalidateSize(), 100);
+  if (viewId === 'approval-view') renderApproval();
+  if (viewId === 'stats-view') renderStats();
+  if (viewId === 'chrono-view') renderChronology();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* MODAL                                                                 */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function buildModalCategories() {
+  const grid = document.getElementById('modal-categories');
+  grid.innerHTML = '';
+  Object.entries(CATEGORIES).forEach(([key, cat]) => {
+    const opt = document.createElement('div');
+    opt.className = 'category-option';
+    opt.dataset.cat = key;
+    opt.innerHTML = `<span class="cat-emoji">${cat.emoji}</span> ${cat.label}`;
+    opt.onclick = () => {
+      document.querySelectorAll('.category-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      state.modalCategory = key;
+    };
+    grid.appendChild(opt);
+  });
+}
+
+function populateModalTrips() {
+  const sel = document.getElementById('loc-trip');
+  sel.innerHTML = '<option value="">No trip</option>' +
+    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+}
+
+function openAddModal(lat, lng) {
+  state.editingId = null;
+  state.modalPeople = [];
+  state.modalVisits = [];
+  state.modalRating = 0;
+  state.modalCategory = '';
+  state.modalStatus = 'been';
+
+  document.getElementById('modal-title').textContent = 'Add Location';
+  document.getElementById('delete-loc-btn').style.display = 'none';
+  document.getElementById('loc-name').value = '';
+  document.getElementById('loc-address').value = '';
+  document.getElementById('loc-lat').value = lat || '';
+  document.getElementById('loc-lng').value = lng || '';
+  document.getElementById('loc-google-rating').value = '';
+  document.getElementById('loc-notes').value = '';
+  document.getElementById('loc-trip').value = '';
+
+  document.querySelectorAll('.category-option').forEach(o => o.classList.remove('selected'));
+  document.querySelectorAll('.status-option').forEach(o => {
+    o.classList.toggle('selected', o.dataset.status === 'been');
+  });
+  updateStars(0);
+  renderPeopleTags();
+  renderVisitFields();
+  populateModalTrips();
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const loc = state.locations.find(l => l.id === id);
+  if (!loc) return;
+
+  state.editingId = id;
+  state.modalPeople = [...(loc.people || [])];
+  state.modalVisits = [...(loc.visits || [])];
+  state.modalRating = loc.myRating || 0;
+  state.modalCategory = loc.category;
+  state.modalStatus = loc.status;
+
+  document.getElementById('modal-title').textContent = 'Edit Location';
+  document.getElementById('delete-loc-btn').style.display = '';
+  document.getElementById('loc-name').value = loc.name;
+  document.getElementById('loc-address').value = loc.address || '';
+  document.getElementById('loc-lat').value = loc.lat;
+  document.getElementById('loc-lng').value = loc.lng;
+  document.getElementById('loc-google-rating').value = loc.googleRating || '';
+  document.getElementById('loc-notes').value = loc.notes || '';
+
+  populateModalTrips();
+  document.getElementById('loc-trip').value = loc.tripId || '';
+
+  document.querySelectorAll('.category-option').forEach(o => {
+    o.classList.toggle('selected', o.dataset.cat === loc.category);
+  });
+  document.querySelectorAll('.status-option').forEach(o => {
+    o.classList.toggle('selected', o.dataset.status === loc.status);
+  });
+  updateStars(state.modalRating);
+  renderPeopleTags();
+  renderVisitFields();
+
+  // Close any popup
+  map.closePopup();
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+}
+
+function selectStatus(status, btn) {
+  state.modalStatus = status;
+  document.querySelectorAll('.status-option').forEach(o => o.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function setRating(val) {
+  state.modalRating = val;
+  updateStars(val);
+}
+function updateStars(val) {
+  document.querySelectorAll('#my-rating .star').forEach(s => {
+    s.classList.toggle('filled', parseInt(s.dataset.val) <= val);
+  });
+}
+
+function renderPeopleTags() {
+  const container = document.getElementById('loc-people-tags');
+  container.innerHTML = state.modalPeople.map((p, i) =>
+    `<span class="people-tag">${p}<span class="remove-tag" onclick="removePerson(${i})">&times;</span></span>`
+  ).join('');
+}
+function addPerson() {
+  const input = document.getElementById('loc-person-input');
+  const name = input.value.trim();
+  if (name && !state.modalPeople.includes(name)) {
+    state.modalPeople.push(name);
+    renderPeopleTags();
+  }
+  input.value = '';
+}
+function removePerson(i) {
+  state.modalPeople.splice(i, 1);
+  renderPeopleTags();
+}
+
+function renderVisitFields() {
+  const container = document.getElementById('loc-visits');
+  container.innerHTML = state.modalVisits.map((v, i) =>
+    `<div class="visit-item">
+      <input type="date" class="form-input" value="${v.date || ''}" onchange="state.modalVisits[${i}].date=this.value" style="flex:1;">
+      <input type="text" class="form-input" value="${v.notes || ''}" placeholder="Notes" onchange="state.modalVisits[${i}].notes=this.value" style="flex:2;">
+      <span class="remove-visit" onclick="removeVisit(${i})">&times;</span>
+    </div>`
+  ).join('');
+}
+function addVisitField() {
+  state.modalVisits.push({ date: '', notes: '' });
+  renderVisitFields();
+}
+function removeVisit(i) {
+  state.modalVisits.splice(i, 1);
+  renderVisitFields();
+}
+
+function saveLocation() {
+  const name = document.getElementById('loc-name').value.trim();
+  const lat = parseFloat(document.getElementById('loc-lat').value);
+  const lng = parseFloat(document.getElementById('loc-lng').value);
+  if (!name || isNaN(lat) || isNaN(lng)) {
+    alert('Please fill in name, latitude and longitude.');
+    return;
+  }
+
+  const data = {
+    name,
+    address: document.getElementById('loc-address').value.trim(),
+    lat, lng,
+    category: state.modalCategory || 'location',
+    status: state.modalStatus,
+    googleRating: parseFloat(document.getElementById('loc-google-rating').value) || null,
+    myRating: state.modalRating,
+    tripId: document.getElementById('loc-trip').value || null,
+    people: [...state.modalPeople],
+    visits: state.modalVisits.filter(v => v.date),
+    notes: document.getElementById('loc-notes').value.trim(),
+    needsApproval: false,
+    suggestedCategory: null,
+  };
+
+  if (state.editingId) {
+    const idx = state.locations.findIndex(l => l.id === state.editingId);
+    if (idx >= 0) {
+      state.locations[idx] = { ...state.locations[idx], ...data };
+    }
+  } else {
+    data.id = 'l' + Date.now();
+    data.createdAt = new Date().toISOString().split('T')[0];
+    state.locations.push(data);
+  }
+
+  save();
+  closeModal();
+  renderMarkers();
+  populateFilterDropdowns();
+  updateApprovalBadge();
+}
+
+function deleteLocation() {
+  if (!state.editingId) return;
+  if (!confirm('Delete this location?')) return;
+  state.locations = state.locations.filter(l => l.id !== state.editingId);
+  save();
+  closeModal();
+  renderMarkers();
+  populateFilterDropdowns();
+  updateApprovalBadge();
+}
+
+function promptNewTrip() {
+  const name = prompt('Trip name:');
+  if (!name) return;
+  const start = prompt('Start date (YYYY-MM-DD):');
+  const end = prompt('End date (YYYY-MM-DD):');
+  const trip = {
+    id: 't' + Date.now(),
+    name,
+    startDate: start || '',
+    endDate: end || '',
+    color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),
+  };
+  state.trips.push(trip);
+  save();
+  populateModalTrips();
+  document.getElementById('loc-trip').value = trip.id;
+  populateFilterDropdowns();
+}
+
+function addPinHere() {
+  if (state.contextMenuLatLng) {
+    openAddModal(state.contextMenuLatLng.lat.toFixed(6), state.contextMenuLatLng.lng.toFixed(6));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* APPROVAL                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function updateApprovalBadge() {
+  const count = state.locations.filter(l => l.needsApproval).length;
+  const badge = document.getElementById('approval-badge');
+  badge.textContent = count;
+  badge.style.display = count > 0 ? '' : 'none';
+}
+
+function renderApproval() {
+  const pending = state.locations.filter(l => l.needsApproval);
+  const container = document.getElementById('approval-list');
+  document.getElementById('approval-count-label').textContent = pending.length + ' pending';
+  document.getElementById('bulk-approve-btn').style.display = pending.length > 0 ? '' : 'none';
+
+  if (pending.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+      <div class="empty-icon">✅</div>
+      <h3>All Caught Up</h3>
+      <p>No locations need categorization. Sync with Google Maps to bring in new places.</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = pending.map(loc => {
+    const suggested = CATEGORIES[loc.suggestedCategory] || CATEGORIES.location;
+    return `<div class="approval-card">
+      <h3>${loc.name}</h3>
+      <div class="addr">${loc.address}</div>
+      <div class="approval-suggestion">
+        <span class="sugg-emoji">${suggested.emoji}</span>
+        <span class="sugg-text">Suggested: <strong>${suggested.label}</strong></span>
+        <span class="sugg-conf">87%</span>
+      </div>
+      <div class="approval-actions">
+        <button class="btn btn-primary" onclick="approveLocation('${loc.id}')">✅ Approve</button>
+        <button class="btn btn-secondary" onclick="openEditModal('${loc.id}')">✏️ Edit</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function approveLocation(id) {
+  const loc = state.locations.find(l => l.id === id);
+  if (!loc) return;
+  if (loc.suggestedCategory) loc.category = loc.suggestedCategory;
+  loc.needsApproval = false;
+  loc.suggestedCategory = null;
+  save();
+  renderApproval();
+  updateApprovalBadge();
+  renderMarkers();
+}
+
+function bulkApprove() {
+  state.locations.forEach(loc => {
+    if (loc.needsApproval) {
+      if (loc.suggestedCategory) loc.category = loc.suggestedCategory;
+      loc.needsApproval = false;
+      loc.suggestedCategory = null;
+    }
+  });
+  save();
+  renderApproval();
+  updateApprovalBadge();
+  renderMarkers();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* STATISTICS                                                            */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function renderStats() {
+  const locs = state.locations.filter(l => !l.needsApproval);
+  const been = locs.filter(l => l.status === 'been');
+  const bucket = locs.filter(l => l.status === 'bucket');
+
+  // Top cards
+  const countries = new Set(locs.map(l => (l.address || '').split(',').pop().trim()).filter(Boolean));
+  document.getElementById('stats-top-cards').innerHTML = [
+    { value: been.length, label: 'Places Visited' },
+    { value: bucket.length, label: 'Bucket List' },
+    { value: countries.size, label: 'Countries' },
+    { value: state.trips.length, label: 'Trips' },
+    { value: been.filter(l => l.myRating).length ? (been.filter(l=>l.myRating).reduce((a,l)=>a+l.myRating,0)/been.filter(l=>l.myRating).length).toFixed(1) : '—', label: 'Avg Rating' },
+    { value: new Set(locs.flatMap(l => l.people || [])).size, label: 'Travel Buddies' },
+  ].map(s => `<div class="stat-card"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join('');
+
+  // Per category
+  document.getElementById('category-stats').innerHTML = Object.entries(CATEGORIES).map(([key, cat]) => {
+    const catLocs = locs.filter(l => l.category === key);
+    const catBeen = catLocs.filter(l => l.status === 'been').length;
+    const catBucket = catLocs.filter(l => l.status === 'bucket').length;
+    const total = catBeen + catBucket;
+    const pct = total > 0 ? Math.round(catBeen / total * 100) : 0;
+    const avgRating = catLocs.filter(l=>l.myRating).length ?
+      (catLocs.filter(l=>l.myRating).reduce((a,l)=>a+l.myRating,0)/catLocs.filter(l=>l.myRating).length).toFixed(1) : '—';
+    const colorMap = {
+      'var(--cat-restaurant)':'#ff6b6b','var(--cat-hotel)':'#a78bfa','var(--cat-bar)':'#fb923c',
+      'var(--cat-club)':'#e879f9','var(--cat-monument)':'#fbbf24','var(--cat-unesco)':'#f59e0b',
+      'var(--cat-park)':'#4ade80','var(--cat-stadium)':'#60a5fa','var(--cat-event)':'#f472b6',
+      'var(--cat-location)':'#94a3b8','var(--cat-airport)':'#38bdf8','var(--cat-entertainment)':'#c084fc',
+      'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
+    };
+    const hex = colorMap[cat.color] || '#94a3b8';
+    if (total === 0) return '';
+    return `<div class="cat-stat-card">
+      <span class="cat-stat-emoji">${cat.emoji}</span>
+      <div class="cat-stat-info">
+        <div class="cat-stat-name">${cat.label}</div>
+        <div class="cat-stat-counts">${catBeen} visited · ${catBucket} bucket · avg ${avgRating}★</div>
+        <div class="cat-stat-bar"><div class="cat-stat-bar-fill" style="width:${pct}%;background:${hex}"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Top rated
+  const topRated = [...been].filter(l => l.myRating).sort((a,b) => b.myRating - a.myRating).slice(0, 8);
+  document.getElementById('top-rated-list').innerHTML = topRated.map(l => {
+    const cat = CATEGORIES[l.category] || CATEGORIES.location;
+    return `<div class="top-rated-item">
+      <span class="tr-emoji">${cat.emoji}</span>
+      <span class="tr-name">${l.name}</span>
+      <span class="tr-rating">★ ${l.myRating}</span>
+    </div>`;
+  }).join('') || '<p style="color:var(--text-muted);font-size:13px;">No ratings yet</p>';
+
+  // People leaderboard
+  const peopleCounts = {};
+  been.forEach(l => (l.people || []).forEach(p => { peopleCounts[p] = (peopleCounts[p]||0) + 1; }));
+  const peopleRanked = Object.entries(peopleCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+  document.getElementById('people-leaderboard').innerHTML = peopleRanked.map(([name, count], i) =>
+    `<div class="people-row"><span class="rank">${i+1}</span><span class="name">${name}</span><span class="count">${count} places</span></div>`
+  ).join('') || '<p style="color:var(--text-muted);font-size:13px;">No travel companions recorded</p>';
+
+  // Charts
+  renderCharts(been);
+}
+
+function renderCharts(been) {
+  const chartOpts = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'DM Sans', size: 11 } } },
+      y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'DM Sans', size: 11 } } },
+    }
+  };
+
+  // Rating distribution
+  const ratingDist = [0,0,0,0,0];
+  been.forEach(l => { if (l.myRating >= 1 && l.myRating <= 5) ratingDist[l.myRating-1]++; });
+
+  if (chartRatings) chartRatings.destroy();
+  chartRatings = new Chart(document.getElementById('chart-ratings'), {
+    type: 'bar',
+    data: {
+      labels: ['1★','2★','3★','4★','5★'],
+      datasets: [{ data: ratingDist, backgroundColor: ['#ef4444','#fb923c','#fbbf24','#a3e635','#22c55e'], borderRadius: 6, barThickness: 32 }]
+    },
+    options: chartOpts
+  });
+
+  // Activity over time
+  const monthCounts = {};
+  been.forEach(l => {
+    (l.visits || []).forEach(v => {
+      if (v.date) {
+        const m = v.date.substring(0, 7);
+        monthCounts[m] = (monthCounts[m] || 0) + 1;
+      }
+    });
+  });
+  const months = Object.keys(monthCounts).sort();
+  if (chartActivity) chartActivity.destroy();
+  chartActivity = new Chart(document.getElementById('chart-activity'), {
+    type: 'line',
+    data: {
+      labels: months,
+      datasets: [{
+        data: months.map(m => monthCounts[m]),
+        borderColor: '#ffc144', backgroundColor: 'rgba(255,193,68,0.1)',
+        fill: true, tension: 0.4, pointRadius: 4,
+        pointBackgroundColor: '#ffc144',
+      }]
+    },
+    options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, beginAtZero: true } } }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* CHRONOLOGY                                                            */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function renderChronology() {
+  populateChronoFilters();
+
+  const yearFilter = document.getElementById('chrono-year').value;
+  const catFilter = document.getElementById('chrono-cat').value;
+  const tripFilter = document.getElementById('chrono-trip').value;
+
+  // Collect all visits
+  let entries = [];
+  state.locations.filter(l => l.status === 'been' && !l.needsApproval).forEach(loc => {
+    (loc.visits || []).forEach(v => {
+      if (!v.date) return;
+      if (yearFilter && !v.date.startsWith(yearFilter)) return;
+      if (catFilter && loc.category !== catFilter) return;
+      if (tripFilter && loc.tripId !== tripFilter) return;
+      entries.push({ ...v, loc });
+    });
+  });
+  entries.sort((a, b) => b.date.localeCompare(a.date));
+
+  const container = document.getElementById('timeline');
+  if (entries.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><h3>No Visits Yet</h3><p>Add dates to your locations to build your timeline.</p></div>`;
+    return;
+  }
+
+  let html = '';
+  let currentYear = '';
+  entries.forEach(entry => {
+    const year = entry.date.substring(0, 4);
+    if (year !== currentYear) {
+      currentYear = year;
+      html += `<div class="timeline-year">${year}</div>`;
+    }
+    const cat = CATEGORIES[entry.loc.category] || CATEGORIES.location;
+    const trip = state.trips.find(t => t.id === entry.loc.tripId);
+    const people = (entry.loc.people || []).join(', ');
+    html += `<div class="timeline-item" onclick="openEditModal('${entry.loc.id}')">
+      <div class="ti-top">
+        <span class="ti-emoji">${cat.emoji}</span>
+        <span class="ti-name">${entry.loc.name}</span>
+        <span class="ti-date">${formatDate(entry.date)}</span>
+      </div>
+      <div class="ti-bottom">
+        ${trip ? `<span class="ti-trip">🧳 ${trip.name}</span>` : ''}
+        ${people ? `<span class="ti-people">👥 ${people}</span>` : ''}
+      </div>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function populateChronoFilters() {
+  const years = new Set();
+  state.locations.forEach(l => (l.visits || []).forEach(v => { if (v.date) years.add(v.date.substring(0,4)); }));
+  const yearSel = document.getElementById('chrono-year');
+  const currentVal = yearSel.value;
+  yearSel.innerHTML = '<option value="">All Years</option>' +
+    [...years].sort().reverse().map(y => `<option value="${y}">${y}</option>`).join('');
+  yearSel.value = currentVal;
+
+  const catSel = document.getElementById('chrono-cat');
+  const currentCat = catSel.value;
+  catSel.innerHTML = '<option value="">All Categories</option>' +
+    Object.entries(CATEGORIES).map(([k,c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
+  catSel.value = currentCat;
+
+  const tripSel = document.getElementById('chrono-trip');
+  const currentTrip = tripSel.value;
+  tripSel.innerHTML = '<option value="">All Trips</option>' +
+    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  tripSel.value = currentTrip;
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* IMPORT                                                                */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function initImport() {
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', e => handleFiles(e.target.files));
+}
+
+function handleFiles(files) {
+  if (!files.length) return;
+  const file = files[0];
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+  reader.onload = e => {
+    const content = e.target.result;
+    try {
+      let parsed = [];
+      if (ext === 'json') parsed = parseJSON(content);
+      else if (ext === 'csv') parsed = parseCSV(content);
+      else if (ext === 'geojson') parsed = parseGeoJSON(content);
+      else if (ext === 'kml') parsed = parseKML(content);
+      else { alert('Unsupported format'); return; }
+
+      state.pendingImport = parsed;
+      showImportPreview(parsed);
+    } catch(err) { alert('Parse error: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function parseJSON(content) {
+  const data = JSON.parse(content);
+  const arr = Array.isArray(data) ? data : (data.features || data.locations || [data]);
+  return arr.map(item => ({
+    name: item.name || item.title || item.properties?.name || 'Unknown',
+    lat: item.lat || item.latitude || item.geometry?.coordinates?.[1] || 0,
+    lng: item.lng || item.longitude || item.lon || item.geometry?.coordinates?.[0] || 0,
+    category: inferCategory(item.name || item.category || ''),
+    address: item.address || item.properties?.address || '',
+    status: 'been',
+  })).filter(l => l.lat && l.lng);
+}
+
+function parseCSV(content) {
+  const lines = content.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g,''));
+  return lines.slice(1).map(line => {
+    const vals = line.split(',').map(v => v.trim().replace(/"/g,''));
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = vals[i]);
+    return {
+      name: obj.name || obj.title || 'Unknown',
+      lat: parseFloat(obj.lat || obj.latitude || 0),
+      lng: parseFloat(obj.lng || obj.longitude || obj.lon || 0),
+      category: inferCategory(obj.name || obj.category || ''),
+      address: obj.address || obj.city || '',
+      status: 'been',
+    };
+  }).filter(l => l.lat && l.lng);
+}
+
+function parseGeoJSON(content) {
+  const data = JSON.parse(content);
+  const features = data.features || [];
+  return features.map(f => ({
+    name: f.properties?.name || 'Unknown',
+    lat: f.geometry?.coordinates?.[1] || 0,
+    lng: f.geometry?.coordinates?.[0] || 0,
+    category: inferCategory(f.properties?.name || f.properties?.category || ''),
+    address: f.properties?.address || '',
+    status: 'been',
+  })).filter(l => l.lat && l.lng);
+}
+
+function parseKML(content) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content, 'text/xml');
+  const placemarks = doc.querySelectorAll('Placemark');
+  return [...placemarks].map(pm => {
+    const name = pm.querySelector('name')?.textContent || 'Unknown';
+    const coords = pm.querySelector('coordinates')?.textContent?.trim().split(',');
+    return {
+      name,
+      lng: parseFloat(coords?.[0] || 0),
+      lat: parseFloat(coords?.[1] || 0),
+      category: inferCategory(name),
+      address: pm.querySelector('description')?.textContent || '',
+      status: 'been',
+    };
+  }).filter(l => l.lat && l.lng);
+}
+
+function inferCategory(text) {
+  const t = text.toLowerCase();
+  if (/restaurant|food|eat|dine|sushi|pizza|burger/i.test(t)) return 'restaurant';
+  if (/hotel|hostel|airbnb|stay|sleep|inn|lodge/i.test(t)) return 'hotel';
+  if (/bar|pub|tavern|cocktail/i.test(t)) return 'bar';
+  if (/club|disco|nightlife/i.test(t)) return 'club';
+  if (/museum|monument|temple|shrine|church|cathedral|castle|palace|tower/i.test(t)) return 'monument';
+  if (/unesco|heritage/i.test(t)) return 'unesco';
+  if (/park|forest|nature|lake|mountain|trail|garden/i.test(t)) return 'park';
+  if (/stadium|arena/i.test(t)) return 'stadium';
+  if (/airport|terminal|flight/i.test(t)) return 'airport';
+  if (/café|cafe|coffee/i.test(t)) return 'cafe';
+  if (/shop|mall|market|store|boutique/i.test(t)) return 'shopping';
+  if (/theater|theatre|cinema|concert|show|opera/i.test(t)) return 'entertainment';
+  if (/festival|event|conference/i.test(t)) return 'event';
+  return 'location';
+}
+
+function showImportPreview(items) {
+  document.getElementById('import-preview').classList.add('active');
+  document.getElementById('import-count').textContent = items.length;
+  const tbody = document.getElementById('import-tbody');
+  tbody.innerHTML = items.map(item => {
+    const cat = CATEGORIES[item.category] || CATEGORIES.location;
+    return `<tr>
+      <td>${item.name}</td>
+      <td>${cat.emoji} ${cat.label}</td>
+      <td>${item.lat.toFixed(4)}</td>
+      <td>${item.lng.toFixed(4)}</td>
+      <td>${item.status}</td>
+    </tr>`;
+  }).join('');
+}
+
+function cancelImport() {
+  state.pendingImport = [];
+  document.getElementById('import-preview').classList.remove('active');
+}
+
+function confirmImport() {
+  state.pendingImport.forEach(item => {
+    state.locations.push({
+      id: 'l' + Date.now() + Math.random().toString(36).slice(2,6),
+      name: item.name,
+      address: item.address || '',
+      lat: item.lat, lng: item.lng,
+      category: item.category,
+      status: item.status,
+      googleRating: null, myRating: 0,
+      tripId: null, people: [],
+      visits: [], notes: '',
+      needsApproval: true,
+      suggestedCategory: item.category,
+      createdAt: new Date().toISOString().split('T')[0],
+    });
+  });
+  save();
+  state.pendingImport = [];
+  document.getElementById('import-preview').classList.remove('active');
+  renderMarkers();
+  populateFilterDropdowns();
+  updateApprovalBadge();
+  alert(`Imported ${state.pendingImport.length || 'all'} locations! Check the Approval tab.`);
+}
+
+function simulateGoogleSync() {
+  const fakeLocations = [
+    { name: 'Mysterious Café Downtown', lat: 48.8566 + Math.random()*0.01, lng: 2.3522 + Math.random()*0.01, category: 'cafe' },
+    { name: 'Hidden Rooftop Bar', lat: 41.3874 + Math.random()*0.01, lng: 2.1686 + Math.random()*0.01, category: 'bar' },
+    { name: 'Local Favorite Restaurant', lat: 38.7223 + Math.random()*0.01, lng: -9.1393 + Math.random()*0.01, category: 'restaurant' },
+  ];
+  fakeLocations.forEach(item => {
+    state.locations.push({
+      id: 'l' + Date.now() + Math.random().toString(36).slice(2,6),
+      name: item.name, address: '', lat: item.lat, lng: item.lng,
+      category: 'location', status: 'been',
+      googleRating: (3.5 + Math.random() * 1.5).toFixed(1) * 1,
+      myRating: 0, tripId: null, people: [], visits: [],
+      notes: 'Synced from Google Maps',
+      needsApproval: true, suggestedCategory: item.category,
+      createdAt: new Date().toISOString().split('T')[0],
+    });
+  });
+  save();
+  document.getElementById('sync-dot').className = 'sync-dot connected';
+  document.getElementById('sync-label').textContent = 'Connected';
+  document.getElementById('sync-time').textContent = 'Last sync: just now';
+  renderMarkers();
+  updateApprovalBadge();
+  alert('Synced 3 new locations! Check the Approval tab to categorize them.');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* EXPORT                                                                */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function exportData() {
+  const data = { locations: state.locations, trips: state.trips, exportDate: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'history-map-export.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* THEME                                                                 */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.body.style.setProperty('--bg-primary', '#f5f0eb');
+    document.body.style.setProperty('--bg-secondary', '#ffffff');
+    document.body.style.setProperty('--bg-tertiary', '#f0ebe3');
+    document.body.style.setProperty('--bg-card', 'rgba(255,255,255,0.9)');
+    document.body.style.setProperty('--bg-glass', 'rgba(255,255,255,0.85)');
+    document.body.style.setProperty('--text-primary', '#1a1a1a');
+    document.body.style.setProperty('--text-secondary', '#555');
+    document.body.style.setProperty('--text-muted', '#888');
+    document.body.style.setProperty('--border', 'rgba(0,0,0,0.1)');
+    document.body.style.setProperty('--border-strong', 'rgba(0,0,0,0.2)');
+    html.setAttribute('data-theme', 'light');
+    document.getElementById('theme-toggle').textContent = '☀️';
+  } else {
+    // Reset to dark
+    ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-card','--bg-glass','--text-primary','--text-secondary','--text-muted','--border','--border-strong'].forEach(p => document.body.style.removeProperty(p));
+    html.setAttribute('data-theme', 'dark');
+    document.getElementById('theme-toggle').textContent = '🌙';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* INIT                                                                  */
+/* ═══════════════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  load();
+  if (state.locations.length === 0) generateSampleData();
+
+  buildCategoryFilters();
+  buildModalCategories();
+  populateFilterDropdowns();
+  initImport();
+  updateApprovalBadge();
+
+  initMap();
+});
+</script>
+</body>
+</html>
