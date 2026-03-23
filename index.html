@@ -157,6 +157,23 @@ body {
 .leaflet-control-zoom a:hover { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent) !important; }
 .leaflet-control-attribution { display: none !important; }
 
+/* Layer control */
+.leaflet-control-layers {
+  background: var(--bg-glass) !important; border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important; color: var(--text-primary) !important;
+  backdrop-filter: blur(12px); box-shadow: var(--shadow) !important;
+}
+.leaflet-control-layers-toggle {
+  background-color: var(--bg-glass) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  width: 36px !important; height: 36px !important;
+  backdrop-filter: blur(12px);
+}
+.leaflet-control-layers-expanded { padding: 10px 14px !important; }
+.leaflet-control-layers label { color: var(--text-primary) !important; font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; }
+
 /* Custom marker */
 .marker-icon {
   display: flex; align-items: center; justify-content: center;
@@ -872,7 +889,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>People</h4>
+      <h4>People <span class="clear-btn" onclick="openPeopleManager()">manage</span></h4>
       <select class="filter-select" id="people-filter" onchange="applyFilters()">
         <option value="">Everyone</option>
       </select>
@@ -1109,6 +1126,27 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 </div>
 
+<!-- People Manager Modal -->
+<div class="modal-overlay" id="people-modal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-header">
+      <h2>Manage People</h2>
+      <button class="modal-close" onclick="closePeopleManager()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Remove a person from all locations, or rename them.</p>
+      <div id="people-manager-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <div class="empty-state" id="people-manager-empty" style="display:none;padding:24px;">
+        <p>No people recorded yet.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div></div>
+      <button class="btn btn-secondary" onclick="closePeopleManager()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Context Menu -->
 <div class="context-menu" id="context-menu">
   <div class="context-menu-item" onclick="addPinHere()">📌 Add location here</div>
@@ -1218,10 +1256,22 @@ function initMap() {
     attributionControl: false,
   });
 
-  // Dark tiles
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-  }).addTo(map);
+  // Tile layers
+  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 });
+  const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 });
+  const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 });
+  const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 });
+
+  dark.addTo(map);
+
+  L.control.layers({
+    '🌑 Dark': dark,
+    '🗺️ Streets': streets,
+    '🛰️ Satellite': satellite,
+    '⛰️ Topographic': topo,
+    '☀️ Light': light,
+  }, null, { position: 'topright' }).addTo(map);
 
   markersLayer = L.markerClusterGroup({
     maxClusterRadius: 40,
@@ -1659,6 +1709,62 @@ function addPinHere() {
   if (state.contextMenuLatLng) {
     openAddModal(state.contextMenuLatLng.lat.toFixed(6), state.contextMenuLatLng.lng.toFixed(6));
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* PEOPLE MANAGER                                                        */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function openPeopleManager() {
+  renderPeopleManager();
+  document.getElementById('people-modal').classList.add('open');
+}
+function closePeopleManager() {
+  document.getElementById('people-modal').classList.remove('open');
+}
+function renderPeopleManager() {
+  const allPeople = {};
+  state.locations.forEach(l => (l.people || []).forEach(p => {
+    allPeople[p] = (allPeople[p] || 0) + 1;
+  }));
+  const sorted = Object.entries(allPeople).sort((a,b) => b[1] - a[1]);
+  const container = document.getElementById('people-manager-list');
+  const empty = document.getElementById('people-manager-empty');
+
+  if (sorted.length === 0) {
+    container.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  container.innerHTML = sorted.map(([name, count]) =>
+    `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--bg-tertiary);">
+      <span style="flex:1;font-size:13px;">${name}</span>
+      <span style="font-size:11px;color:var(--text-muted);">${count} place${count>1?'s':''}</span>
+      <button class="add-small-btn" onclick="renamePerson('${name.replace(/'/g,"\\'")}')" style="border-style:solid;padding:4px 8px;">rename</button>
+      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:11px;font-family:var(--font-body);" onclick="removePersonGlobal('${name.replace(/'/g,"\\'")}')">remove</button>
+    </div>`
+  ).join('');
+}
+function removePersonGlobal(name) {
+  if (!confirm('Remove "' + name + '" from all locations?')) return;
+  state.locations.forEach(l => {
+    if (l.people) l.people = l.people.filter(p => p !== name);
+  });
+  save();
+  renderPeopleManager();
+  populateFilterDropdowns();
+  renderMarkers();
+}
+function renamePerson(oldName) {
+  const newName = prompt('Rename "' + oldName + '" to:', oldName);
+  if (!newName || newName === oldName) return;
+  state.locations.forEach(l => {
+    if (l.people) l.people = l.people.map(p => p === oldName ? newName : p);
+  });
+  save();
+  renderPeopleManager();
+  populateFilterDropdowns();
+  renderMarkers();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
