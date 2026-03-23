@@ -3122,11 +3122,11 @@ function viewCollection(colId) {
     </div>
   </div>`;
 
-  // Add location to collection widget
-  html += `<div style="grid-column:1/-1;margin-bottom:12px;">
+  // Add existing location
+  html += `<div style="grid-column:1/-1;margin-bottom:8px;">
     <div style="display:flex;gap:8px;align-items:center;">
       <select class="filter-select" id="add-to-collection-select" style="flex:1;">
-        <option value="">Add an existing location to this collection...</option>
+        <option value="">Add an existing location...</option>
         ${state.locations.filter(l => !(l.collections || []).includes(colId)).map(l => {
           const c = CATEGORIES[l.category] || CATEGORIES.location;
           return `<option value="${l.id}">${c.emoji} ${l.name}</option>`;
@@ -3134,6 +3134,30 @@ function viewCollection(colId) {
       </select>
       <button class="btn btn-primary" style="padding:8px 14px;font-size:12px;" onclick="addLocToCollection('${colId}')">Add</button>
     </div>
+  </div>`;
+
+  // Search for new place (Nominatim)
+  html += `<div style="grid-column:1/-1;margin-bottom:8px;">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" class="form-input" id="collection-search-input" placeholder="🔍 Search for a new place to add..." style="flex:1;"
+        onkeydown="if(event.key==='Enter'){searchForCollection('${colId}');event.preventDefault();}">
+      <button class="btn btn-secondary" style="padding:8px 14px;font-size:12px;" onclick="searchForCollection('${colId}')">Search</button>
+    </div>
+    <div id="collection-search-results" style="margin-top:6px;"></div>
+  </div>`;
+
+  // Import list
+  html += `<div style="grid-column:1/-1;margin-bottom:16px;">
+    <details>
+      <summary style="font-size:12px;color:var(--accent);cursor:pointer;margin-bottom:8px;">📥 Import a list of places</summary>
+      <div style="margin-top:8px;">
+        <textarea class="form-input" id="collection-import-textarea" placeholder="Paste place names, one per line. They'll be geocoded and added as bucket list items.&#10;&#10;e.g.&#10;Colosseum, Rome&#10;Sagrada Familia, Barcelona&#10;Eiffel Tower, Paris" style="min-height:100px;font-size:12px;"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary" style="font-size:12px;padding:8px 14px;" onclick="importListToCollection('${colId}')">Geocode & Add All</button>
+          <span style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;" id="collection-import-status"></span>
+        </div>
+      </div>
+    </details>
   </div>`;
 
   if (locs.length === 0) {
@@ -3164,6 +3188,120 @@ async function addLocToCollection(colId) {
   loc.collections = [...(loc.collections || []), colId];
   await api('PUT', '/locations/' + locId, { collections: loc.collections });
   viewCollection(colId);
+}
+
+// ── Nominatim search for collections ──
+let _searchDebounce = null;
+async function searchForCollection(colId) {
+  const query = document.getElementById('collection-search-input').value.trim();
+  if (!query) return;
+  const resultsDiv = document.getElementById('collection-search-results');
+  resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Searching...</span>';
+
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
+      headers: { 'Accept-Language': 'en' }
+    });
+    const results = await res.json();
+    if (results.length === 0) {
+      resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No results found.</span>';
+      return;
+    }
+    state._searchResults = results.map(r => ({
+      name: r.name || r.display_name.split(',')[0],
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      address: r.display_name,
+    }));
+    resultsDiv.innerHTML = state._searchResults.map((r, i) => {
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);margin-bottom:4px;border:1px solid transparent;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;">${r.name}</div>
+          <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.address}</div>
+        </div>
+        <button class="btn btn-primary" style="padding:5px 10px;font-size:11px;flex-shrink:0;"
+          onclick="addSearchResultToCollection('${colId}', ${i})">+ Add</button>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed. Try again.</span>';
+  }
+}
+
+async function addSearchResultToCollection(colId, idx) {
+  const data = state._searchResults?.[idx];
+  if (!data) return;
+  try {
+    const loc = mapId(await api('POST', '/locations', {
+      name: data.name,
+      address: data.address,
+      lat: data.lat, lng: data.lng,
+      category: inferCategory(data.name + ' ' + data.address),
+      status: 'bucket',
+      googleRating: null, myRating: 0,
+      tripId: null, people: [], visits: [],
+      notes: '', tags: [],
+      collections: [colId],
+      needsApproval: false, suggestedCategory: null,
+      createdAt: new Date().toISOString().split('T')[0],
+    }));
+    state.locations.push(loc);
+    viewCollection(colId);
+  } catch (err) { alert('Failed to add: ' + err.message); }
+}
+
+// ── Batch import list for collections ──
+async function importListToCollection(colId) {
+  const textarea = document.getElementById('collection-import-textarea');
+  const statusEl = document.getElementById('collection-import-status');
+  const lines = textarea.value.trim().split('\n').map(l => l.trim()).filter(Boolean);
+
+  if (lines.length === 0) { alert('Paste some place names first.'); return; }
+  if (lines.length > 100) { alert('Max 100 places at a time (Nominatim rate limits).'); return; }
+
+  statusEl.textContent = `Geocoding 0/${lines.length}...`;
+  const newLocs = [];
+  let failed = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    statusEl.textContent = `Geocoding ${i + 1}/${lines.length}...`;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(lines[i])}&format=json&limit=1&addressdetails=1`, {
+        headers: { 'Accept-Language': 'en' }
+      });
+      const results = await res.json();
+      if (results.length > 0) {
+        const r = results[0];
+        newLocs.push({
+          name: r.name || lines[i],
+          address: r.display_name || '',
+          lat: parseFloat(r.lat), lng: parseFloat(r.lon),
+          category: inferCategory((r.name || lines[i]) + ' ' + (r.display_name || '')),
+          status: 'bucket',
+          googleRating: null, myRating: 0,
+          tripId: null, people: [], visits: [],
+          notes: '', tags: [],
+          collections: [colId],
+          needsApproval: false, suggestedCategory: null,
+          createdAt: new Date().toISOString().split('T')[0],
+        });
+      } else {
+        failed++;
+      }
+    } catch { failed++; }
+    // Nominatim rate limit: 1 req/sec
+    if (i < lines.length - 1) await new Promise(r => setTimeout(r, 1100));
+  }
+
+  if (newLocs.length > 0) {
+    statusEl.textContent = `Saving ${newLocs.length} locations...`;
+    const saved = mapIds(await api('POST', '/locations/bulk', { locations: newLocs }));
+    state.locations.push(...saved);
+  }
+
+  statusEl.textContent = `Done! ${newLocs.length} added${failed ? `, ${failed} not found` : ''}`;
+  textarea.value = '';
+  setTimeout(() => viewCollection(colId), 1500);
 }
 
 async function openNewCollectionModal() {
