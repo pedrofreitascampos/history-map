@@ -818,6 +818,49 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 
 /* ═══════════════════════════════════════════════════════════ */
+/* TRIPS VIEW                                                  */
+/* ═══════════════════════════════════════════════════════════ */
+.trip-stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;
+}
+.trip-stat-mini {
+  background: var(--bg-tertiary); border-radius: var(--radius); padding: 10px 12px; text-align: center;
+}
+.trip-stat-mini .ts-val { font-family: var(--font-display); font-size: 20px; color: var(--accent); }
+.trip-stat-mini .ts-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.trip-loc-list { display: flex; flex-direction: column; gap: 6px; }
+.trip-loc-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  cursor: pointer; transition: var(--transition);
+  position: relative;
+}
+.trip-loc-item:hover { border-color: var(--border-strong); }
+.trip-loc-item .tl-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--bg-primary);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.trip-loc-item .tl-info { flex: 1; min-width: 0; }
+.trip-loc-item .tl-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-loc-item .tl-meta { font-size: 11px; color: var(--text-muted); }
+.trip-loc-item .tl-move {
+  display: flex; flex-direction: column; gap: 2px; cursor: grab; opacity: 0.4; transition: var(--transition);
+}
+.trip-loc-item:hover .tl-move { opacity: 1; }
+.trip-loc-item .tl-move button {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  font-size: 12px; padding: 0 4px; line-height: 1;
+}
+.trip-loc-item .tl-move button:hover { color: var(--accent); }
+
+.trip-people-section { margin-top: 16px; }
+.trip-people-section h4 { font-family: var(--font-display); font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+
+/* ═══════════════════════════════════════════════════════════ */
 /* LOGIN SCREEN                                               */
 /* ═══════════════════════════════════════════════════════════ */
 #login-screen {
@@ -926,6 +969,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </button>
     <button class="nav-tab" data-view="chrono-view" onclick="switchView('chrono-view')">
       📅 <span class="tab-label">Chronology</span>
+    </button>
+    <button class="nav-tab" data-view="trips-view" onclick="switchView('trips-view')">
+      🧳 <span class="tab-label">Trips</span>
     </button>
     <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
       📥 <span class="tab-label">Import</span>
@@ -1071,6 +1117,26 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
     <div class="timeline" id="timeline"></div>
+  </div>
+
+  <!-- TRIPS VIEW -->
+  <div class="view" id="trips-view" style="flex-direction:row;">
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+        <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
+        <select class="filter-select" id="trip-selector" onchange="selectTrip(this.value)" style="flex:1;max-width:300px;"></select>
+      </div>
+      <div id="trip-map" style="flex:1;"></div>
+    </div>
+    <div id="trip-sidebar" style="width:360px;border-left:1px solid var(--border);overflow-y:auto;background:var(--bg-secondary);display:flex;flex-direction:column;">
+      <div id="trip-detail" style="padding:20px;">
+        <div class="empty-state">
+          <div class="empty-icon">🧳</div>
+          <h3>Select a Trip</h3>
+          <p>Choose a trip from the dropdown to see its details and route.</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- IMPORT VIEW -->
@@ -1753,6 +1819,10 @@ function switchView(viewId) {
   if (viewId === 'approval-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
+  if (viewId === 'trips-view') {
+    populateTripSelector();
+    setTimeout(() => { initTripMap(); tripMap.invalidateSize(); }, 150);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2471,6 +2541,213 @@ function populateChronoFilters() {
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* TRIPS VIEW                                                            */
+/* ═══════════════════════════════════════════════════════════════════════ */
+let tripMap, tripMarkersLayer, tripPathLayer;
+
+function initTripMap() {
+  if (tripMap) return;
+  tripMap = L.map('trip-map', { center: [30, 0], zoom: 3, zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(tripMap);
+  tripMarkersLayer = L.layerGroup().addTo(tripMap);
+  tripPathLayer = L.layerGroup().addTo(tripMap);
+}
+
+function populateTripSelector() {
+  const sel = document.getElementById('trip-selector');
+  sel.innerHTML = '<option value="">— Select a trip —</option>' +
+    state.trips.map(t => {
+      const count = state.locations.filter(l => l.tripId === t.id).length;
+      return `<option value="${t.id}">${t.name} (${count})</option>`;
+    }).join('');
+}
+
+function selectTrip(tripId) {
+  initTripMap();
+  tripMarkersLayer.clearLayers();
+  tripPathLayer.clearLayers();
+
+  if (!tripId) {
+    document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+    return;
+  }
+
+  const trip = state.trips.find(t => t.id === tripId);
+  if (!trip) return;
+
+  // Get locations for this trip, sorted by visit date
+  let tripLocs = state.locations.filter(l => l.tripId === tripId);
+  tripLocs = sortTripLocations(tripLocs);
+
+  if (tripLocs.length === 0) {
+    document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">📍</div><h3>No Locations</h3><p>Add locations to this trip to see them here.</p></div>`;
+    return;
+  }
+
+  // Add numbered markers
+  const bounds = L.latLngBounds();
+  tripLocs.forEach((loc, i) => {
+    const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+    const marker = L.marker([loc.lat, loc.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="position:relative;">
+          <div class="marker-icon been" style="border-color:${trip.color || 'var(--accent)'};background:${(trip.color || '#ffc144') + '22'};">${cat.emoji}</div>
+          <div style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--bg-primary);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">${i + 1}</div>
+        </div>`,
+        iconSize: [38, 38], iconAnchor: [19, 19],
+      })
+    });
+    marker.bindPopup(createPopupContent(loc), { maxWidth: 320 });
+    tripMarkersLayer.addLayer(marker);
+    bounds.extend([loc.lat, loc.lng]);
+  });
+
+  // Draw path
+  if (tripLocs.length > 1) {
+    const pathCoords = tripLocs.map(l => [l.lat, l.lng]);
+    const polyline = L.polyline(pathCoords, {
+      color: trip.color || '#ffc144', weight: 3, opacity: 0.7,
+      dashArray: '8, 8', smoothFactor: 1.5,
+    });
+    tripPathLayer.addLayer(polyline);
+
+    // Animated direction arrows
+    for (let i = 0; i < pathCoords.length - 1; i++) {
+      const midLat = (pathCoords[i][0] + pathCoords[i + 1][0]) / 2;
+      const midLng = (pathCoords[i][1] + pathCoords[i + 1][1]) / 2;
+      const arrow = L.marker([midLat, midLng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="color:${trip.color || '#ffc144'};font-size:10px;opacity:0.7;">▶</div>`,
+          iconSize: [10, 10], iconAnchor: [5, 5],
+        })
+      });
+      tripPathLayer.addLayer(arrow);
+    }
+  }
+
+  tripMap.fitBounds(bounds, { padding: [40, 40] });
+
+  // Build sidebar detail
+  renderTripDetail(trip, tripLocs);
+  setTimeout(() => tripMap.invalidateSize(), 100);
+}
+
+function sortTripLocations(locs) {
+  return locs.sort((a, b) => {
+    const dateA = (a.visits || []).map(v => v.date).filter(Boolean).sort()[0] || 'z';
+    const dateB = (b.visits || []).map(v => v.date).filter(Boolean).sort()[0] || 'z';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    // Same date: use tripOrder if set, otherwise creation order
+    return (a.tripOrder || 0) - (b.tripOrder || 0);
+  });
+}
+
+function renderTripDetail(trip, tripLocs) {
+  const allPeople = new Set();
+  const catCounts = {};
+  let totalRating = 0, ratedCount = 0;
+  tripLocs.forEach(l => {
+    (l.people || []).forEach(p => allPeople.add(p));
+    catCounts[l.category] = (catCounts[l.category] || 0) + 1;
+    if (l.myRating) { totalRating += l.myRating; ratedCount++; }
+  });
+
+  const dates = [trip.startDate, trip.endDate].filter(Boolean);
+  let duration = '';
+  if (dates.length === 2) {
+    const days = Math.ceil((new Date(dates[1]) - new Date(dates[0])) / (1000 * 60 * 60 * 24)) + 1;
+    duration = `${days} day${days !== 1 ? 's' : ''}`;
+  }
+
+  const avgRating = ratedCount ? (totalRating / ratedCount).toFixed(1) : '—';
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <span style="width:14px;height:14px;border-radius:50%;background:${trip.color || 'var(--accent)'};flex-shrink:0;"></span>
+      <div>
+        <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${trip.name}</h3>
+        <div style="font-size:12px;color:var(--text-muted);">${dates.map(d => formatDate(d)).join(' → ') || 'No dates set'}${duration ? ' · ' + duration : ''}</div>
+      </div>
+    </div>
+
+    <div class="trip-stats-grid">
+      <div class="trip-stat-mini"><div class="ts-val">${tripLocs.length}</div><div class="ts-label">Places</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${Object.keys(catCounts).length}</div><div class="ts-label">Categories</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${avgRating}</div><div class="ts-label">Avg Rating</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${allPeople.size}</div><div class="ts-label">People</div></div>
+    </div>`;
+
+  // Categories breakdown
+  html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">`;
+  Object.entries(catCounts).forEach(([cat, count]) => {
+    const c = CATEGORIES[cat] || CATEGORIES.location;
+    html += `<span class="popup-tag">${c.emoji} ${c.label} × ${count}</span>`;
+  });
+  html += `</div>`;
+
+  // People
+  if (allPeople.size > 0) {
+    html += `<div class="trip-people-section"><h4>Traveled With</h4><div class="people-tags">`;
+    allPeople.forEach(p => { html += `<span class="people-tag">${p}</span>`; });
+    html += `</div></div>`;
+  }
+
+  // Ordered location list
+  html += `<h4 style="font-family:var(--font-display);font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;">Route</h4>`;
+  html += `<p style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Ordered by visit date. Use arrows to reorder same-day stops.</p>`;
+  html += `<div class="trip-loc-list">`;
+  tripLocs.forEach((loc, i) => {
+    const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+    const visitDate = (loc.visits || []).map(v => v.date).filter(Boolean).sort()[0];
+    const price = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
+    const rating = loc.myRating ? ' · ★' + loc.myRating : '';
+    html += `<div class="trip-loc-item" onclick="openEditModal('${loc.id}')">
+      <div class="tl-num">${i + 1}</div>
+      <span style="font-size:16px;">${cat.emoji}</span>
+      <div class="tl-info">
+        <div class="tl-name">${loc.name}</div>
+        <div class="tl-meta">${visitDate ? formatDate(visitDate) : 'No date'}${price}${rating}</div>
+      </div>
+      <div class="tl-move" onclick="event.stopPropagation()">
+        <button onclick="moveTripLoc('${loc.id}', -1)" ${i === 0 ? 'disabled style="opacity:0.2"' : ''}>▲</button>
+        <button onclick="moveTripLoc('${loc.id}', 1)" ${i === tripLocs.length - 1 ? 'disabled style="opacity:0.2"' : ''}>▼</button>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  document.getElementById('trip-detail').innerHTML = html;
+}
+
+async function moveTripLoc(locId, direction) {
+  const tripId = document.getElementById('trip-selector').value;
+  let tripLocs = state.locations.filter(l => l.tripId === tripId);
+  tripLocs = sortTripLocations(tripLocs);
+
+  const idx = tripLocs.findIndex(l => l.id === locId);
+  if (idx < 0) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= tripLocs.length) return;
+
+  // Assign tripOrder values to establish custom ordering
+  tripLocs.forEach((l, i) => { l.tripOrder = i; });
+  // Swap
+  const temp = tripLocs[idx].tripOrder;
+  tripLocs[idx].tripOrder = tripLocs[newIdx].tripOrder;
+  tripLocs[newIdx].tripOrder = temp;
+
+  // Persist both changes
+  await Promise.all([
+    api('PUT', '/locations/' + tripLocs[idx].id, { tripOrder: tripLocs[idx].tripOrder }),
+    api('PUT', '/locations/' + tripLocs[newIdx].id, { tripOrder: tripLocs[newIdx].tripOrder }),
+  ]);
+
+  selectTrip(tripId); // re-render
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
