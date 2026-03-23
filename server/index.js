@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -177,6 +178,67 @@ app.post('/api/collections/bulk', auth, async (req, res) => {
   const saved = await db.collections.insert(toInsert);
   res.json(saved);
 });
+
+// ── Admin-1 boundaries proxy (Natural Earth, cached) ─────
+const ADMIN1_CACHE = path.join(__dirname, '..', 'data', 'admin1-simplified.json');
+const NE_ADMIN1_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson';
+
+app.get('/api/admin1-boundaries', async (req, res) => {
+  try {
+    // Serve from cache if available
+    if (fs.existsSync(ADMIN1_CACHE)) {
+      const stat = fs.statSync(ADMIN1_CACHE);
+      // Refresh cache if older than 30 days
+      if (Date.now() - stat.mtimeMs < 30 * 24 * 60 * 60 * 1000) {
+        res.setHeader('Content-Type', 'application/json');
+        return fs.createReadStream(ADMIN1_CACHE).pipe(res);
+      }
+    }
+
+    console.log('Fetching admin-1 boundaries from Natural Earth...');
+    const response = await fetch(NE_ADMIN1_URL);
+    if (!response.ok) throw new Error('Failed to fetch: ' + response.status);
+    const geojson = await response.json();
+
+    // Simplify: keep only essential properties, reduce coordinate precision
+    const simplified = {
+      type: 'FeatureCollection',
+      features: geojson.features.map(f => ({
+        type: 'Feature',
+        properties: {
+          name: f.properties.name || f.properties.NAME || '',
+          country: f.properties.admin || f.properties.ADMIN || '',
+          iso_country: f.properties.iso_a2 || f.properties.ISO_A2 || '',
+          type_en: f.properties.type_en || '',
+        },
+        geometry: simplifyGeometry(f.geometry, 2), // 2 decimal places ≈ 1km precision
+      })).filter(f => f.geometry && f.properties.name),
+    };
+
+    fs.writeFileSync(ADMIN1_CACHE, JSON.stringify(simplified));
+    console.log(`Cached ${simplified.features.length} admin-1 regions`);
+    res.json(simplified);
+  } catch (err) {
+    console.error('Admin-1 fetch error:', err.message);
+    // Try serving stale cache
+    if (fs.existsSync(ADMIN1_CACHE)) {
+      res.setHeader('Content-Type', 'application/json');
+      return fs.createReadStream(ADMIN1_CACHE).pipe(res);
+    }
+    res.status(500).json({ error: 'Failed to load boundaries' });
+  }
+});
+
+function simplifyGeometry(geom, precision) {
+  if (!geom || !geom.coordinates) return geom;
+  const round = (coords) => {
+    if (typeof coords[0] === 'number') {
+      return [+coords[0].toFixed(precision), +coords[1].toFixed(precision)];
+    }
+    return coords.map(round);
+  };
+  return { type: geom.type, coordinates: round(geom.coordinates) };
+}
 
 // ── Catch-all for SPA ────────────────────────────────────
 app.get('*', (req, res) => {

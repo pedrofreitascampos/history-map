@@ -3659,7 +3659,7 @@ function exportGuideJSON() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
-/* REGIONS CHOROPLETH                                                    */
+/* REGIONS CHOROPLETH (Admin-1: states/provinces)                        */
 /* ═══════════════════════════════════════════════════════════════════════ */
 let regionsMap, regionsLayer, regionsGeoData;
 
@@ -3675,99 +3675,125 @@ function initRegionsMap() {
   if (regionsMap) return;
   regionsMap = L.map('regions-map', { center: [30, 0], zoom: 3, zoomControl: true, attributionControl: false });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(regionsMap);
-  regionsLayer = L.geoJSON(null).addTo(regionsMap);
 }
 
 async function loadRegionBoundaries() {
   if (regionsGeoData) return regionsGeoData;
+  document.getElementById('regions-summary').textContent = 'Loading admin-1 boundaries (first load may take a moment)...';
   try {
-    const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
-    const topo = await res.json();
-    regionsGeoData = topojson.feature(topo, topo.objects.countries);
+    const res = await fetch('/api/admin1-boundaries');
+    if (!res.ok) throw new Error('Server returned ' + res.status);
+    regionsGeoData = await res.json();
     return regionsGeoData;
   } catch (err) {
-    console.error('Failed to load boundaries:', err);
+    console.error('Failed to load admin-1 boundaries:', err);
+    document.getElementById('regions-summary').textContent = 'Failed to load boundaries. Retrying...';
     return null;
   }
 }
 
-// ISO 3166 numeric → country name mapping (subset for matching)
-function getCountryFromAddress(address) {
-  if (!address) return null;
-  const parts = address.split(',').map(s => s.trim());
-  return parts[parts.length - 1] || null;
+// Point-in-polygon (ray casting)
+function pointInPolygon(lat, lng, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
-function countLocationsByCountry() {
-  const counts = {};
-  state.locations.filter(l => l.status === 'been' && !l.needsApproval).forEach(l => {
-    const country = getCountryFromAddress(l.address);
-    if (country) {
-      counts[country] = (counts[country] || 0) + 1;
+function pointInFeature(lat, lng, feature) {
+  const geom = feature.geometry;
+  if (!geom) return false;
+  if (geom.type === 'Polygon') {
+    return pointInPolygon(lat, lng, geom.coordinates[0].map(c => [c[0], c[1]]));
+  }
+  if (geom.type === 'MultiPolygon') {
+    return geom.coordinates.some(poly => pointInPolygon(lat, lng, poly[0].map(c => [c[0], c[1]])));
+  }
+  return false;
+}
+
+function countLocationsByRegion(geo) {
+  const beenLocs = state.locations.filter(l => l.status === 'been' && !l.needsApproval);
+  const regionCounts = new Map(); // feature index → count
+
+  beenLocs.forEach(loc => {
+    for (let i = 0; i < geo.features.length; i++) {
+      const f = geo.features[i];
+      // Quick bounding box check first
+      const bbox = featureBBox(f);
+      if (bbox && (loc.lng < bbox[0] || loc.lng > bbox[2] || loc.lat < bbox[1] || loc.lat > bbox[3])) continue;
+      if (pointInFeature(loc.lat, loc.lng, f)) {
+        regionCounts.set(i, (regionCounts.get(i) || 0) + 1);
+        break;
+      }
     }
   });
-  return counts;
+  return regionCounts;
 }
 
-// Match country name to GeoJSON feature
-function matchCountryName(featureName, countryCounts) {
-  // Direct match
-  if (countryCounts[featureName]) return countryCounts[featureName];
-  // Case-insensitive
-  const lower = featureName.toLowerCase();
-  for (const [name, count] of Object.entries(countryCounts)) {
-    if (name.toLowerCase() === lower) return count;
-    // Partial match (e.g., "United States" matches "USA", "United States of America")
-    if (lower.includes(name.toLowerCase()) || name.toLowerCase().includes(lower)) return count;
-  }
-  return 0;
+function featureBBox(feature) {
+  const coords = [];
+  const extract = (c) => {
+    if (typeof c[0] === 'number') { coords.push(c); return; }
+    c.forEach(extract);
+  };
+  if (feature.geometry?.coordinates) extract(feature.geometry.coordinates);
+  if (coords.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  coords.forEach(([x, y]) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; });
+  return [minX, minY, maxX, maxY];
 }
-
-// ISO numeric code to name (common ones)
-const ISO_NAMES = {36:'Australia',40:'Austria',56:'Belgium',76:'Brazil',124:'Canada',156:'China',170:'Colombia',191:'Croatia',203:'Czech Republic',208:'Denmark',818:'Egypt',246:'Finland',250:'France',276:'Germany',300:'Greece',344:'Hong Kong',348:'Hungary',356:'India',360:'Indonesia',372:'Ireland',376:'Israel',380:'Italy',392:'Japan',410:'South Korea',442:'Luxembourg',458:'Malaysia',484:'Mexico',528:'Netherlands',554:'New Zealand',578:'Norway',616:'Poland',620:'Portugal',642:'Romania',643:'Russia',682:'Saudi Arabia',702:'Singapore',710:'South Africa',724:'Spain',752:'Sweden',756:'Switzerland',764:'Thailand',792:'Turkey',826:'United Kingdom',840:'USA',804:'Ukraine',784:'United Arab Emirates',32:'Argentina',152:'Chile',218:'Ecuador',604:'Peru',858:'Uruguay',862:'Venezuela'};
 
 async function renderRegionsMap() {
   initRegionsMap();
   const geo = await loadRegionBoundaries();
   if (!geo) return;
 
-  const countryCounts = countLocationsByCountry();
-  const maxCount = Math.max(1, ...Object.values(countryCounts));
+  const regionCounts = countLocationsByRegion(geo);
+  const maxCount = Math.max(1, ...regionCounts.values());
   const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
 
-  regionsLayer.clearLayers();
+  if (regionsLayer) regionsMap.removeLayer(regionsLayer);
 
+  const visitedRegions = new Set();
   const visitedCountries = new Set();
 
   regionsLayer = L.geoJSON(geo, {
     style: function(feature) {
-      const id = feature.id || feature.properties?.id;
-      const name = feature.properties?.name || ISO_NAMES[parseInt(id)] || '';
-      const count = matchCountryName(name, countryCounts);
-      if (count > 0) visitedCountries.add(name);
+      const idx = geo.features.indexOf(feature);
+      const count = regionCounts.get(idx) || 0;
+      if (count > 0) {
+        visitedRegions.add(feature.properties.name);
+        visitedCountries.add(feature.properties.country);
+      }
       const intensity = count > 0 ? 0.2 + 0.8 * (count / maxCount) : 0;
       return {
         fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
-        fillOpacity: count > 0 ? 0.7 : 0,
-        weight: count > 0 ? 1.5 : 0.3,
-        color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.08)',
+        fillOpacity: count > 0 ? 0.65 : 0,
+        weight: count > 0 ? 1.2 : 0.2,
+        color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.05)',
       };
     },
     onEachFeature: function(feature, layer) {
-      const id = feature.id || feature.properties?.id;
-      const name = feature.properties?.name || ISO_NAMES[parseInt(id)] || 'Unknown';
-      const count = matchCountryName(name, countryCounts);
+      const idx = geo.features.indexOf(feature);
+      const count = regionCounts.get(idx) || 0;
       if (count > 0) {
-        layer.bindTooltip(`<strong>${name}</strong><br>${count} location${count > 1 ? 's' : ''}`, {
-          sticky: true, className: '',
-          direction: 'top',
-        });
+        const p = feature.properties;
+        layer.bindTooltip(
+          `<strong>${p.name}</strong><br>${p.country}<br>${count} location${count > 1 ? 's' : ''}`,
+          { sticky: true, direction: 'top' }
+        );
       }
     }
   }).addTo(regionsMap);
 
   document.getElementById('regions-summary').textContent =
-    `${visitedCountries.size} countries · ${state.locations.filter(l => l.status === 'been').length} locations`;
+    `${visitedRegions.size} regions · ${visitedCountries.size} countries · ${state.locations.filter(l => l.status === 'been').length} locations`;
 
   setTimeout(() => regionsMap.invalidateSize(), 100);
 }
