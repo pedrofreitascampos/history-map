@@ -141,6 +141,43 @@ app.delete('/api/trips/:id', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Collections CRUD ─────────────────────────────────────
+app.get('/api/collections', auth, async (req, res) => {
+  const cols = await db.collections.find({ userId: req.user.id });
+  res.json(cols);
+});
+
+app.post('/api/collections', auth, async (req, res) => {
+  const col = { ...req.body, userId: req.user.id };
+  delete col._id;
+  const saved = await db.collections.insert(col);
+  res.json(saved);
+});
+
+app.put('/api/collections/:id', auth, async (req, res) => {
+  const updates = { ...req.body };
+  delete updates._id;
+  delete updates.userId;
+  await db.collections.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  const updated = await db.collections.findOne({ _id: req.params.id });
+  res.json(updated);
+});
+
+app.delete('/api/collections/:id', auth, async (req, res) => {
+  await db.collections.remove({ _id: req.params.id, userId: req.user.id });
+  res.json({ ok: true });
+});
+
+// Bulk import collections
+app.post('/api/collections/bulk', auth, async (req, res) => {
+  const { collections: cols } = req.body;
+  if (!Array.isArray(cols)) return res.status(400).json({ error: 'Expected array' });
+  const toInsert = cols.map(c => ({ ...c, userId: req.user.id }));
+  toInsert.forEach(c => delete c._id);
+  const saved = await db.collections.insert(toInsert);
+  res.json(saved);
+});
+
 // ── Catch-all for SPA ────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

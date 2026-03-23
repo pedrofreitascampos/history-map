@@ -974,6 +974,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="trips-view" onclick="switchView('trips-view')">
       🧳 <span class="tab-label">Trips</span>
     </button>
+    <button class="nav-tab" data-view="collections-view" onclick="switchView('collections-view')">
+      🏆 <span class="tab-label">Collections</span>
+    </button>
     <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
       📥 <span class="tab-label">Import</span>
     </button>
@@ -1105,6 +1108,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div id="people-leaderboard" class="people-leaderboard"></div>
       </div>
     </div>
+
+    <div id="stats-collections-section" style="display:none;">
+      <h3 style="font-family:var(--font-display);margin-bottom:16px;">Collections Progress</h3>
+      <div class="category-stats-grid" id="stats-collections"></div>
+    </div>
   </div>
 
   <!-- CHRONOLOGY VIEW -->
@@ -1141,6 +1149,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- COLLECTIONS VIEW -->
+  <div class="view" id="collections-view" style="flex-direction:column;background:var(--bg-primary);overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <div>
+        <h1 style="font-family:var(--font-display);font-size:28px;">Collections</h1>
+        <p style="color:var(--text-muted);font-size:14px;">Track your progress across curated lists of places.</p>
+      </div>
+      <button class="btn btn-primary" onclick="openNewCollectionModal()">+ New Collection</button>
+    </div>
+    <div id="collections-grid" class="category-stats-grid stagger"></div>
   </div>
 
   <!-- IMPORT VIEW -->
@@ -1240,6 +1260,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <input type="text" class="form-input" id="loc-tag-input" placeholder="Add custom tag" style="flex:1;"
             onkeydown="if(event.key==='Enter'){addTag(); event.preventDefault();}">
           <button class="add-small-btn" onclick="addTag()">Add</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Collections</label>
+        <div class="people-tags" id="loc-collection-chips"></div>
+        <div style="display:flex;gap:8px;">
+          <select class="filter-select" id="loc-collection-select" style="flex:1;">
+            <option value="">Add to collection...</option>
+          </select>
+          <button class="add-small-btn" onclick="addCollectionToLoc()">Add</button>
         </div>
       </div>
 
@@ -1379,24 +1410,24 @@ const CATEGORIES = {
     suggestedTags: ['Hotel','Hostel','Airbnb','Resort','B&B','Boutique','Camping','Villa'] },
   bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)', hasPrice: true,
     suggestedTags: ['Cocktail','Wine Bar','Rooftop','Dive Bar','Speakeasy','Beer Garden','Pub','Sports Bar'] },
-  club:       { emoji: '🪩', label: 'Club', color: 'var(--cat-club)', hasPrice: true,
+  club:       { emoji: '🎶', label: 'Club', color: 'var(--cat-club)', hasPrice: true,
     suggestedTags: ['Techno','House','Hip-Hop','Latin','Jazz','Live Music','Karaoke'] },
   monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)',
-    suggestedTags: ['Castle','Church','Temple','Mosque','Palace','Tower','Bridge','Ruins','Statue','Museum'] },
-  unesco:     { emoji: '🏰', label: 'UNESCO Site', color: 'var(--cat-unesco)',
-    suggestedTags: ['Cultural','Natural','Mixed','Historic Centre','Archaeological'] },
+    suggestedTags: ['Castle','Church','Temple','Mosque','Palace','Tower','Bridge','Ruins','Statue'] },
+  museum:     { emoji: '🏛️', label: 'Museum', color: 'var(--cat-entertainment)', hasPrice: true,
+    suggestedTags: ['Art','History','Science','Modern Art','Archaeological','Natural History','Interactive','War','Maritime'] },
   park:       { emoji: '🌿', label: 'Natural Park', color: 'var(--cat-park)',
     suggestedTags: ['National Park','Beach','Mountain','Lake','Forest','Waterfall','Desert','Island','Garden','Hiking'] },
   stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)',
     suggestedTags: ['Football','Basketball','Tennis','Baseball','Rugby','Olympic','Motorsport','Cricket'] },
-  event:      { emoji: '🎪', label: 'Event', color: 'var(--cat-event)',
-    suggestedTags: ['Festival','Conference','Concert','Exhibition','Sports Event','Market','Carnival'] },
+  festival:   { emoji: '🎪', label: 'Festival / Concert', color: 'var(--cat-event)',
+    suggestedTags: ['Music Festival','Concert','Conference','Exhibition','Food Festival','Market','Carnival'] },
   location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)',
     suggestedTags: ['Viewpoint','Neighborhood','Square','Street','Landmark'] },
   airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)',
     suggestedTags: ['International','Domestic','Layover','Lounge'] },
-  entertainment: { emoji: '🎭', label: 'Entertainment', color: 'var(--cat-entertainment)',
-    suggestedTags: ['Theatre','Cinema','Museum','Gallery','Amusement Park','Zoo','Aquarium','Comedy','Opera'] },
+  show:       { emoji: '🎭', label: 'Show', color: 'var(--cat-entertainment)',
+    suggestedTags: ['Theatre','Cinema','Gallery','Amusement Park','Zoo','Aquarium','Comedy','Opera','Circus'] },
   shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)', hasPrice: true,
     suggestedTags: ['Market','Mall','Boutique','Vintage','Souvenir','Bookshop','Local Crafts'] },
   cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)', hasPrice: true,
@@ -1413,6 +1444,7 @@ const PRICE_LEVELS = [
 let state = {
   locations: [],
   trips: [],
+  collections: [],
   filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, tags: new Set(), maxPrice: 0 },
   editingId: null,
   modalPeople: [],
@@ -1422,6 +1454,7 @@ let state = {
   modalStatus: 'been',
   modalTags: [],
   modalPrice: 0,
+  modalCollections: [],
   heatmapOn: false,
   pendingImport: [],
   pendingRestoreTrips: [],
@@ -1497,12 +1530,14 @@ async function checkAuth() {
 }
 
 async function loadFromServer() {
-  const [locs, trips] = await Promise.all([
+  const [locs, trips, cols] = await Promise.all([
     api('GET', '/locations'),
     api('GET', '/trips'),
+    api('GET', '/collections'),
   ]);
   state.locations = mapIds(locs);
   state.trips = mapIds(trips);
+  state.collections = mapIds(cols);
 }
 
 // Legacy save() — now a no-op; individual mutations call API directly
@@ -1528,28 +1563,51 @@ async function generateSampleData() {
     { name:'Belém Tower', address:'Lisbon, Portugal', lat:38.6916, lng:-9.2160, category:'monument', status:'been', googleRating:4.6, myRating:4, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-14',notes:''}], notes:'Beautiful at sunset', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-14' },
     { name:'Fushimi Inari Shrine', address:'Kyoto, Japan', lat:34.9671, lng:135.7727, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:tid(1), people:['Yuki'], visits:[{date:'2023-05-02',notes:'Went early to avoid crowds'}], notes:'Thousands of torii gates', needsApproval:false, suggestedCategory:null, createdAt:'2023-05-02' },
     { name:'Le Comptoir', address:'Paris, France', lat:48.8530, lng:2.3392, category:'restaurant', status:'bucket', googleRating:4.3, myRating:0, tripId:null, people:[], visits:[], notes:'Recommended by Pierre', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
-    { name:'Sintra National Palace', address:'Sintra, Portugal', lat:38.7976, lng:-9.3907, category:'unesco', status:'been', googleRating:4.5, myRating:5, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-16',notes:''}], notes:'Fairy tale palace', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-16' },
+    { name:'Sintra National Palace', address:'Sintra, Portugal', lat:38.7976, lng:-9.3907, category:'monument', status:'been', googleRating:4.5, myRating:5, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-16',notes:''}], notes:'Fairy tale palace', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-16' },
     { name:'Brooklyn Bridge', address:'New York, USA', lat:40.7061, lng:-73.9969, category:'monument', status:'been', googleRating:4.7, myRating:4, tripId:tid(2), people:['Carlos','Sofia'], visits:[{date:'2024-03-16',notes:'Walked across at night'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2024-03-16' },
     { name:'Shibuya Crossing', address:'Tokyo, Japan', lat:35.6595, lng:139.7004, category:'location', status:'been', googleRating:4.5, myRating:4, tripId:tid(1), people:['Yuki','Ana'], visits:[{date:'2023-04-30',notes:''}], notes:'Iconic', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-30' },
     { name:'Berghain', address:'Berlin, Germany', lat:52.5112, lng:13.4432, category:'club', status:'bucket', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[], notes:'Legendary techno club', needsApproval:false, suggestedCategory:null, createdAt:'2024-02-01' },
-    { name:'Colosseum', address:'Rome, Italy', lat:41.8902, lng:12.4922, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-03',notes:''}], notes:'Absolutely breathtaking', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-03' },
+    { name:'Colosseum', address:'Rome, Italy', lat:41.8902, lng:12.4922, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-03',notes:''}], notes:'Absolutely breathtaking', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-03' },
     { name:'Narita Airport', address:'Tokyo, Japan', lat:35.7720, lng:140.3929, category:'airport', status:'been', googleRating:4.1, myRating:3, tripId:tid(1), people:['Ana'], visits:[{date:'2023-04-28',notes:'Long immigration queue'}], notes:'', needsApproval:false, suggestedCategory:null, createdAt:'2023-04-28' },
     { name:'Bar Lobo', address:'Barcelona, Spain', lat:41.3809, lng:2.1701, category:'bar', status:'been', googleRating:4.1, myRating:4, tripId:null, people:['Carlos'], visits:[{date:'2023-08-12',notes:''}], notes:'Great cocktails near La Rambla', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-12' },
     { name:'Plitvice Lakes', address:'Croatia', lat:44.8654, lng:15.5820, category:'park', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Must visit in autumn', needsApproval:false, suggestedCategory:null, createdAt:'2024-06-01' },
     { name:'Camp Nou', address:'Barcelona, Spain', lat:41.3809, lng:2.1228, category:'stadium', status:'been', googleRating:4.6, myRating:5, tripId:null, people:['Carlos','Marco'], visits:[{date:'2023-08-13',notes:'El Clásico!'}], notes:'Dream come true', needsApproval:false, suggestedCategory:null, createdAt:'2023-08-13' },
     { name:'Grand Bazaar', address:'Istanbul, Turkey', lat:41.0107, lng:28.9680, category:'shopping', status:'bucket', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[], notes:'Want to buy ceramics', needsApproval:false, suggestedCategory:null, createdAt:'2024-04-20' },
-    { name:'Tomorrowland', address:'Boom, Belgium', lat:51.0924, lng:4.3700, category:'event', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Get tickets early!', needsApproval:false, suggestedCategory:null, createdAt:'2024-05-10' },
+    { name:'Tomorrowland', address:'Boom, Belgium', lat:51.0924, lng:4.3700, category:'festival', status:'bucket', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[], notes:'Get tickets early!', needsApproval:false, suggestedCategory:null, createdAt:'2024-05-10' },
     { name:'Café de Flore', address:'Paris, France', lat:48.8541, lng:2.3326, category:'cafe', status:'bucket', googleRating:4.1, myRating:0, tripId:null, people:[], visits:[], notes:'Classic Parisian café', needsApproval:false, suggestedCategory:null, createdAt:'2024-01-15' },
     { name:'Pensão Amor', address:'Lisbon, Portugal', lat:38.7075, lng:-9.1448, category:'bar', status:'been', googleRating:4.3, myRating:4, tripId:tid(0), people:['Ana','Marco'], visits:[{date:'2024-07-13',notes:'Amazing atmosphere'}], notes:'Former brothel turned bar', needsApproval:false, suggestedCategory:null, createdAt:'2024-07-13' },
-    { name:'Pompei', address:'Naples, Italy', lat:40.7508, lng:14.4869, category:'unesco', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-06',notes:''}], notes:'Eerily preserved', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-06' },
+    { name:'Pompei', address:'Naples, Italy', lat:40.7508, lng:14.4869, category:'monument', status:'been', googleRating:4.7, myRating:5, tripId:tid(3), people:['Ana','Marco','Sofia'], visits:[{date:'2022-09-06',notes:''}], notes:'Eerily preserved', needsApproval:false, suggestedCategory:null, createdAt:'2022-09-06' },
     // Approval items
     { name:'Some Restaurant in Lisbon', address:'Lisbon, Portugal', lat:38.7167, lng:-9.1395, category:'location', status:'been', googleRating:4.2, myRating:0, tripId:null, people:[], visits:[{date:'2024-07-15',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'restaurant', createdAt:'2024-07-15' },
     { name:'Tokyo Tower Area', address:'Tokyo, Japan', lat:35.6586, lng:139.7454, category:'location', status:'been', googleRating:4.4, myRating:0, tripId:null, people:[], visits:[{date:'2023-05-01',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'monument', createdAt:'2023-05-01' },
     { name:'Central Park Jog', address:'New York, USA', lat:40.7829, lng:-73.9654, category:'location', status:'been', googleRating:4.8, myRating:0, tripId:null, people:[], visits:[{date:'2024-03-17',notes:''}], notes:'Synced from Google Maps', needsApproval:true, suggestedCategory:'park', createdAt:'2024-03-17' },
   ];
   const savedLocs = mapIds(await api('POST', '/locations/bulk', { locations: locDefs }));
+
+  // Seed collections
+  const colDefs = [
+    { name: 'UNESCO World Heritage Sites', emoji: '🏰', description: 'UNESCO-designated sites of outstanding universal value', totalItems: 1199 },
+    { name: 'European Football Stadiums', emoji: '⚽', description: 'Major football stadiums across Europe', totalItems: null },
+  ];
+  const savedCols = [];
+  for (const c of colDefs) { savedCols.push(mapId(await api('POST', '/collections', c))); }
+
+  // Assign some locations to collections (UNESCO sites)
+  const unescoNames = ['Sintra National Palace', 'Colosseum', 'Pompei'];
+  for (const loc of savedLocs) {
+    if (unescoNames.includes(loc.name)) {
+      loc.collections = [savedCols[0].id];
+      await api('PUT', '/locations/' + loc.id, { collections: loc.collections });
+    }
+    if (loc.name === 'Camp Nou') {
+      loc.collections = [savedCols[1].id];
+      await api('PUT', '/locations/' + loc.id, { collections: loc.collections });
+    }
+  }
+
   state.trips = savedTrips;
   state.locations = savedLocs;
+  state.collections = savedCols;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -1719,7 +1777,7 @@ function buildCategoryFilters() {
 }
 
 function setStatusFilter(status, btn) {
-  document.querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
+  btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   state.filters.status = status;
   applyFilters();
@@ -1727,7 +1785,7 @@ function setStatusFilter(status, btn) {
 
 function clearStatusFilter() {
   state.filters.status = 'all';
-  document.querySelectorAll('.filter-group-btn').forEach(b => {
+  document.querySelectorAll('[data-status]').forEach(b => {
     b.classList.toggle('active', b.dataset.status === 'all');
   });
   applyFilters();
@@ -1823,6 +1881,7 @@ function switchView(viewId) {
   if (viewId === 'approval-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
+  if (viewId === 'collections-view') renderCollections();
   if (viewId === 'trips-view') {
     populateTripSelector();
     setTimeout(() => { initTripMap(); tripMap.invalidateSize(); }, 150);
@@ -1866,6 +1925,7 @@ function openAddModal(lat, lng) {
   state.modalStatus = 'been';
   state.modalTags = [];
   state.modalPrice = 0;
+  state.modalCollections = [];
 
   document.getElementById('modal-title').textContent = 'Add Location';
   document.getElementById('delete-loc-btn').style.display = 'none';
@@ -1885,6 +1945,7 @@ function openAddModal(lat, lng) {
   renderPeopleTags();
   renderVisitFields();
   renderModalTags();
+  renderModalCollections();
   updatePriceVisibility();
   setModalPrice(0);
   populateModalTrips();
@@ -1904,6 +1965,7 @@ function openEditModal(id) {
   state.modalStatus = loc.status;
   state.modalTags = [...(loc.tags || [])];
   state.modalPrice = loc.priceLevel || 0;
+  state.modalCollections = [...(loc.collections || [])];
 
   document.getElementById('modal-title').textContent = 'Edit Location';
   document.getElementById('delete-loc-btn').style.display = '';
@@ -1927,6 +1989,7 @@ function openEditModal(id) {
   renderPeopleTags();
   renderVisitFields();
   renderModalTags();
+  renderModalCollections();
   updatePriceVisibility();
   setModalPrice(state.modalPrice);
 
@@ -2065,6 +2128,7 @@ async function saveLocation() {
     notes: document.getElementById('loc-notes').value.trim(),
     tags: [...state.modalTags],
     priceLevel: state.modalPrice || null,
+    collections: [...state.modalCollections],
     needsApproval: false,
     suggestedCategory: null,
   };
@@ -2409,6 +2473,27 @@ function renderStats() {
   document.getElementById('people-leaderboard').innerHTML = peopleRanked.map(([name, count], i) =>
     `<div class="people-row"><span class="rank">${i+1}</span><span class="name">${name}</span><span class="count">${count} places</span></div>`
   ).join('') || '<p style="color:var(--text-muted);font-size:13px;">No travel companions recorded</p>';
+
+  // Collections stats
+  if (state.collections.length > 0) {
+    document.getElementById('stats-collections-section').style.display = '';
+    document.getElementById('stats-collections').innerHTML = state.collections.map(col => {
+      const colLocs = locs.filter(l => (l.collections || []).includes(col.id));
+      const visited = colLocs.filter(l => l.status === 'been').length;
+      const total = col.totalItems || colLocs.length;
+      const pct = total > 0 ? Math.round(visited / total * 100) : 0;
+      return `<div class="cat-stat-card">
+        <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
+        <div class="cat-stat-info">
+          <div class="cat-stat-name">${col.name}</div>
+          <div class="cat-stat-counts">${visited} / ${total} · ${pct}%</div>
+          <div class="cat-stat-bar"><div class="cat-stat-bar-fill" style="width:${pct}%;background:var(--accent);"></div></div>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    document.getElementById('stats-collections-section').style.display = 'none';
+  }
 
   // Charts
   renderCharts(been);
@@ -2828,6 +2913,161 @@ async function moveTripLoc(locId, direction) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
+/* COLLECTIONS                                                           */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function renderCollections() {
+  const container = document.getElementById('collections-grid');
+  if (state.collections.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+      <div class="empty-icon">🏆</div><h3>No Collections Yet</h3>
+      <p>Create collections like "UNESCO Sites", "US National Parks", or "Michelin Stars" to track your progress.</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = state.collections.map(col => {
+    const locs = state.locations.filter(l => (l.collections || []).includes(col.id));
+    const visited = locs.filter(l => l.status === 'been').length;
+    const total = col.totalItems || locs.length;
+    const pct = total > 0 ? Math.round(visited / total * 100) : 0;
+    return `<div class="cat-stat-card" style="cursor:pointer;" onclick="viewCollection('${col.id}')">
+      <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
+      <div class="cat-stat-info" style="flex:1;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="cat-stat-name">${col.name}</div>
+          <div style="display:flex;gap:4px;">
+            <button class="add-small-btn" onclick="event.stopPropagation();editCollection('${col.id}')" style="border-style:solid;padding:2px 6px;font-size:10px;">edit</button>
+            <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:10px;font-family:var(--font-body);" onclick="event.stopPropagation();deleteCollection('${col.id}')">×</button>
+          </div>
+        </div>
+        <div class="cat-stat-counts">${visited} of ${total} visited · ${pct}% complete</div>
+        <div class="cat-stat-bar"><div class="cat-stat-bar-fill" style="width:${pct}%;background:var(--accent);"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function viewCollection(colId) {
+  const col = state.collections.find(c => c.id === colId);
+  if (!col) return;
+  const locs = state.locations.filter(l => (l.collections || []).includes(colId));
+  const visited = locs.filter(l => l.status === 'been');
+  const bucket = locs.filter(l => l.status === 'bucket');
+
+  const container = document.getElementById('collections-grid');
+  let html = `<div style="grid-column:1/-1;margin-bottom:16px;">
+    <button class="add-small-btn" onclick="renderCollections()" style="margin-bottom:12px;">← Back to all collections</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <span style="font-size:32px;">${col.emoji || '📋'}</span>
+      <div>
+        <h2 style="font-family:var(--font-display);font-size:22px;margin:0;">${col.name}</h2>
+        <p style="font-size:13px;color:var(--text-muted);">${col.description || ''}</p>
+      </div>
+    </div>
+    <div class="trip-stats-grid" style="max-width:400px;">
+      <div class="trip-stat-mini"><div class="ts-val">${visited.length}</div><div class="ts-label">Visited</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${bucket.length}</div><div class="ts-label">Bucket List</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${col.totalItems || locs.length}</div><div class="ts-label">Total</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${col.totalItems ? Math.round(visited.length / col.totalItems * 100) : (locs.length ? Math.round(visited.length / locs.length * 100) : 0)}%</div><div class="ts-label">Complete</div></div>
+    </div>
+  </div>`;
+
+  if (locs.length === 0) {
+    html += `<div class="empty-state" style="grid-column:1/-1;"><p>No locations in this collection yet. Edit a location to add it.</p></div>`;
+  } else {
+    html += locs.map(loc => {
+      const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+      const statusIcon = loc.status === 'been' ? '✅' : '⭐';
+      const rating = loc.myRating ? ' · ★' + loc.myRating : '';
+      return `<div class="cat-stat-card" style="cursor:pointer;" onclick="switchView('map-view');setTimeout(()=>openEditModal('${loc.id}'),300)">
+        <span class="cat-stat-emoji">${cat.emoji}</span>
+        <div class="cat-stat-info">
+          <div class="cat-stat-name">${statusIcon} ${loc.name}</div>
+          <div class="cat-stat-counts">${cat.label}${rating} · ${loc.address || ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  container.innerHTML = html;
+}
+
+async function openNewCollectionModal() {
+  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):');
+  if (!name) return;
+  const emoji = prompt('Emoji icon:', '🏆') || '🏆';
+  const desc = prompt('Description (optional):') || '';
+  const totalStr = prompt('Total items to track (leave empty for open-ended):');
+  const totalItems = totalStr ? parseInt(totalStr) : null;
+
+  try {
+    const col = mapId(await api('POST', '/collections', { name, emoji, description: desc, totalItems }));
+    state.collections.push(col);
+    renderCollections();
+  } catch (err) { alert('Failed: ' + err.message); }
+}
+
+async function editCollection(id) {
+  const col = state.collections.find(c => c.id === id);
+  if (!col) return;
+  const name = prompt('Collection name:', col.name);
+  if (!name) return;
+  const emoji = prompt('Emoji:', col.emoji || '🏆') || '🏆';
+  const desc = prompt('Description:', col.description || '') || '';
+  const totalStr = prompt('Total items:', col.totalItems || '');
+  const totalItems = totalStr ? parseInt(totalStr) : null;
+
+  col.name = name; col.emoji = emoji; col.description = desc; col.totalItems = totalItems;
+  await api('PUT', '/collections/' + id, { name, emoji, description: desc, totalItems });
+  renderCollections();
+}
+
+async function deleteCollection(id) {
+  const col = state.collections.find(c => c.id === id);
+  if (!confirm(`Delete collection "${col?.name}"?`)) return;
+  // Remove from all locations
+  const updates = [];
+  state.locations.forEach(l => {
+    if (l.collections && l.collections.includes(id)) {
+      l.collections = l.collections.filter(c => c !== id);
+      updates.push(api('PUT', '/locations/' + l.id, { collections: l.collections }));
+    }
+  });
+  await Promise.all(updates);
+  await api('DELETE', '/collections/' + id);
+  state.collections = state.collections.filter(c => c.id !== id);
+  renderCollections();
+}
+
+// Modal: collection assignment
+function renderModalCollections() {
+  const container = document.getElementById('loc-collection-chips');
+  const locCols = state.modalCollections || [];
+  container.innerHTML = locCols.map((colId, i) => {
+    const col = state.collections.find(c => c.id === colId);
+    if (!col) return '';
+    return `<span class="people-tag">${col.emoji || '📋'} ${col.name}<span class="remove-tag" onclick="removeCollectionFromLoc(${i})">&times;</span></span>`;
+  }).join('');
+
+  const sel = document.getElementById('loc-collection-select');
+  sel.innerHTML = '<option value="">Add to collection...</option>' +
+    state.collections.filter(c => !locCols.includes(c.id))
+      .map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+}
+
+function addCollectionToLoc() {
+  const sel = document.getElementById('loc-collection-select');
+  const colId = sel.value;
+  if (!colId || state.modalCollections.includes(colId)) return;
+  state.modalCollections.push(colId);
+  renderModalCollections();
+}
+
+function removeCollectionFromLoc(i) {
+  state.modalCollections.splice(i, 1);
+  renderModalCollections();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
 /* IMPORT                                                                */
 /* ═══════════════════════════════════════════════════════════════════════ */
 function initImport() {
@@ -2872,6 +3112,7 @@ function parseJSON(content) {
   // Detect History Map export format (has exportDate + locations array with full fields)
   if (data.exportDate && Array.isArray(data.locations) && data.locations[0]?.category) {
     state.pendingRestoreTrips = data.trips || [];
+    state.pendingRestoreCollections = data.collections || [];
     return data.locations.map(item => ({
       name: item.name, lat: item.lat, lng: item.lng,
       category: item.category || 'location',
@@ -2884,8 +3125,11 @@ function parseJSON(content) {
       notes: item.notes || '',
       needsApproval: item.needsApproval || false,
       suggestedCategory: item.suggestedCategory || null,
+      tags: item.tags || [],
+      priceLevel: item.priceLevel || null,
       createdAt: item.createdAt || '',
-      _restoreTripId: item.tripId, // preserve for trip remapping
+      _restoreTripId: item.tripId,
+      _restoreCollections: item.collections || [],
       _isFullRestore: true,
     })).filter(l => l.lat && l.lng);
   }
@@ -2982,15 +3226,15 @@ function inferCategory(text) {
   if (/hotel|hostel|airbnb|stay|sleep|inn|lodge/i.test(t)) return 'hotel';
   if (/bar|pub|tavern|cocktail/i.test(t)) return 'bar';
   if (/club|disco|nightlife/i.test(t)) return 'club';
-  if (/museum|monument|temple|shrine|church|cathedral|castle|palace|tower/i.test(t)) return 'monument';
-  if (/unesco|heritage/i.test(t)) return 'unesco';
+  if (/museum|gallery|exhibit/i.test(t)) return 'museum';
+  if (/monument|temple|shrine|church|cathedral|castle|palace|tower/i.test(t)) return 'monument';
   if (/park|forest|nature|lake|mountain|trail|garden/i.test(t)) return 'park';
   if (/stadium|arena/i.test(t)) return 'stadium';
   if (/airport|terminal|flight/i.test(t)) return 'airport';
   if (/café|cafe|coffee/i.test(t)) return 'cafe';
   if (/shop|mall|market|store|boutique/i.test(t)) return 'shopping';
-  if (/theater|theatre|cinema|concert|show|opera/i.test(t)) return 'entertainment';
-  if (/festival|event|conference/i.test(t)) return 'event';
+  if (/theater|theatre|cinema|show|opera|circus/i.test(t)) return 'show';
+  if (/festival|concert|event|conference/i.test(t)) return 'festival';
   return 'location';
 }
 
@@ -3021,23 +3265,36 @@ async function confirmImport() {
   const autoApprove = document.getElementById('import-auto-approve')?.checked || false;
 
   try {
-    // Full restore: re-create trips first, remap IDs
+    // Full restore: re-create trips and collections first, remap IDs
     let tripIdMap = {};
-    if (isFullRestore && state.pendingRestoreTrips?.length) {
-      for (const t of state.pendingRestoreTrips) {
-        const oldId = t.id || t._id;
-        const { id: _drop, _id: _drop2, userId: _drop3, ...tripData } = t;
-        const saved = mapId(await api('POST', '/trips', tripData));
-        tripIdMap[oldId] = saved.id;
-        state.trips.push(saved);
+    let colIdMap = {};
+    if (isFullRestore) {
+      if (state.pendingRestoreTrips?.length) {
+        for (const t of state.pendingRestoreTrips) {
+          const oldId = t.id || t._id;
+          const { id: _drop, _id: _drop2, userId: _drop3, ...tripData } = t;
+          const saved = mapId(await api('POST', '/trips', tripData));
+          tripIdMap[oldId] = saved.id;
+          state.trips.push(saved);
+        }
+        state.pendingRestoreTrips = [];
       }
-      state.pendingRestoreTrips = [];
+      if (state.pendingRestoreCollections?.length) {
+        for (const c of state.pendingRestoreCollections) {
+          const oldId = c.id || c._id;
+          const { id: _drop, _id: _drop2, userId: _drop3, ...colData } = c;
+          const saved = mapId(await api('POST', '/collections', colData));
+          colIdMap[oldId] = saved.id;
+          state.collections.push(saved);
+        }
+        state.pendingRestoreCollections = [];
+      }
     }
 
     const toImport = state.pendingImport.map(item => {
       if (isFullRestore) {
-        const { _restoreTripId, _isFullRestore, id, _id, userId, ...rest } = item;
-        return { ...rest, tripId: tripIdMap[_restoreTripId] || null };
+        const { _restoreTripId, _restoreCollections, _isFullRestore, id, _id, userId, ...rest } = item;
+        return { ...rest, tripId: tripIdMap[_restoreTripId] || null, collections: (_restoreCollections || []).map(c => colIdMap[c] || c).filter(Boolean) };
       }
       return {
         name: item.name, address: item.address || '',
@@ -3093,7 +3350,7 @@ async function simulateGoogleSync() {
 /* EXPORT                                                                */
 /* ═══════════════════════════════════════════════════════════════════════ */
 function exportData() {
-  const data = { locations: state.locations, trips: state.trips, exportDate: new Date().toISOString() };
+  const data = { locations: state.locations, trips: state.trips, collections: state.collections, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
