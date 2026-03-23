@@ -13,6 +13,7 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════ */
 /* CSS VARIABLES & RESET                                      */
@@ -174,6 +175,15 @@ body {
 .leaflet-control-layers-expanded { padding: 10px 14px !important; }
 .leaflet-control-layers label { color: var(--text-primary) !important; font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; }
+
+.leaflet-tooltip {
+  background: var(--bg-secondary) !important; color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important; border-radius: var(--radius) !important;
+  font-family: var(--font-body) !important; font-size: 12px !important;
+  box-shadow: var(--shadow) !important; padding: 6px 10px !important;
+}
+.leaflet-tooltip-top::before { border-top-color: var(--bg-secondary) !important; }
+.leaflet-tooltip-bottom::before { border-bottom-color: var(--bg-secondary) !important; }
 
 /* Custom marker */
 .marker-icon {
@@ -968,6 +978,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="collections-view" onclick="switchView('collections-view')">
       🏆 <span class="tab-label">Collections</span>
     </button>
+    <button class="nav-tab" data-view="regions-view" onclick="switchView('regions-view')">
+      🌍 <span class="tab-label">Regions</span>
+    </button>
     <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
       📥 <span class="tab-label">Import</span>
       <span class="badge" id="approval-badge" style="display:none">0</span>
@@ -1081,7 +1094,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <canvas id="chart-activity"></canvas>
       </div>
       <div class="stats-panel">
-        <h3>Top Rated Places</h3>
+        <h3>Best in Category</h3>
         <div id="top-rated-list" class="top-rated-list"></div>
       </div>
       <div class="stats-panel">
@@ -1144,6 +1157,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div id="collections-grid" class="category-stats-grid stagger"></div>
   </div>
 
+  <!-- REGIONS VIEW -->
+  <div class="view" id="regions-view" style="flex-direction:column;overflow:hidden;">
+    <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg-glass);backdrop-filter:blur(12px);z-index:10;">
+      <h2 style="font-family:var(--font-display);font-size:18px;margin:0;">🌍 Visited Regions</h2>
+      <select class="filter-select" id="region-color-scheme" onchange="renderRegionsMap()" style="width:160px;">
+        <option value="amber">🟡 Amber</option>
+        <option value="blue">🔵 Blue</option>
+        <option value="green">🟢 Green</option>
+        <option value="red">🔴 Red</option>
+        <option value="purple">🟣 Purple</option>
+      </select>
+      <span style="font-size:12px;color:var(--text-muted);" id="regions-summary"></span>
+    </div>
+    <div id="regions-map" style="flex:1;"></div>
+  </div>
+
   <!-- IMPORT VIEW -->
   <div class="view" id="import-view">
     <div class="import-header">
@@ -1191,6 +1220,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📅 Timeline / Location History</strong>
             <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Location History</strong> → export. Import the monthly <code>.json</code> files from <code>Semantic Location History</code> folder. Visit dates and durations are preserved.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">📌 Mapstr</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">In the app: <strong>Profile → ⚙️ Settings → Manage your data → Export</strong>. You'll receive a CSV or GeoJSON file by email. Import it here — tags and names are preserved.</p>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📱 Android Apps</strong>
@@ -1879,6 +1912,7 @@ function switchView(viewId) {
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
   if (viewId === 'collections-view') renderCollections();
+  if (viewId === 'regions-view') renderRegionsMap();
   if (viewId === 'trips-view') {
     populateTripSelector();
     setTimeout(() => { initTripMap(); tripMap.invalidateSize(); }, 150);
@@ -2451,9 +2485,17 @@ function renderStats() {
     </div>`;
   }).join('');
 
-  // Top rated
-  const topRated = [...been].filter(l => l.myRating).sort((a,b) => b.myRating - a.myRating).slice(0, 8);
-  document.getElementById('top-rated-list').innerHTML = topRated.map(l => {
+  // Top rated — show best per category (avoids wall of 5-stars)
+  const ratedByCategory = {};
+  been.filter(l => l.myRating).forEach(l => {
+    if (!ratedByCategory[l.category]) ratedByCategory[l.category] = [];
+    ratedByCategory[l.category].push(l);
+  });
+  const topPerCat = Object.entries(ratedByCategory).map(([cat, locs]) => {
+    locs.sort((a,b) => b.myRating - a.myRating || (b.googleRating||0) - (a.googleRating||0));
+    return locs[0]; // best per category
+  }).sort((a,b) => b.myRating - a.myRating);
+  document.getElementById('top-rated-list').innerHTML = topPerCat.map(l => {
     const cat = CATEGORIES[l.category] || CATEGORIES.location;
     return `<div class="top-rated-item">
       <span class="tr-emoji">${cat.emoji}</span>
@@ -2968,8 +3010,22 @@ function viewCollection(colId) {
     </div>
   </div>`;
 
+  // Add location to collection widget
+  html += `<div style="grid-column:1/-1;margin-bottom:12px;">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select class="filter-select" id="add-to-collection-select" style="flex:1;">
+        <option value="">Add an existing location to this collection...</option>
+        ${state.locations.filter(l => !(l.collections || []).includes(colId)).map(l => {
+          const c = CATEGORIES[l.category] || CATEGORIES.location;
+          return `<option value="${l.id}">${c.emoji} ${l.name}</option>`;
+        }).join('')}
+      </select>
+      <button class="btn btn-primary" style="padding:8px 14px;font-size:12px;" onclick="addLocToCollection('${colId}')">Add</button>
+    </div>
+  </div>`;
+
   if (locs.length === 0) {
-    html += `<div class="empty-state" style="grid-column:1/-1;"><p>No locations in this collection yet. Edit a location to add it.</p></div>`;
+    html += `<div class="empty-state" style="grid-column:1/-1;"><p>No locations in this collection yet. Use the dropdown above or edit a location to add it.</p></div>`;
   } else {
     html += locs.map(loc => {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
@@ -2987,12 +3043,23 @@ function viewCollection(colId) {
   container.innerHTML = html;
 }
 
+async function addLocToCollection(colId) {
+  const sel = document.getElementById('add-to-collection-select');
+  const locId = sel.value;
+  if (!locId) return;
+  const loc = state.locations.find(l => l.id === locId);
+  if (!loc) return;
+  loc.collections = [...(loc.collections || []), colId];
+  await api('PUT', '/locations/' + locId, { collections: loc.collections });
+  viewCollection(colId);
+}
+
 async function openNewCollectionModal() {
-  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):');
+  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):\n\nYou can add locations to it afterwards from this tab or from the location edit modal.');
   if (!name) return;
   const emoji = prompt('Emoji icon:', '🏆') || '🏆';
   const desc = prompt('Description (optional):') || '';
-  const totalStr = prompt('Total items to track (leave empty for open-ended):');
+  const totalStr = prompt('Total items to track completion (e.g. 1199 for UNESCO sites).\nLeave empty for open-ended collections:');
   const totalItems = totalStr ? parseInt(totalStr) : null;
 
   try {
@@ -3061,6 +3128,130 @@ function addCollectionToLoc() {
 function removeCollectionFromLoc(i) {
   state.modalCollections.splice(i, 1);
   renderModalCollections();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* REGIONS CHOROPLETH                                                    */
+/* ═══════════════════════════════════════════════════════════════════════ */
+let regionsMap, regionsLayer, regionsGeoData;
+
+const REGION_COLORS = {
+  amber:  { light: '#fef3c7', dark: '#b45309', mid: '#f59e0b' },
+  blue:   { light: '#dbeafe', dark: '#1e40af', mid: '#3b82f6' },
+  green:  { light: '#dcfce7', dark: '#166534', mid: '#22c55e' },
+  red:    { light: '#fee2e2', dark: '#991b1b', mid: '#ef4444' },
+  purple: { light: '#f3e8ff', dark: '#6b21a8', mid: '#a855f7' },
+};
+
+function initRegionsMap() {
+  if (regionsMap) return;
+  regionsMap = L.map('regions-map', { center: [30, 0], zoom: 3, zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(regionsMap);
+  regionsLayer = L.geoJSON(null).addTo(regionsMap);
+}
+
+async function loadRegionBoundaries() {
+  if (regionsGeoData) return regionsGeoData;
+  try {
+    const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+    const topo = await res.json();
+    regionsGeoData = topojson.feature(topo, topo.objects.countries);
+    return regionsGeoData;
+  } catch (err) {
+    console.error('Failed to load boundaries:', err);
+    return null;
+  }
+}
+
+// ISO 3166 numeric → country name mapping (subset for matching)
+function getCountryFromAddress(address) {
+  if (!address) return null;
+  const parts = address.split(',').map(s => s.trim());
+  return parts[parts.length - 1] || null;
+}
+
+function countLocationsByCountry() {
+  const counts = {};
+  state.locations.filter(l => l.status === 'been' && !l.needsApproval).forEach(l => {
+    const country = getCountryFromAddress(l.address);
+    if (country) {
+      counts[country] = (counts[country] || 0) + 1;
+    }
+  });
+  return counts;
+}
+
+// Match country name to GeoJSON feature
+function matchCountryName(featureName, countryCounts) {
+  // Direct match
+  if (countryCounts[featureName]) return countryCounts[featureName];
+  // Case-insensitive
+  const lower = featureName.toLowerCase();
+  for (const [name, count] of Object.entries(countryCounts)) {
+    if (name.toLowerCase() === lower) return count;
+    // Partial match (e.g., "United States" matches "USA", "United States of America")
+    if (lower.includes(name.toLowerCase()) || name.toLowerCase().includes(lower)) return count;
+  }
+  return 0;
+}
+
+// ISO numeric code to name (common ones)
+const ISO_NAMES = {36:'Australia',40:'Austria',56:'Belgium',76:'Brazil',124:'Canada',156:'China',170:'Colombia',191:'Croatia',203:'Czech Republic',208:'Denmark',818:'Egypt',246:'Finland',250:'France',276:'Germany',300:'Greece',344:'Hong Kong',348:'Hungary',356:'India',360:'Indonesia',372:'Ireland',376:'Israel',380:'Italy',392:'Japan',410:'South Korea',442:'Luxembourg',458:'Malaysia',484:'Mexico',528:'Netherlands',554:'New Zealand',578:'Norway',616:'Poland',620:'Portugal',642:'Romania',643:'Russia',682:'Saudi Arabia',702:'Singapore',710:'South Africa',724:'Spain',752:'Sweden',756:'Switzerland',764:'Thailand',792:'Turkey',826:'United Kingdom',840:'USA',804:'Ukraine',784:'United Arab Emirates',32:'Argentina',152:'Chile',218:'Ecuador',604:'Peru',858:'Uruguay',862:'Venezuela'};
+
+async function renderRegionsMap() {
+  initRegionsMap();
+  const geo = await loadRegionBoundaries();
+  if (!geo) return;
+
+  const countryCounts = countLocationsByCountry();
+  const maxCount = Math.max(1, ...Object.values(countryCounts));
+  const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
+
+  regionsLayer.clearLayers();
+
+  const visitedCountries = new Set();
+
+  regionsLayer = L.geoJSON(geo, {
+    style: function(feature) {
+      const id = feature.id || feature.properties?.id;
+      const name = feature.properties?.name || ISO_NAMES[parseInt(id)] || '';
+      const count = matchCountryName(name, countryCounts);
+      if (count > 0) visitedCountries.add(name);
+      const intensity = count > 0 ? 0.2 + 0.8 * (count / maxCount) : 0;
+      return {
+        fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
+        fillOpacity: count > 0 ? 0.7 : 0,
+        weight: count > 0 ? 1.5 : 0.3,
+        color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.08)',
+      };
+    },
+    onEachFeature: function(feature, layer) {
+      const id = feature.id || feature.properties?.id;
+      const name = feature.properties?.name || ISO_NAMES[parseInt(id)] || 'Unknown';
+      const count = matchCountryName(name, countryCounts);
+      if (count > 0) {
+        layer.bindTooltip(`<strong>${name}</strong><br>${count} location${count > 1 ? 's' : ''}`, {
+          sticky: true, className: '',
+          direction: 'top',
+        });
+      }
+    }
+  }).addTo(regionsMap);
+
+  document.getElementById('regions-summary').textContent =
+    `${visitedCountries.size} countries · ${state.locations.filter(l => l.status === 'been').length} locations`;
+
+  setTimeout(() => regionsMap.invalidateSize(), 100);
+}
+
+function interpolateColor(c1, c2, t) {
+  const hex = s => parseInt(s, 16);
+  const r1 = hex(c1.slice(1,3)), g1 = hex(c1.slice(3,5)), b1 = hex(c1.slice(5,7));
+  const r2 = hex(c2.slice(1,3)), g2 = hex(c2.slice(3,5)), b2 = hex(c2.slice(5,7));
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3300,18 +3491,37 @@ function parseGoogleTimelineSegments(data) {
 function parseCSV(content) {
   const lines = content.trim().split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g,''));
+  // Auto-detect delimiter: semicolon (Mapstr) or comma
+  const firstLine = lines[0];
+  const delim = firstLine.includes(';') ? ';' : ',';
+  const headers = firstLine.split(delim).map(h => h.trim().toLowerCase().replace(/"/g,''));
+
   return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim().replace(/"/g,''));
+    // Handle quoted fields with embedded delimiters
+    const vals = [];
+    let current = '', inQuotes = false;
+    for (const ch of line) {
+      if (ch === '"') { inQuotes = !inQuotes; }
+      else if (ch === delim && !inQuotes) { vals.push(current.trim()); current = ''; }
+      else { current += ch; }
+    }
+    vals.push(current.trim());
+
     const obj = {};
-    headers.forEach((h, i) => obj[h] = vals[i]);
+    headers.forEach((h, i) => obj[h] = vals[i] || '');
+
+    // Mapstr uses 'name', 'latitude', 'longitude', and may include 'tags', 'note', 'address'
+    const name = obj.name || obj.title || obj.nom || 'Unknown';
+    const tags = (obj.tags || obj.tag || obj.liste || '').split(',').map(t => t.trim()).filter(Boolean);
     return {
-      name: obj.name || obj.title || 'Unknown',
+      name,
       lat: parseFloat(obj.lat || obj.latitude || 0),
       lng: parseFloat(obj.lng || obj.longitude || obj.lon || 0),
-      category: inferCategory(obj.name || obj.category || ''),
-      address: obj.address || obj.city || '',
+      category: inferCategory(name + ' ' + (obj.tags || '') + ' ' + (obj.category || '')),
+      address: obj.address || obj.adresse || obj.city || '',
       status: 'been',
+      notes: obj.note || obj.notes || obj.comment || '',
+      tags,
     };
   }).filter(l => l.lat && l.lng);
 }
@@ -3459,7 +3669,7 @@ async function confirmImport() {
         lat: item.lat, lng: item.lng, category: item.category, status: item.status,
         googleRating: null, myRating: 0, tripId: null, people: [],
         visits: item.visits || [], notes: item.notes || '',
-        tags: item._folderName ? [item._folderName] : [],
+        tags: item.tags?.length ? item.tags : (item._folderName ? [item._folderName] : []),
         needsApproval: !autoApprove,
         suggestedCategory: autoApprove ? null : item.category,
         createdAt: (item.visits?.[0]?.date) || new Date().toISOString().split('T')[0],
