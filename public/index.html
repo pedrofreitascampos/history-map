@@ -1365,7 +1365,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="form-group">
           <label>Source</label>
           <div class="filter-group">
-            <button class="filter-group-btn active" data-ginc="all" onclick="setGuideInclude('all',this)">My Places</button>
+            <button class="filter-group-btn active" data-ginc="all" onclick="setGuideInclude('all',this)">Been</button>
             <button class="filter-group-btn" data-ginc="bucket" onclick="setGuideInclude('bucket',this)">Bucket List</button>
             <button class="filter-group-btn" data-ginc="discover" onclick="setGuideInclude('discover',this)">Discover</button>
           </div>
@@ -3710,19 +3710,21 @@ function buildPlannerCategories() {
   }).join('');
 }
 
+// INVARIANT: toggling a category must only affect that one category, never mass-deselect.
+// Empty set = all active. When first category is deselected, switch to explicit set with all-minus-one.
 function togglePlannerCat(key, btn) {
   if (plannerCategories.size === 0) {
-    // First click: select only this one
+    // All are active (implicit). Deselect this one → explicit set with all minus clicked.
     plannerCategories = new Set(Object.keys(CATEGORIES));
     plannerCategories.delete(key);
-    // Invert: now we remove the clicked one... actually, let's select ONLY this one
-    plannerCategories = new Set([key]);
   } else if (plannerCategories.has(key)) {
     plannerCategories.delete(key);
-    if (plannerCategories.size === 0) plannerCategories = new Set(); // back to all
+    // If none left, reset to all
+    if (plannerCategories.size === 0) plannerCategories = new Set();
   } else {
     plannerCategories.add(key);
-    if (plannerCategories.size === Object.keys(CATEGORIES).length) plannerCategories = new Set(); // all selected = reset
+    // If all selected, reset to implicit all
+    if (plannerCategories.size === Object.keys(CATEGORIES).length) plannerCategories = new Set();
   }
   buildPlannerCategories();
   previewGuideLocations();
@@ -4043,6 +4045,9 @@ function renderGuideOutput(title, days) {
     <button class="btn btn-secondary" onclick="exportGuideJSON()" style="font-size:12px;padding:7px 14px;">💾 Export JSON</button>
   </div>`;
 
+  // Itinerary map
+  html += `<div id="planner-map" style="height:350px;border-radius:var(--radius-lg);margin-bottom:20px;border:1px solid var(--border);"></div>`;
+
   daysList.forEach((day, dayIdx) => {
     const dayLocs = day.locs;
     const driveStr = day.totalDriveMin ? ` · 🚗 ~${day.totalDriveMin}min` : '';
@@ -4082,6 +4087,71 @@ function renderGuideOutput(title, days) {
   // Store days for export (normalize to arrays of locs)
   state._guideDays = daysList.map(d => d.locs);
   state._guideTitle = title;
+
+  // Render itinerary map with per-day colored routes
+  renderPlannerMap(daysList);
+}
+
+const DAY_COLORS = ['#ffc144','#38bdf8','#4ade80','#f87171','#c084fc','#fb923c','#f472b6','#22d3ee','#a3e635','#fbbf24'];
+let _plannerMap = null;
+
+function renderPlannerMap(daysList) {
+  const mapEl = document.getElementById('planner-map');
+  if (!mapEl) return;
+
+  if (_plannerMap) { _plannerMap.remove(); _plannerMap = null; }
+  _plannerMap = L.map('planner-map', { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(_plannerMap);
+
+  const bounds = L.latLngBounds();
+
+  daysList.forEach((day, dayIdx) => {
+    const color = DAY_COLORS[dayIdx % DAY_COLORS.length];
+    const locs = day.locs;
+    if (locs.length === 0) return;
+
+    // Markers with day-colored numbers
+    locs.forEach((loc, i) => {
+      const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+      const marker = L.marker([loc.lat, loc.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="position:relative;">
+            <div class="marker-icon been" style="border-color:${color};background:${color}22;">${cat.emoji}</div>
+            <div style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:${color};color:#000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">${i+1}</div>
+          </div>`,
+          iconSize: [38, 38], iconAnchor: [19, 19],
+        })
+      });
+      marker.bindTooltip(`<strong>Day ${dayIdx+1}</strong>: ${loc.name}`, { direction: 'top' });
+      marker.addTo(_plannerMap);
+      bounds.extend([loc.lat, loc.lng]);
+    });
+
+    // Route line
+    if (locs.length > 1) {
+      L.polyline(locs.map(l => [l.lat, l.lng]), {
+        color, weight: 3, opacity: 0.8, dashArray: '6, 6',
+      }).addTo(_plannerMap);
+    }
+  });
+
+  if (bounds.isValid()) _plannerMap.fitBounds(bounds, { padding: [30, 30] });
+
+  // Legend
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = () => {
+    const div = L.DomUtil.create('div');
+    div.style.cssText = 'background:var(--bg-glass);backdrop-filter:blur(12px);padding:8px 12px;border-radius:8px;border:1px solid var(--border);font-size:11px;';
+    div.innerHTML = daysList.map((d, i) =>
+      `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">
+        <span style="width:12px;height:3px;background:${DAY_COLORS[i % DAY_COLORS.length]};border-radius:2px;"></span>
+        Day ${i+1} (${d.locs.length})
+      </div>`
+    ).join('');
+    return div;
+  };
+  legend.addTo(_plannerMap);
 }
 
 function openGoogleMapsDay(dayIdx) {

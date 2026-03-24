@@ -366,6 +366,32 @@ describe('Frontend invariants (code checks)', () => {
   test('switchView flushes pending render when returning to map', () => {
     expect(indexHtml).toContain('_renderMarkersPending = false; renderMarkers()');
   });
+
+  // ── Planner ──
+  test('planner category toggle does not mass-deselect', () => {
+    // Regression: clicking a category when all were active used to select ONLY that one.
+    // Must instead deselect just that one (all-minus-clicked).
+    const toggleFn = indexHtml.substring(
+      indexHtml.indexOf('function togglePlannerCat('),
+      indexHtml.indexOf('function togglePlannerCat(') + 800
+    );
+    // When size===0 (all active), must create set of ALL keys then delete the clicked one
+    expect(toggleFn).toContain('new Set(Object.keys(CATEGORIES))');
+    expect(toggleFn).toContain('.delete(key)');
+    // Must NOT contain "new Set([key])" which would select only one
+    expect(toggleFn).not.toContain('new Set([key])');
+  });
+
+  test('planner source button says "Been" not "My Places"', () => {
+    expect(indexHtml).toContain(">Been</button>");
+    expect(indexHtml).not.toContain(">My Places</button>");
+  });
+
+  test('planner renders an itinerary map', () => {
+    expect(indexHtml).toContain('id="planner-map"');
+    expect(indexHtml).toContain('function renderPlannerMap');
+    expect(indexHtml).toContain('DAY_COLORS');
+  });
 });
 
 // ─── Static files ────────────────────────────────────────
