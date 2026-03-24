@@ -8,6 +8,8 @@ const locations = Datastore.create({ filename: path.join(dataDir, 'locations.db'
 const trips = Datastore.create({ filename: path.join(dataDir, 'trips.db'), autoload: true });
 const collections = Datastore.create({ filename: path.join(dataDir, 'collections.db'), autoload: true });
 
+const auditLog = Datastore.create({ filename: path.join(dataDir, 'audit.db'), autoload: true });
+
 users.ensureIndex({ fieldName: 'username', unique: true });
 
-module.exports = { users, locations, trips, collections };
+module.exports = { users, locations, trips, collections, auditLog };

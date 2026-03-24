@@ -16,6 +16,19 @@ const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : nul
 const JWT_SECRET = process.env.JWT_SECRET || 'history-map-dev-secret-change-me';
 // Comma-separated list of allowed emails. Empty = anyone can register/sign in.
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+// First email in allowlist is considered admin
+const ADMIN_EMAIL = ALLOWED_EMAILS[0] || '';
+
+function audit(event, details, req) {
+  const entry = {
+    event,
+    ...details,
+    ip: req?.headers?.['x-forwarded-for'] || req?.ip || 'unknown',
+    userAgent: req?.headers?.['user-agent'] || '',
+    timestamp: new Date().toISOString(),
+  };
+  db.auditLog.insert(entry).catch(() => {});
+}
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
@@ -48,15 +61,20 @@ app.post('/api/auth/register', async (req, res) => {
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     if (password.length < 4) return res.status(400).json({ error: 'Password too short' });
     if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username.toLowerCase())) {
+      audit('register_blocked', { username, reason: 'not_in_allowlist' }, req);
       return res.status(403).json({ error: 'Registration is restricted. Contact the admin.' });
     }
 
     const existing = await db.users.findOne({ username });
-    if (existing) return res.status(409).json({ error: 'Username taken' });
+    if (existing) {
+      audit('register_failed', { username, reason: 'username_taken' }, req);
+      return res.status(409).json({ error: 'Username taken' });
+    }
 
     const hash = await bcrypt.hash(password, 10);
     const user = await db.users.insert({ username, password: hash, createdAt: new Date().toISOString() });
     const token = jwt.sign({ id: user._id, username }, JWT_SECRET, { expiresIn: '90d' });
+    audit('register_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
     res.status(500).json({ error: 'Registration failed' });
@@ -68,9 +86,11 @@ app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     const user = await db.users.findOne({ username });
     if (!user || !(await bcrypt.compare(password, user.password))) {
+      audit('login_failed', { username, reason: 'invalid_credentials' }, req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const token = jwt.sign({ id: user._id, username }, JWT_SECRET, { expiresIn: '90d' });
+    audit('login_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
     res.status(500).json({ error: 'Login failed' });
@@ -100,6 +120,7 @@ app.post('/api/auth/google', async (req, res) => {
     if (!user) {
       // Check allowlist for new users
       if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email.toLowerCase())) {
+        audit('google_login_blocked', { email, reason: 'not_in_allowlist' }, req);
         return res.status(403).json({ error: 'Access restricted. Contact the admin.' });
       }
       // Check if email matches an existing password user — link accounts
@@ -117,11 +138,23 @@ app.post('/api/auth/google', async (req, res) => {
       }
     }
     const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '90d' });
+    audit('google_login_success', { email: user.username }, req);
     res.json({ token, username: user.username, picture: user.picture });
   } catch (err) {
     console.error('Google auth error:', err.message);
+    audit('google_login_failed', { reason: err.message }, req);
     res.status(401).json({ error: 'Google authentication failed' });
   }
+});
+
+// ── Audit log (admin only) ────────────────────────────────
+app.get('/api/audit', auth, async (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  const limit = parseInt(req.query.limit) || 100;
+  const logs = await db.auditLog.find({}).sort({ timestamp: -1 }).limit(limit);
+  res.json(logs);
 });
 
 // ── Locations CRUD ───────────────────────────────────────
