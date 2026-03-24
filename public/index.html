@@ -2067,28 +2067,29 @@ function renderMarkers() {
 
   if (state.mapStyle === 'heat') {
     // Heat mode: heatmap always on, individual markers at high zoom
-    // Normalize intensity so even few POIs are visible
-    const intensity = Math.max(0.3, 1 / Math.sqrt(Math.max(1, filtered.length / 5)));
+    // Scale intensity: fewer POIs = brighter per point
+    const count = filtered.length || 1;
+    const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
     heatLayer.setLatLngs(filtered.map(l => [l.lat, l.lng, intensity]));
+    // Adjust heat radius based on zoom
+    heatLayer.setOptions({ radius: 35, blur: 25, max: intensity });
     if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
 
+    // Individual markers always available but hidden at low zoom
     _individualMarkersLayer = L.layerGroup();
     filtered.forEach(loc => {
       const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
       marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
       _individualMarkersLayer.addLayer(marker);
     });
-    // Show/hide individual markers based on zoom
-    const updateMarkersVisibility = () => {
-      const zoom = map.getZoom();
-      if (zoom >= 11 && !map.hasLayer(_individualMarkersLayer)) map.addLayer(_individualMarkersLayer);
-      if (zoom < 11 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
-      // Fade heat at high zoom
-      heatLayer.setOptions({ opacity: zoom >= 13 ? 0.3 : zoom >= 11 ? 0.6 : 0.8 });
+    const updateHeatZoom = () => {
+      const z = map.getZoom();
+      if (z >= 10 && !map.hasLayer(_individualMarkersLayer)) map.addLayer(_individualMarkersLayer);
+      if (z < 10 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
     };
-    map.off('zoomend', updateMarkersVisibility);
-    map.on('zoomend', updateMarkersVisibility);
-    updateMarkersVisibility();
+    map.off('zoomend', updateHeatZoom);
+    map.on('zoomend', updateHeatZoom);
+    updateHeatZoom();
   } else {
     // Cluster mode (default)
     if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
@@ -4117,15 +4118,18 @@ function initRegionsMap() {
 
 async function loadRegionBoundaries() {
   if (regionsGeoData) return regionsGeoData;
-  document.getElementById('regions-summary').textContent = 'Loading boundaries...';
+  document.getElementById('regions-summary').textContent = 'Loading boundaries (3.4MB)...';
   try {
     const res = await fetch('/admin1.json');
-    if (!res.ok) throw new Error('Failed to load: ' + res.status);
-    regionsGeoData = await res.json();
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    if (text.startsWith('<!')) throw new Error('Got HTML instead of JSON — file may not be deployed yet');
+    regionsGeoData = JSON.parse(text);
+    console.log('Loaded', regionsGeoData.features?.length, 'admin-1 regions');
     return regionsGeoData;
   } catch (err) {
     console.error('Failed to load admin-1 boundaries:', err);
-    document.getElementById('regions-summary').textContent = 'Failed to load boundaries.';
+    document.getElementById('regions-summary').textContent = 'Failed to load boundaries: ' + err.message;
     return null;
   }
 }
