@@ -825,7 +825,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 
 /* ═══════════════════════════════════════════════════════════ */
-/* GUIDES VIEW                                                 */
+/* PLANNER VIEW                                                */
 /* ═══════════════════════════════════════════════════════════ */
 .guide-day {
   background: var(--bg-card); border: 1px solid var(--border);
@@ -1027,8 +1027,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="collections-view" onclick="switchView('collections-view')">
       🏆 <span class="tab-label">Collections</span>
     </button>
-    <button class="nav-tab" data-view="guides-view" onclick="switchView('guides-view')">
-      📖 <span class="tab-label">Guides</span>
+    <button class="nav-tab" data-view="planner-view" onclick="switchView('planner-view')">
+      🗓️ <span class="tab-label">Planner</span>
     </button>
     <button class="nav-tab" data-view="regions-view" onclick="switchView('regions-view')">
       🌍 <span class="tab-label">Regions</span>
@@ -1091,13 +1091,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Price Level</h4>
-      <div class="filter-group">
-        <button class="filter-group-btn active" data-price="0" onclick="setPriceFilter(0, this)">All</button>
-        <button class="filter-group-btn" data-price="1" onclick="setPriceFilter(1, this)">€</button>
-        <button class="filter-group-btn" data-price="2" onclick="setPriceFilter(2, this)">€€</button>
-        <button class="filter-group-btn" data-price="3" onclick="setPriceFilter(3, this)">€€€</button>
-        <button class="filter-group-btn" data-price="4" onclick="setPriceFilter(4, this)">€€€€</button>
+      <h4>Price Level <span class="clear-btn" onclick="clearPriceFilter()">clear</span></h4>
+      <div class="filter-chips">
+        <button class="filter-chip" data-price="1" onclick="togglePriceFilter(1, this)">€</button>
+        <button class="filter-chip" data-price="2" onclick="togglePriceFilter(2, this)">€€</button>
+        <button class="filter-chip" data-price="3" onclick="togglePriceFilter(3, this)">€€€</button>
+        <button class="filter-chip" data-price="4" onclick="togglePriceFilter(4, this)">€€€€</button>
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <h4>Google Rating</h4>
+      <div class="rating-filter">
+        <label>Min</label>
+        <input type="range" class="rating-slider" id="google-rating-filter" min="0" max="5" step="0.5" value="0" oninput="document.getElementById('google-rating-value').textContent=this.value;applyFilters()">
+        <span class="rating-value" id="google-rating-value">0</span>
       </div>
     </div>
 
@@ -1210,68 +1218,99 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 
   <!-- GUIDES VIEW -->
-  <div class="view" id="guides-view" style="flex-direction:column;background:var(--bg-primary);overflow-y:auto;padding:24px;">
+  <div class="view" id="planner-view" style="flex-direction:column;background:var(--bg-primary);overflow-y:auto;padding:24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
       <div>
-        <h1 style="font-family:var(--font-display);font-size:28px;">Guides</h1>
-        <p style="color:var(--text-muted);font-size:14px;">Auto-generated itineraries from your best-rated places.</p>
+        <h1 style="font-family:var(--font-display);font-size:28px;">Trip Planner</h1>
+        <p style="color:var(--text-muted);font-size:14px;">Build a multi-day itinerary from your places or discover new ones.</p>
       </div>
     </div>
 
-    <!-- Guide generator -->
-    <div class="import-section" style="margin-bottom:24px;">
-      <h3 style="margin-bottom:16px;">✨ Generate a Guide</h3>
-      <div class="form-row" style="margin-bottom:12px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Region / City</label>
-          <input type="text" class="form-input" id="guide-region" placeholder="e.g. Lisbon, Madeira, Tokyo..."
+    <div class="import-sections" style="margin-bottom:24px;">
+      <div class="import-section">
+        <h3 style="margin-bottom:16px;">📍 Where & When</h3>
+        <div class="form-group">
+          <label>Destination / Region</label>
+          <input type="text" class="form-input" id="guide-region" placeholder="e.g. Lisbon, Sardinia, Bavaria..."
             oninput="previewGuideLocations()">
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Radius (km)</label>
-          <input type="number" class="form-input" id="guide-radius" value="50" min="1" max="500" step="5"
-            oninput="previewGuideLocations()">
-        </div>
-      </div>
-      <div class="form-row" style="margin-bottom:12px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Number of Days</label>
-          <input type="number" class="form-input" id="guide-days" value="3" min="1" max="30">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Max Stops per Day</label>
-          <input type="number" class="form-input" id="guide-max-per-day" value="8" min="1" max="20">
-        </div>
-      </div>
-      <div class="form-row" style="margin-bottom:12px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Min Google Rating</label>
-          <input type="number" class="form-input" id="guide-min-google" value="4.5" min="0" max="5" step="0.1">
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Min My Rating</label>
-          <input type="number" class="form-input" id="guide-min-mine" value="4" min="0" max="5" step="1">
-        </div>
-      </div>
-      <div class="form-row" style="margin-bottom:12px;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Include</label>
-          <div class="filter-group">
-            <button class="filter-group-btn active" data-ginc="all" onclick="setGuideInclude('all',this)">All</button>
-            <button class="filter-group-btn" data-ginc="been" onclick="setGuideInclude('been',this)">Been Only</button>
-            <button class="filter-group-btn" data-ginc="bucket" onclick="setGuideInclude('bucket',this)">Bucket Only</button>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Radius (km)</label>
+            <input type="number" class="form-input" id="guide-radius" value="50" min="1" max="500" step="5"
+              oninput="previewGuideLocations()">
+          </div>
+          <div class="form-group">
+            <label>Number of Days</label>
+            <input type="number" class="form-input" id="guide-days" value="3" min="1" max="30">
           </div>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Matching Places</label>
-          <div style="font-size:24px;font-family:var(--font-display);color:var(--accent);" id="guide-match-count">0</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Max Stops / Day</label>
+            <input type="number" class="form-input" id="guide-max-per-day" value="6" min="1" max="15">
+          </div>
+          <div class="form-group">
+            <label>Max Driving / Day</label>
+            <select class="filter-select" id="planner-max-drive">
+              <option value="60">1 hour</option>
+              <option value="120" selected>2 hours</option>
+              <option value="180">3 hours</option>
+              <option value="0">No limit</option>
+            </select>
+          </div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="generateGuide()" style="width:100%;">📖 Generate Guide</button>
+
+      <div class="import-section">
+        <h3 style="margin-bottom:16px;">🎯 Preferences</h3>
+        <div class="form-group">
+          <label>Source</label>
+          <div class="filter-group">
+            <button class="filter-group-btn active" data-ginc="all" onclick="setGuideInclude('all',this)">My Places</button>
+            <button class="filter-group-btn" data-ginc="bucket" onclick="setGuideInclude('bucket',this)">Bucket List</button>
+            <button class="filter-group-btn" data-ginc="discover" onclick="setGuideInclude('discover',this)">Discover</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Party</label>
+          <div class="filter-group">
+            <button class="filter-group-btn active" data-party="any" onclick="setPlannerParty('any',this)">Any</button>
+            <button class="filter-group-btn" data-party="couple" onclick="setPlannerParty('couple',this)">👫 Couple</button>
+            <button class="filter-group-btn" data-party="family" onclick="setPlannerParty('family',this)">👨‍👩‍👧 Family</button>
+            <button class="filter-group-btn" data-party="friends" onclick="setPlannerParty('friends',this)">🍻 Friends</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Max Price</label>
+          <div class="filter-group">
+            <button class="filter-group-btn active" data-pp="0" onclick="setPlannerPrice(0,this)">Any</button>
+            <button class="filter-group-btn" data-pp="1" onclick="setPlannerPrice(1,this)">€</button>
+            <button class="filter-group-btn" data-pp="2" onclick="setPlannerPrice(2,this)">€€</button>
+            <button class="filter-group-btn" data-pp="3" onclick="setPlannerPrice(3,this)">€€€</button>
+            <button class="filter-group-btn" data-pp="4" onclick="setPlannerPrice(4,this)">€€€€</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Min Google Rating</label>
+            <input type="number" class="form-input" id="guide-min-google" value="4.0" min="0" max="5" step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Min My Rating</label>
+            <input type="number" class="form-input" id="guide-min-mine" value="4" min="0" max="5" step="1">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">Matching: <strong style="color:var(--accent);" id="guide-match-count">0</strong> places</span>
+        </div>
+      </div>
     </div>
 
-    <!-- Generated guide output -->
-    <div id="guide-output" style="display:none;"></div>
+    <button class="btn btn-primary" onclick="generateGuide()" style="width:100%;padding:14px;font-size:15px;">🗓️ Build Itinerary</button>
+
+    <!-- Generated plan output -->
+    <div id="guide-output" style="display:none;margin-top:24px;"></div>
   </div>
 
   <!-- REGIONS VIEW -->
@@ -1592,7 +1631,7 @@ let state = {
   locations: [],
   trips: [],
   collections: [],
-  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, tags: new Set(), maxPrice: 0 },
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, tags: new Set(), priceLevels: new Set() },
   editingId: null,
   modalPeople: [],
   modalVisits: [],
@@ -1936,8 +1975,9 @@ function getFilteredLocations() {
     if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
     if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
     if (state.filters.minRating > 0 && loc.status === 'been' && (loc.myRating || 0) < state.filters.minRating) return false;
+    if (state.filters.minGoogleRating > 0 && (loc.googleRating || 0) > 0 && (loc.googleRating || 0) < state.filters.minGoogleRating) return false;
     if (state.filters.tags.size > 0 && !([...(loc.tags || [])].some(t => state.filters.tags.has(t)))) return false;
-    if (state.filters.maxPrice > 0 && (loc.priceLevel || 0) > 0 && loc.priceLevel > state.filters.maxPrice) return false;
+    if (state.filters.priceLevels.size > 0 && loc.priceLevel && !state.filters.priceLevels.has(loc.priceLevel)) return false;
     return true;
   });
 }
@@ -2023,11 +2063,15 @@ function clearTagFilter() {
   applyFilters();
 }
 
-function setPriceFilter(val, btn) {
-  state.filters.maxPrice = val;
-  btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => {
-    b.classList.toggle('active', parseInt(b.dataset.price) === val);
-  });
+function togglePriceFilter(val, btn) {
+  if (state.filters.priceLevels.has(val)) state.filters.priceLevels.delete(val);
+  else state.filters.priceLevels.add(val);
+  btn.classList.toggle('active');
+  applyFilters();
+}
+function clearPriceFilter() {
+  state.filters.priceLevels.clear();
+  document.querySelectorAll('[data-price].filter-chip').forEach(b => b.classList.remove('active'));
   applyFilters();
 }
 
@@ -2035,6 +2079,7 @@ function applyFilters() {
   state.filters.trip = document.getElementById('trip-filter').value;
   state.filters.person = document.getElementById('people-filter').value;
   state.filters.minRating = parseFloat(document.getElementById('rating-filter').value);
+  state.filters.minGoogleRating = parseFloat(document.getElementById('google-rating-filter').value);
   renderMarkers();
 }
 
@@ -2069,7 +2114,7 @@ function switchView(viewId) {
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
   if (viewId === 'collections-view') renderCollections();
-  if (viewId === 'guides-view') previewGuideLocations();
+  if (viewId === 'planner-view') previewGuideLocations();
   if (viewId === 'regions-view') renderRegionsMap();
   if (viewId === 'trips-view') {
     populateTripSelector();
@@ -3408,12 +3453,35 @@ function removeCollectionFromLoc(i) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
-/* GUIDES                                                                */
+/* PLANNER                                                               */
 /* ═══════════════════════════════════════════════════════════════════════ */
 let guideInclude = 'all';
+let plannerParty = 'any';
+let plannerMaxPrice = 0;
+
+// Party type → category weight adjustments
+const PARTY_WEIGHTS = {
+  any: {},
+  couple: { restaurant: 1.5, bar: 1.3, cafe: 1.2, club: 0.5, museum: 1.2 },
+  family: { park: 1.5, museum: 1.5, show: 1.3, restaurant: 1.2, bar: 0.3, club: 0, monument: 1.3 },
+  friends: { bar: 1.5, restaurant: 1.3, club: 1.5, stadium: 1.3, festival: 1.5, cafe: 1.2 },
+};
 
 function setGuideInclude(val, btn) {
   guideInclude = val;
+  btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  previewGuideLocations();
+}
+
+function setPlannerParty(val, btn) {
+  plannerParty = val;
+  btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function setPlannerPrice(val, btn) {
+  plannerMaxPrice = val;
   btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   previewGuideLocations();
@@ -3443,62 +3511,169 @@ function getGuideLocations() {
     };
   }
 
-  // Second pass: apply radius filter from center + rating filter
+  // Second pass: apply radius filter from center + rating + price filter
   return state.locations.filter(l => {
     if (l.needsApproval) return false;
     if (guideInclude === 'been' && l.status !== 'been') return false;
     if (guideInclude === 'bucket' && l.status !== 'bucket') return false;
+    if (guideInclude === 'discover') return false; // discover mode doesn't use existing locations
     // Radius from center (if we have a center)
     if (center) {
       const dist = haversineKm(center.lat, center.lng, l.lat, l.lng);
       if (dist > radiusKm) return false;
     } else if (region) {
-      // No center found, fall back to text match
       if (!(l.address || '').toLowerCase().includes(region) && !(l.name || '').toLowerCase().includes(region)) return false;
     }
+    // Price filter
+    if (plannerMaxPrice > 0 && (l.priceLevel || 0) > plannerMaxPrice) return false;
     // Rating: meets EITHER threshold
     const meetsGoogle = (l.googleRating || 0) >= minGoogle;
     const meetsMine = (l.myRating || 0) >= minMine;
     if (!meetsGoogle && !meetsMine) return false;
+    // Party filter: exclude categories with 0 weight
+    const weights = PARTY_WEIGHTS[plannerParty] || {};
+    if (weights[l.category] === 0) return false;
     return true;
   });
 }
 
 function previewGuideLocations() {
+  if (guideInclude === 'discover') {
+    document.getElementById('guide-match-count').textContent = '∞ (discover)';
+    return;
+  }
   const locs = getGuideLocations();
   document.getElementById('guide-match-count').textContent = locs.length;
 }
 
-function generateGuide() {
-  let locs = getGuideLocations();
+async function generateGuide() {
   const numDays = parseInt(document.getElementById('guide-days').value) || 3;
-  const maxPerDay = parseInt(document.getElementById('guide-max-per-day').value) || 8;
+  const maxPerDay = parseInt(document.getElementById('guide-max-per-day').value) || 6;
   const maxTotal = numDays * maxPerDay;
   const region = document.getElementById('guide-region').value.trim();
 
-  if (locs.length === 0) {
-    alert('No locations match your criteria. Try a different region or lower the rating thresholds.');
-    return;
+  let locs;
+  if (guideInclude === 'discover') {
+    // Discover mode: search Nominatim for POIs near the region
+    locs = await discoverPlaces(region, maxTotal);
+    if (!locs || locs.length === 0) {
+      alert('No places found for this region. Try a different search term.');
+      return;
+    }
+  } else {
+    locs = getGuideLocations();
+    if (locs.length === 0) {
+      alert('No locations match your criteria. Try a different region or lower thresholds.');
+      return;
+    }
   }
 
-  // Sort by best rating and cap total
+  // Score and sort by rating + party weight
+  const weights = PARTY_WEIGHTS[plannerParty] || {};
   locs.sort((a, b) => {
-    const scoreA = Math.max(a.myRating || 0, (a.googleRating || 0));
-    const scoreB = Math.max(b.myRating || 0, (b.googleRating || 0));
+    const wA = weights[a.category] ?? 1;
+    const wB = weights[b.category] ?? 1;
+    const scoreA = Math.max(a.myRating || 0, (a.googleRating || 0)) * wA;
+    const scoreB = Math.max(b.myRating || 0, (b.googleRating || 0)) * wB;
     return scoreB - scoreA;
   });
-  if (locs.length > maxTotal) {
-    locs = locs.slice(0, maxTotal);
+  if (locs.length > maxTotal) locs = locs.slice(0, maxTotal);
+
+  // Cluster into days
+  const days = clusterIntoDays(locs, numDays).map(d => d.slice(0, maxPerDay));
+
+  // Estimate drive times per day via OSRM
+  const daysWithDriving = await estimateDriveTimes(days);
+
+  // Render
+  renderGuideOutput(region || 'Your Itinerary', daysWithDriving);
+}
+
+async function discoverPlaces(region, maxResults) {
+  if (!region) return [];
+  const output = document.getElementById('guide-output');
+  output.style.display = '';
+  output.innerHTML = '<p style="color:var(--text-muted);">🔍 Discovering places near ' + region + '...</p>';
+
+  try {
+    // Search for the region to get center coordinates
+    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(region)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
+    const geoResults = await geoRes.json();
+    if (geoResults.length === 0) return [];
+    const center = { lat: parseFloat(geoResults[0].lat), lng: parseFloat(geoResults[0].lon) };
+    const radiusKm = parseFloat(document.getElementById('guide-radius').value) || 50;
+
+    // Search for various POI types
+    const poiTypes = ['restaurant','hotel','museum','park','monument','bar','cafe','stadium','theatre'];
+    const allResults = [];
+    for (const type of poiTypes) {
+      if (allResults.length >= maxResults) break;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(type + ' near ' + region)}&format=json&limit=8&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+        const results = await res.json();
+        results.forEach(r => {
+          const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+          if (haversineKm(center.lat, center.lng, lat, lng) <= radiusKm) {
+            allResults.push({
+              name: r.name || r.display_name.split(',')[0],
+              lat, lng,
+              address: r.display_name || '',
+              category: inferCategory(type + ' ' + (r.name || '')),
+              status: 'bucket',
+              googleRating: null, myRating: 0,
+              tags: [type], priceLevel: null,
+            });
+          }
+        });
+        await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
+      } catch {}
+    }
+
+    // Deduplicate by proximity
+    const unique = [];
+    allResults.forEach(loc => {
+      if (!unique.some(u => haversineKm(u.lat, u.lng, loc.lat, loc.lng) < 0.05)) {
+        unique.push(loc);
+      }
+    });
+    return unique.slice(0, maxResults);
+  } catch (err) {
+    console.error('Discover failed:', err);
+    return [];
   }
+}
 
-  // Cluster locations into days by geographic proximity
-  const days = clusterIntoDays(locs, numDays);
-
-  // Cap each day
-  const cappedDays = days.map(d => d.slice(0, maxPerDay));
-
-  // Render the guide
-  renderGuideOutput(region || 'Your Guide', cappedDays);
+async function estimateDriveTimes(days) {
+  const result = [];
+  for (const dayLocs of days) {
+    let totalDriveMin = 0;
+    const locsWithDrive = [];
+    for (let i = 0; i < dayLocs.length; i++) {
+      const loc = { ...dayLocs[i], driveFromPrev: null };
+      if (i > 0) {
+        const prev = dayLocs[i - 1];
+        const dist = haversineKm(prev.lat, prev.lng, loc.lat, loc.lng);
+        if (dist < 300) {
+          try {
+            const coords = `${prev.lng},${prev.lat};${loc.lng},${loc.lat}`;
+            const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`);
+            const data = await res.json();
+            if (data.code === 'Ok' && data.routes?.[0]) {
+              loc.driveFromPrev = Math.round(data.routes[0].duration / 60);
+              totalDriveMin += loc.driveFromPrev;
+            }
+          } catch {
+            // Fallback: estimate from distance
+            loc.driveFromPrev = Math.round(dist / 50 * 60); // assume 50km/h avg
+            totalDriveMin += loc.driveFromPrev;
+          }
+        }
+      }
+      locsWithDrive.push(loc);
+    }
+    result.push({ locs: locsWithDrive, totalDriveMin });
+  }
+  return result;
 }
 
 function clusterIntoDays(locations, numDays) {
@@ -3578,23 +3753,29 @@ function renderGuideOutput(title, days) {
   const output = document.getElementById('guide-output');
   output.style.display = '';
 
-  const allLocs = days.flat();
+  // days is now array of { locs, totalDriveMin } from estimateDriveTimes
+  const isEnriched = days[0]?.locs;
+  const daysList = isEnriched ? days : days.map(d => ({ locs: d, totalDriveMin: 0 }));
+  const allLocs = daysList.flatMap(d => d.locs);
+  const totalDrive = daysList.reduce((s, d) => s + (d.totalDriveMin || 0), 0);
+
   let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-    <h2 style="font-family:var(--font-display);font-size:24px;">📖 ${title}</h2>
-    <span style="font-size:13px;color:var(--text-muted);">${days.length} day${days.length>1?'s':''} · ${allLocs.length} stops</span>
+    <h2 style="font-family:var(--font-display);font-size:24px;">🗓️ ${title}</h2>
+    <span style="font-size:13px;color:var(--text-muted);">${daysList.length} day${daysList.length>1?'s':''} · ${allLocs.length} stops${totalDrive ? ` · ~${Math.round(totalDrive/60)}h driving` : ''}</span>
   </div>`;
 
-  // Export bar
   html += `<div class="guide-export-bar">
     <button class="btn btn-secondary" onclick="exportGuideKML()" style="font-size:12px;padding:7px 14px;">📥 Export KML</button>
     <button class="btn btn-secondary" onclick="exportGuideGoogleMaps()" style="font-size:12px;padding:7px 14px;">🗺️ Open in Google Maps</button>
     <button class="btn btn-secondary" onclick="exportGuideJSON()" style="font-size:12px;padding:7px 14px;">💾 Export JSON</button>
   </div>`;
 
-  days.forEach((dayLocs, dayIdx) => {
+  daysList.forEach((day, dayIdx) => {
+    const dayLocs = day.locs;
+    const driveStr = day.totalDriveMin ? ` · 🚗 ~${day.totalDriveMin}min` : '';
     html += `<div class="guide-day">
       <div class="guide-day-header">
-        <h3><span class="day-badge">Day ${dayIdx + 1}</span> ${dayLocs.length} stops</h3>
+        <h3><span class="day-badge">Day ${dayIdx + 1}</span> ${dayLocs.length} stops${driveStr}</h3>
         <button class="btn btn-secondary" onclick="openGoogleMapsDay(${dayIdx})" style="font-size:11px;padding:5px 10px;">🗺️ Directions</button>
       </div>`;
 
@@ -3605,11 +3786,12 @@ function renderGuideOutput(title, days) {
       const mRating = loc.myRating ? `★${loc.myRating}` : '';
       const status = loc.status === 'been' ? '✅' : '⭐';
       const tags = (loc.tags || []).slice(0, 3).join(', ');
+      const driveTag = loc.driveFromPrev ? `<span style="font-size:10px;color:var(--text-muted);background:var(--bg-tertiary);padding:1px 6px;border-radius:8px;">🚗 ${loc.driveFromPrev}min</span>` : '';
       html += `<div class="guide-stop">
         <div class="gs-num">${i + 1}</div>
         <span class="gs-emoji">${cat.emoji}</span>
         <div class="gs-info">
-          <div class="gs-name">${status} ${loc.name}</div>
+          <div class="gs-name">${status} ${loc.name} ${driveTag}</div>
           <div class="gs-meta">${cat.label}${price}${tags ? ' · ' + tags : ''} · ${loc.address || ''}</div>
         </div>
         <div class="gs-ratings">
@@ -3624,8 +3806,8 @@ function renderGuideOutput(title, days) {
 
   output.innerHTML = html;
 
-  // Store days for export
-  state._guideDays = days;
+  // Store days for export (normalize to arrays of locs)
+  state._guideDays = daysList.map(d => d.locs);
   state._guideTitle = title;
 }
 
