@@ -317,14 +317,23 @@ describe('Import parsers', () => {
     expect(evalParser('parseGeoJSON')).toBe(true);
   });
 
-  test('CSV parser extracts coords from Google Maps URLs', () => {
-    // Regression: Google Takeout Saved Places CSV has coords in URL, not separate columns
-    expect(indexHtml).toContain("/@(-?\\d+\\.?\\d*),(-?\\d+\\.?\\d*)");
-    expect(indexHtml).toContain("obj.url || obj.link || obj['google maps url']");
+  test('CSV parser handles Google Takeout format (no coords, geocodes by name)', () => {
+    // Regression: Google Takeout Saved CSV has Title,Note,URL,Tags,Comment
+    // with NO lat/lng — only place name in URL. Must geocode via Nominatim.
+    expect(indexHtml).toContain('isGoogleSaved');
+    expect(indexHtml).toContain('_needsGeocode');
+    expect(indexHtml).toContain('geocodeCSVResults');
   });
 
-  test('CSV parser handles Title column (Google Takeout uses Title not Name)', () => {
-    expect(indexHtml).toContain("obj.title || obj.name");
+  test('CSV parser skips empty rows', () => {
+    // Google Takeout CSV has blank row 2 (just commas)
+    expect(indexHtml).toContain("if (!name) continue");
+  });
+
+  test('handleFiles handles async parsers (geocoding)', () => {
+    // CSV geocoding returns a Promise, handleFiles must await it
+    expect(indexHtml).toContain('parsed instanceof Promise');
+    expect(indexHtml).toContain('parsed = await parsed');
   });
 
   test('Timeline detection covers all known formats', () => {
@@ -338,8 +347,16 @@ describe('Import parsers', () => {
     expect(indexHtml).toContain('data[0]?.startTime && data[0]?.endTime');
     // Segments: { semanticSegments: [...] }
     expect(indexHtml).toContain('data.semanticSegments');
+    // Timeline Edits: { timelineEdits: [...] }
+    expect(indexHtml).toContain('data.timelineEdits');
     // Raw: { locations: [{ latitudeE7 }] }
     expect(indexHtml).toContain('data.locations[0]?.latitudeE7');
+  });
+
+  test('Timeline Edits parser handles placeAggregateInfo with latE7/lngE7', () => {
+    expect(indexHtml).toContain('parseGoogleTimelineEdits');
+    expect(indexHtml).toContain('placeAggregateInfo');
+    expect(indexHtml).toContain('pp.latE7');
   });
 
   test('Raw locations parser caps output and filters drive-by points', () => {

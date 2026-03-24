@@ -4428,7 +4428,7 @@ function handleFiles(files) {
   const file = files[0];
   const ext = file.name.split('.').pop().toLowerCase();
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const content = e.target.result;
     try {
       let parsed = [];
@@ -4437,6 +4437,9 @@ function handleFiles(files) {
       else if (ext === 'geojson') parsed = parseGeoJSON(content);
       else if (ext === 'kml') parsed = parseKML(content);
       else { alert('Unsupported format'); return; }
+
+      // Handle async parsers (geocoding CSV)
+      if (parsed instanceof Promise) parsed = await parsed;
 
       state.pendingImport = parsed;
       showImportPreview(parsed);
@@ -4503,7 +4506,12 @@ function parseJSON(content) {
     return parseGoogleTimelineSegments(data);
   }
 
-  // 8. Google Timeline — Location History wrapper with locations array
+  // 8. Google Timeline Edits (placeAggregates)
+  if (data.timelineEdits) {
+    return parseGoogleTimelineEdits(data);
+  }
+
+  // 9. Google Timeline — Location History wrapper with locations array
   if (data.locations && Array.isArray(data.locations) && data.locations[0]?.latitudeE7) {
     return parseGoogleRawLocations(data);
   }
@@ -4670,53 +4678,90 @@ function parseCSVLine(line, delim) {
 function parseCSV(content) {
   const lines = content.trim().split('\n').map(l => l.replace(/\r$/, ''));
   if (lines.length < 2) return [];
-  // Auto-detect delimiter: semicolon (Mapstr) or comma
   const firstLine = lines[0];
   const delim = firstLine.includes(';') ? ';' : ',';
   const headers = parseCSVLine(firstLine, delim).map(h => h.toLowerCase().replace(/"/g, ''));
 
-  return lines.slice(1).map(line => {
+  // Detect Google Takeout Saved Places CSV (Title,Note,URL,Tags,Comment)
+  const isGoogleSaved = headers.includes('title') && headers.includes('url') && !headers.includes('lat') && !headers.includes('latitude');
+
+  const results = [];
+  for (const line of lines.slice(1)) {
     const vals = parseCSVLine(line, delim);
     const obj = {};
     headers.forEach((h, i) => obj[h] = vals[i] || '');
 
-    const name = obj.title || obj.name || obj.nom || 'Unknown';
+    const name = obj.title || obj.name || obj.nom || '';
+    if (!name) continue; // skip empty rows (Google Takeout has blank row 2)
+
     let lat = parseFloat(obj.lat || obj.latitude || 0);
     let lng = parseFloat(obj.lng || obj.longitude || obj.lon || 0);
 
-    // Google Takeout Saved Places CSV: coords are in the URL column
-    // Format: https://www.google.com/maps/place/.../@lat,lng,zoomz/...
-    if ((!lat || !lng) && (obj.url || obj.link || obj['google maps url'])) {
-      const url = obj.url || obj.link || obj['google maps url'];
-      const coordMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-      if (coordMatch) {
-        lat = parseFloat(coordMatch[1]);
-        lng = parseFloat(coordMatch[2]);
-      }
-    }
-
-    // Also try 'place url', 'maps url' variations
-    if ((!lat || !lng)) {
+    // Try extracting coords from URL (@lat,lng pattern)
+    if (!lat || !lng) {
       for (const key of Object.keys(obj)) {
         if (key.includes('url') || key.includes('link')) {
-          const coordMatch = (obj[key] || '').match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-          if (coordMatch) { lat = parseFloat(coordMatch[1]); lng = parseFloat(coordMatch[2]); break; }
+          const m = (obj[key] || '').match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+          if (m) { lat = parseFloat(m[1]); lng = parseFloat(m[2]); break; }
         }
       }
     }
 
     const tags = (obj.tags || obj.tag || obj.liste || obj.label || '').split(',').map(t => t.trim()).filter(Boolean);
     const address = obj.address || obj.adresse || obj.city || obj.location || '';
-    return {
-      name,
-      lat, lng,
-      category: inferCategory(name + ' ' + (obj.tags || obj.label || '') + ' ' + (obj.category || '') + ' ' + address),
-      address,
-      status: 'been',
-      notes: obj.note || obj.notes || obj.comment || '',
-      tags,
-    };
-  }).filter(l => l.lat && l.lng);
+
+    if (isGoogleSaved && (!lat || !lng)) {
+      // Google Takeout CSV: no coords available, will geocode by name
+      results.push({
+        name, lat: 0, lng: 0,
+        category: inferCategory(name + ' ' + tags.join(' ')),
+        address, status: 'been',
+        notes: obj.note || obj.notes || obj.comment || '',
+        tags, _needsGeocode: true,
+      });
+    } else if (lat && lng) {
+      results.push({
+        name, lat, lng,
+        category: inferCategory(name + ' ' + tags.join(' ') + ' ' + (obj.category || '') + ' ' + address),
+        address, status: 'been',
+        notes: obj.note || obj.notes || obj.comment || '',
+        tags,
+      });
+    }
+  }
+
+  // If Google Takeout CSV with no coords, geocode all via Nominatim
+  if (results.some(r => r._needsGeocode)) {
+    return geocodeCSVResults(results);
+  }
+  return results.filter(l => l.lat && l.lng);
+}
+
+async function geocodeCSVResults(results) {
+  const output = document.getElementById('import-preview');
+  const toGeocode = results.filter(r => r._needsGeocode);
+  let geocoded = 0;
+
+  for (let i = 0; i < toGeocode.length; i++) {
+    const r = toGeocode[i];
+    if (output) output.querySelector('h4').textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}...`;
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1100)); // Nominatim rate limit
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
+      const data = await res.json();
+      if (data[0]) {
+        r.lat = parseFloat(data[0].lat);
+        r.lng = parseFloat(data[0].lon);
+        r.address = r.address || data[0].display_name || '';
+        const osmCat = osmToCategory(data[0].class, data[0].type);
+        if (osmCat) r.category = osmCat;
+        delete r._needsGeocode;
+        geocoded++;
+      }
+    } catch {}
+  }
+  if (output) output.querySelector('h4').textContent = `Geocoded ${geocoded}/${toGeocode.length} places`;
+  return results.filter(l => l.lat && l.lng);
 }
 
 function parseGeoJSON(content) {
@@ -4906,6 +4951,43 @@ async function enrichInBackground(locations) {
     renderApproval();
     updateApprovalBadge();
   }
+}
+
+// ── Google Timeline Edits (Timeline Edits.json — placeAggregates) ──
+function parseGoogleTimelineEdits(data) {
+  const seen = new Map();
+  const results = [];
+  (data.timelineEdits || []).forEach(edit => {
+    const infos = edit.placeAggregates?.placeAggregateInfo || [];
+    infos.forEach(info => {
+      const pp = info.placePoint || info.point;
+      if (!pp) return;
+      const lat = (pp.latE7 || 0) / 1e7;
+      const lng = (pp.lngE7 || 0) / 1e7;
+      if (!lat || !lng) return;
+      const placeId = info.placeId || '';
+      const key = placeId || (lat.toFixed(4) + '|' + lng.toFixed(4));
+
+      if (seen.has(key)) {
+        seen.get(key).score = Math.max(seen.get(key).score, info.score || 0);
+      } else {
+        const entry = {
+          name: `Place ${placeId ? placeId.slice(-8) : lat.toFixed(3)+','+lng.toFixed(3)}`,
+          lat, lng,
+          category: 'location',
+          address: '', status: 'been',
+          visits: [],
+          score: info.score || 0,
+          _placeId: placeId,
+        };
+        seen.set(key, entry);
+        results.push(entry);
+      }
+    });
+  });
+  // Sort by score (most visited first)
+  results.sort((a, b) => b.score - a.score);
+  return results;
 }
 
 // ── Google Timeline: Raw location records (Records.json / Location History.json) ──
