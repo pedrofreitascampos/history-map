@@ -4098,44 +4098,52 @@ function pointInFeature(lat, lng, feature) {
   return false;
 }
 
+// Pre-compute bounding boxes once
+let _bboxCache = null;
+function getBBoxes(geo) {
+  if (_bboxCache) return _bboxCache;
+  _bboxCache = geo.features.map(f => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const extract = (c) => {
+      if (typeof c[0] === 'number') { if (c[0] < minX) minX = c[0]; if (c[1] < minY) minY = c[1]; if (c[0] > maxX) maxX = c[0]; if (c[1] > maxY) maxY = c[1]; return; }
+      c.forEach(extract);
+    };
+    if (f.geometry?.coordinates) extract(f.geometry.coordinates);
+    return minX === Infinity ? null : [minX, minY, maxX, maxY];
+  });
+  return _bboxCache;
+}
+
 function countLocationsByRegion(geo) {
   const beenLocs = state.locations.filter(l => l.status === 'been' && !l.needsApproval);
   const regionCounts = new Map(); // feature index → count
+  const regionLocs = new Map(); // feature index → [loc ids]
+  const bboxes = getBBoxes(geo);
 
   beenLocs.forEach(loc => {
     for (let i = 0; i < geo.features.length; i++) {
-      const f = geo.features[i];
-      // Quick bounding box check first
-      const bbox = featureBBox(f);
+      const bbox = bboxes[i];
       if (bbox && (loc.lng < bbox[0] || loc.lng > bbox[2] || loc.lat < bbox[1] || loc.lat > bbox[3])) continue;
-      if (pointInFeature(loc.lat, loc.lng, f)) {
+      if (pointInFeature(loc.lat, loc.lng, geo.features[i])) {
         regionCounts.set(i, (regionCounts.get(i) || 0) + 1);
+        if (!regionLocs.has(i)) regionLocs.set(i, []);
+        regionLocs.get(i).push(loc);
         break;
       }
     }
   });
-  return regionCounts;
+  return { regionCounts, regionLocs };
 }
 
-function featureBBox(feature) {
-  const coords = [];
-  const extract = (c) => {
-    if (typeof c[0] === 'number') { coords.push(c); return; }
-    c.forEach(extract);
-  };
-  if (feature.geometry?.coordinates) extract(feature.geometry.coordinates);
-  if (coords.length === 0) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  coords.forEach(([x, y]) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; });
-  return [minX, minY, maxX, maxY];
-}
+let _regionData = null; // cache for click handler
 
 async function renderRegionsMap() {
   initRegionsMap();
   const geo = await loadRegionBoundaries();
   if (!geo) return;
 
-  const regionCounts = countLocationsByRegion(geo);
+  const { regionCounts, regionLocs } = countLocationsByRegion(geo);
+  _regionData = { regionCounts, regionLocs, geo };
   const maxCount = Math.max(1, ...regionCounts.values());
   const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
 
@@ -4144,9 +4152,13 @@ async function renderRegionsMap() {
   const visitedRegions = new Set();
   const visitedCountries = new Set();
 
+  // Build index map for O(1) lookup
+  const featureIdx = new Map();
+  geo.features.forEach((f, i) => featureIdx.set(f, i));
+
   regionsLayer = L.geoJSON(geo, {
     style: function(feature) {
-      const idx = geo.features.indexOf(feature);
+      const idx = featureIdx.get(feature);
       const count = regionCounts.get(idx) || 0;
       if (count > 0) {
         visitedRegions.add(feature.properties.name);
@@ -4161,7 +4173,7 @@ async function renderRegionsMap() {
       };
     },
     onEachFeature: function(feature, layer) {
-      const idx = geo.features.indexOf(feature);
+      const idx = featureIdx.get(feature);
       const count = regionCounts.get(idx) || 0;
       if (count > 0) {
         const p = feature.properties;
@@ -4169,6 +4181,7 @@ async function renderRegionsMap() {
           `<strong>${p.name}</strong><br>${p.country}<br>${count} location${count > 1 ? 's' : ''}`,
           { sticky: true, direction: 'top' }
         );
+        layer.on('click', () => showRegionLocations(idx, p.name, p.country));
       }
     }
   }).addTo(regionsMap);
@@ -4177,6 +4190,30 @@ async function renderRegionsMap() {
     `${visitedRegions.size} regions · ${visitedCountries.size} countries · ${state.locations.filter(l => l.status === 'been').length} locations`;
 
   setTimeout(() => regionsMap.invalidateSize(), 100);
+}
+
+function showRegionLocations(idx, regionName, country) {
+  const locs = _regionData?.regionLocs?.get(idx) || [];
+  if (locs.length === 0) return;
+
+  const content = locs.map(l => {
+    const cat = CATEGORIES[l.category] || CATEGORIES.location;
+    const rating = l.myRating ? ` · ★${l.myRating}` : '';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">
+      <span>${cat.emoji}</span>
+      <span style="flex:1;">${l.name}</span>
+      <span style="color:var(--text-muted);">${cat.label}${rating}</span>
+    </div>`;
+  }).join('');
+
+  L.popup({ maxWidth: 320, maxHeight: 300 })
+    .setLatLng(regionsMap.getCenter())
+    .setContent(`<div class="popup-inner">
+      <h3>${regionName}</h3>
+      <div class="popup-cat">${country} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
+      <div style="margin-top:8px;">${content}</div>
+    </div>`)
+    .openOn(regionsMap);
 }
 
 function interpolateColor(c1, c2, t) {
