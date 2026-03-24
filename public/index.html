@@ -1168,7 +1168,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Categories <span class="clear-btn" onclick="clearCategoryFilter()">clear all</span></h4>
+      <h4>Categories <span class="clear-btn" onclick="selectAllCategories()">select all</span> <span class="clear-btn" onclick="clearCategoryFilter()">clear all</span></h4>
       <div class="filter-chips" id="category-filters"></div>
     </div>
 
@@ -2150,6 +2150,12 @@ function clearStatusFilter() {
   document.querySelectorAll('[data-status]').forEach(b => {
     b.classList.toggle('active', b.dataset.status === 'all');
   });
+  applyFilters();
+}
+
+function selectAllCategories() {
+  Object.keys(CATEGORIES).forEach(k => state.filters.categories.add(k));
+  document.querySelectorAll('#category-filters .filter-chip').forEach(c => c.classList.add('active'));
   applyFilters();
 }
 
