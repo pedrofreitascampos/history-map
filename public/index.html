@@ -4897,20 +4897,28 @@ function parseCSV(content) {
   }
 
   // If Google Takeout CSV with no coords, geocode all via Nominatim
-  if (results.some(r => r._needsGeocode)) {
+  const needsGeocode = results.filter(r => r._needsGeocode);
+  console.log(`CSV parsed: ${results.length} total, ${needsGeocode.length} need geocoding, isGoogleSaved=${isGoogleSaved}`);
+  if (needsGeocode.length > 0) {
     return geocodeCSVResults(results);
   }
   return results.filter(l => l.lat && l.lng);
 }
 
 async function geocodeCSVResults(results) {
-  const output = document.getElementById('import-preview');
+  // Show the preview area with a progress indicator
+  const preview = document.getElementById('import-preview');
+  if (preview) {
+    preview.classList.add('active');
+    preview.querySelector('h4').textContent = 'Geocoding places from Google Takeout...';
+  }
   const toGeocode = results.filter(r => r._needsGeocode);
   let geocoded = 0;
 
   for (let i = 0; i < toGeocode.length; i++) {
     const r = toGeocode[i];
-    if (output) output.querySelector('h4').textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}...`;
+    const h4 = preview?.querySelector('h4');
+    if (h4) h4.textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}...`;
     try {
       await new Promise(resolve => setTimeout(resolve, 1100)); // Nominatim rate limit
       const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
@@ -4926,7 +4934,8 @@ async function geocodeCSVResults(results) {
       }
     } catch {}
   }
-  if (output) output.querySelector('h4').textContent = `Geocoded ${geocoded}/${toGeocode.length} places`;
+  const finalH4 = preview?.querySelector('h4');
+  if (finalH4) finalH4.textContent = `Geocoded ${geocoded}/${toGeocode.length} places`;
   return results.filter(l => l.lat && l.lng);
 }
 
