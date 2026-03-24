@@ -4176,7 +4176,7 @@ function getBBoxes(geo) {
 }
 
 function countLocationsByRegion(geo) {
-  const beenLocs = state.locations.filter(l => l.status === 'been' && !l.needsApproval);
+  const beenLocs = state.locations.filter(l => l.status === 'been');
   const regionCounts = new Map(); // feature index → count
   const regionLocs = new Map(); // feature index → [loc ids]
   const bboxes = getBBoxes(geo);
