@@ -199,7 +199,7 @@ body {
 .marker-icon:hover { transform: scale(1.25); z-index: 9999 !important; }
 .marker-icon.been { border: 2.5px solid; }
 .marker-icon.bucket { border: 2.5px dashed; opacity: 0.8; }
-.marker-icon.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+.marker-icon.selected { outline: 3px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 12px var(--accent-glow), 0 0 24px var(--accent-glow); }
 .marker-icon.needs-approval {
   border: 2.5px solid var(--danger);
   animation: pulse-approval 2s infinite;
@@ -2157,8 +2157,17 @@ function renderMarkers() {
       });
       map.on('zoomend', _heatZoomHandler);
       _heatZoomHandler();
+    } else if (bulkMode) {
+      // 2c. Bulk edit mode — individual markers (no clustering, direct click)
+      _individualMarkersLayer = L.layerGroup();
+      filtered.forEach(loc => {
+        const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+        bindMarkerBehavior(marker, loc);
+        _individualMarkersLayer.addLayer(marker);
+      });
+      map.addLayer(_individualMarkersLayer);
     } else {
-      // 2c. Cluster mode
+      // 2d. Cluster mode (default)
       filtered.forEach(loc => {
         const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
         bindMarkerBehavior(marker, loc);
