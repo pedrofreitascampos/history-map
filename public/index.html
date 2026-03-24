@@ -2590,12 +2590,13 @@ function renderApproval() {
   document.getElementById('approval-count-label').textContent = pending.length + ' pending';
   document.getElementById('bulk-approve-btn').style.display = pending.length > 0 ? '' : 'none';
 
-  // Hide entire section if nothing pending
+  // Hide entire section if nothing pending, scroll to it if showing
   section.style.display = pending.length > 0 ? '' : 'none';
   if (pending.length === 0) {
     container.innerHTML = '';
     return;
   }
+  setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
   container.innerHTML = pending.map(loc => {
     const suggested = CATEGORIES[loc.suggestedCategory] || CATEGORIES.location;
@@ -4446,7 +4447,8 @@ async function confirmImport() {
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
-    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Check the Approval tab.'}`);
+    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Review them in the approval queue below.'}`);
+    renderApproval();
   } catch (err) { alert('Import failed: ' + err.message); }
 }
 
@@ -4473,7 +4475,8 @@ async function simulateGoogleSync() {
     document.getElementById('sync-time').textContent = 'Last sync: just now';
     renderMarkers();
     updateApprovalBadge();
-    alert('Synced 3 new locations! Check the Approval tab to categorize them.');
+    renderApproval();
+    alert('Synced 3 new locations! Review them in the approval queue below.');
   } catch (err) { alert('Sync failed: ' + err.message); }
 }
 
