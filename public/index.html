@@ -2061,7 +2061,11 @@ function createPopupContent(loc) {
 }
 
 let _individualMarkersLayer = null;
-// Stable reference for zoomend handler so we can remove it properly
+// INVARIANT (regression fix): _heatZoomHandler MUST be a stable function reference
+// defined outside renderMarkers. If defined inside, map.off() can't remove old listeners,
+// causing accumulated handlers that reference stale layers → map breaks after toggling.
+// renderMarkers MUST call map.off('zoomend', _heatZoomHandler) + remove all layers
+// before re-adding anything. See commit "Fix heatmap breaking after multiple toggles".
 function _heatZoomHandler() {
   if (!_individualMarkersLayer || !map) return;
   const z = map.getZoom();

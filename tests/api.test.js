@@ -209,6 +209,35 @@ describe('User data isolation', () => {
   });
 });
 
+// ─── Frontend invariants (documented, not runtime-testable without e2e) ──
+describe('Frontend invariants (code checks)', () => {
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('heatmap zoom handler is a stable reference outside renderMarkers', () => {
+    // Regression: if _heatZoomHandler is defined inside renderMarkers,
+    // map.off() can't remove old listeners → breaks after toggling
+    const handlerDef = indexHtml.indexOf('function _heatZoomHandler()');
+    const renderDef = indexHtml.indexOf('function renderMarkers()');
+    expect(handlerDef).toBeGreaterThan(-1);
+    expect(renderDef).toBeGreaterThan(-1);
+    expect(handlerDef).toBeLessThan(renderDef); // defined before renderMarkers
+  });
+
+  test('renderMarkers cleans up zoomend listener before adding', () => {
+    // Must call map.off before map.on to prevent accumulation
+    const offCall = indexHtml.indexOf("map.off('zoomend', _heatZoomHandler)");
+    const onCall = indexHtml.indexOf("map.on('zoomend', _heatZoomHandler)");
+    expect(offCall).toBeGreaterThan(-1);
+    expect(onCall).toBeGreaterThan(-1);
+    expect(offCall).toBeLessThan(onCall);
+  });
+
+  test('renderMarkers removes heat layer before re-adding', () => {
+    // Must remove heatLayer at start of renderMarkers to prevent ghost layers
+    expect(indexHtml).toContain('map.removeLayer(heatLayer)');
+  });
+});
+
 // ─── Static files ────────────────────────────────────────
 describe('Static files', () => {
   test('serves index.html', async () => {
