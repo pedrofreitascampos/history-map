@@ -1436,7 +1436,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 
   <!-- BULK EDIT VIEW -->
-  <div class="view" id="bulk-view" style="flex-direction:column;background:var(--bg-primary);overflow-y:auto;padding:24px;">
+  <div class="view" id="bulk-view" style="flex-direction:column;background:var(--bg-primary);overflow:hidden;padding:24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
       <div>
         <h1 style="font-family:var(--font-display);font-size:28px;">Bulk Edit</h1>
@@ -1468,13 +1468,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="">Status →</option><option value="been">✅ Been</option><option value="bucket">⭐ Bucket</option>
       </select>
       <select class="filter-select" id="bulk-trip" style="width:150px;font-size:12px;"><option value="">Trip →</option><option value="_none">No trip</option></select>
-      <input type="text" class="form-input" id="bulk-tag" placeholder="+ Tag" style="width:100px;font-size:12px;padding:6px 8px;">
+      <select class="filter-select" id="bulk-tag-action" style="width:130px;font-size:12px;">
+        <option value="">Tags →</option>
+        <option value="_clear">🗑️ Remove all tags</option>
+      </select>
+      <input type="text" class="form-input" id="bulk-tag" placeholder="+ tag" style="width:80px;font-size:12px;padding:6px 8px;">
       <select class="filter-select" id="bulk-collection" style="width:150px;font-size:12px;"><option value="">Collection →</option></select>
       <button class="btn btn-primary" onclick="applyBulkEdit()" style="font-size:12px;padding:6px 14px;">Apply</button>
       <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">Delete</button>
     </div>
     <!-- Location list -->
-    <div id="bulk-list" style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;"></div>
+    <div id="bulk-list" style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow-y:auto;flex:1;min-height:0;"></div>
   </div>
 
   <!-- IMPORT VIEW -->
@@ -2335,8 +2339,13 @@ function initBulkView() {
   const allTags = {};
   state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0)+1; }));
   const tagFilter = document.getElementById('bulk-filter-tag');
+  const sortedTags = Object.entries(allTags).sort((a,b) => b[1]-a[1]);
   tagFilter.innerHTML = '<option value="">All tags</option>' +
-    Object.entries(allTags).sort((a,b) => b[1]-a[1]).map(([t, n]) => `<option value="${t}">${t} (${n})</option>`).join('');
+    sortedTags.map(([t, n]) => `<option value="${t}">${t} (${n})</option>`).join('');
+  // Tag action dropdown: remove specific tags
+  const tagAction = document.getElementById('bulk-tag-action');
+  tagAction.innerHTML = '<option value="">Tags →</option><option value="_clear">🗑️ Remove all tags</option>' +
+    sortedTags.map(([t]) => `<option value="_remove:${t}">❌ Remove "${t}"</option>`).join('');
   bulkSelected.clear();
   renderBulkList();
 }
@@ -2410,9 +2419,10 @@ async function applyBulkEdit() {
   const category = document.getElementById('bulk-category').value;
   const status = document.getElementById('bulk-status').value;
   const trip = document.getElementById('bulk-trip').value;
-  const tag = document.getElementById('bulk-tag').value.trim();
+  const tagAction = document.getElementById('bulk-tag-action').value;
+  const tagAdd = document.getElementById('bulk-tag').value.trim();
   const colId = document.getElementById('bulk-collection').value;
-  if (!category && !status && !trip && !tag && !colId) { alert('Choose at least one action.'); return; }
+  if (!category && !status && !trip && !tagAction && !tagAdd && !colId) { alert('Choose at least one action.'); return; }
 
   const updates = [];
   for (const locId of bulkSelected) {
@@ -2423,7 +2433,14 @@ async function applyBulkEdit() {
     if (status) { loc.status = status; patch.status = status; }
     if (trip === '_none') { loc.tripId = null; patch.tripId = null; }
     else if (trip) { loc.tripId = trip; patch.tripId = trip; }
-    if (tag && !(loc.tags || []).includes(tag)) { loc.tags = [...(loc.tags || []), tag]; patch.tags = loc.tags; }
+    // Tag actions
+    if (tagAction === '_clear') { loc.tags = []; patch.tags = []; }
+    else if (tagAction?.startsWith('_remove:')) {
+      const removeTag = tagAction.slice(8);
+      loc.tags = (loc.tags || []).filter(t => t !== removeTag);
+      patch.tags = loc.tags;
+    }
+    if (tagAdd && !(loc.tags || []).includes(tagAdd)) { loc.tags = [...(loc.tags || []), tagAdd]; patch.tags = loc.tags; }
     if (colId && !(loc.collections || []).includes(colId)) { loc.collections = [...(loc.collections || []), colId]; patch.collections = loc.collections; }
     if (Object.keys(patch).length > 0) updates.push(api('PUT', '/locations/' + locId, patch));
   }
