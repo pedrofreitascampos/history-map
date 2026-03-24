@@ -3433,17 +3433,20 @@ async function searchForCollection(colId) {
         name: r.name || r.display_name.split(',')[0],
         lat: parseFloat(r.lat), lng: parseFloat(r.lon),
         address: r.display_name,
+        category: osmToCategory(r.class, r.type) || inferCategory((r.name || '') + ' ' + r.display_name),
       }));
-      resultsDiv.innerHTML = state._searchResults.map((r, i) =>
-        `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);margin-bottom:4px;">
+      resultsDiv.innerHTML = state._searchResults.map((r, i) => {
+        const cat = CATEGORIES[r.category] || CATEGORIES.location;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);margin-bottom:4px;">
+          <span style="font-size:18px;">${cat.emoji}</span>
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:500;">${r.name}</div>
             <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.address}</div>
           </div>
           <button class="btn btn-primary" style="padding:5px 10px;font-size:11px;flex-shrink:0;"
             onclick="addSearchResultToCollection('${colId}', ${i})">+ Add</button>
-        </div>`
-      ).join('');
+        </div>`;
+      }).join('');
     } catch { resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed.</span>'; }
   } else {
     // Multi search — batch geocode all
@@ -3464,7 +3467,7 @@ async function searchForCollection(colId) {
           newLocs.push({
             name: r.name || queries[i],
             address: r.display_name || '', lat: parseFloat(r.lat), lng: parseFloat(r.lon),
-            category: inferCategory((r.name || queries[i]) + ' ' + (r.display_name || '')),
+            category: osmToCategory(r.class, r.type) || inferCategory((r.name || queries[i]) + ' ' + (r.display_name || '')),
             status: 'bucket', googleRating: null, myRating: 0,
             tripId: null, people: [], visits: [], notes: '', tags: [],
             collections: [colId], needsApproval: false, suggestedCategory: null,
@@ -3492,7 +3495,7 @@ async function addSearchResultToCollection(colId, idx) {
     const loc = mapId(await api('POST', '/locations', {
       name: data.name, address: data.address,
       lat: data.lat, lng: data.lng,
-      category: inferCategory(data.name + ' ' + data.address),
+      category: data.category || inferCategory(data.name + ' ' + data.address),
       status: 'bucket', googleRating: null, myRating: 0,
       tripId: null, people: [], visits: [], notes: '', tags: [],
       collections: [colId], needsApproval: false, suggestedCategory: null,
@@ -4533,6 +4536,77 @@ function inferCategory(text) {
   return 'location';
 }
 
+// OSM class/type → our category (from Nominatim reverse geocoding)
+const OSM_CATEGORY_MAP = {
+  'amenity:restaurant': 'restaurant', 'amenity:fast_food': 'restaurant', 'amenity:food_court': 'restaurant',
+  'amenity:bar': 'bar', 'amenity:pub': 'bar', 'amenity:biergarten': 'bar',
+  'amenity:cafe': 'cafe',
+  'amenity:nightclub': 'club',
+  'amenity:theatre': 'show', 'amenity:cinema': 'show',
+  'amenity:place_of_worship': 'monument',
+  'tourism:museum': 'museum', 'tourism:gallery': 'museum',
+  'tourism:hotel': 'hotel', 'tourism:hostel': 'hotel', 'tourism:motel': 'hotel',
+  'tourism:guest_house': 'hotel', 'tourism:camp_site': 'hotel', 'tourism:apartment': 'hotel',
+  'tourism:attraction': 'monument', 'tourism:viewpoint': 'location',
+  'historic:monument': 'monument', 'historic:castle': 'monument', 'historic:ruins': 'monument',
+  'historic:memorial': 'monument', 'historic:fort': 'monument', 'historic:archaeological_site': 'monument',
+  'historic:church': 'monument', 'historic:palace': 'monument',
+  'leisure:stadium': 'stadium', 'leisure:sports_centre': 'stadium',
+  'leisure:park': 'park', 'leisure:garden': 'park', 'leisure:nature_reserve': 'park',
+  'leisure:water_park': 'show', 'leisure:amusement_arcade': 'show',
+  'natural:peak': 'park', 'natural:beach': 'park', 'natural:water': 'park',
+  'natural:volcano': 'park', 'natural:cave_entrance': 'park',
+  'aeroway:aerodrome': 'airport', 'aeroway:terminal': 'airport',
+  'shop:mall': 'shopping', 'shop:supermarket': 'shopping', 'shop:marketplace': 'shopping',
+  'boundary:national_park': 'park',
+};
+
+function osmToCategory(osmClass, osmType) {
+  if (!osmClass || !osmType) return null;
+  return OSM_CATEGORY_MAP[osmClass + ':' + osmType] || null;
+}
+
+// Enrich locations with Nominatim reverse geocoding for better category inference
+async function enrichCategories(locations) {
+  const toEnrich = locations.filter(l => l.category === 'location' && l.lat && l.lng);
+  if (toEnrich.length === 0) return locations;
+
+  const maxEnrich = Math.min(toEnrich.length, 50); // Cap at 50 to avoid rate limits
+  let enriched = 0;
+
+  for (let i = 0; i < maxEnrich; i++) {
+    const loc = toEnrich[i];
+    try {
+      await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      if (data) {
+        const osmCat = osmToCategory(data.class, data.type);
+        if (osmCat) {
+          loc.category = osmCat;
+          loc.suggestedCategory = osmCat;
+          enriched++;
+        } else {
+          // Try inferring from the returned name + address
+          const inferred = inferCategory((data.name || '') + ' ' + (data.display_name || ''));
+          if (inferred !== 'location') {
+            loc.category = inferred;
+            loc.suggestedCategory = inferred;
+            enriched++;
+          }
+        }
+        // Also enrich address if missing
+        if (!loc.address && data.display_name) loc.address = data.display_name;
+      }
+    } catch {}
+  }
+  console.log(`Enriched ${enriched}/${maxEnrich} locations via Nominatim`);
+  return locations;
+}
+
 function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
   const isRestore = items[0]?._isFullRestore;
@@ -4593,7 +4667,7 @@ async function confirmImport() {
       }
     }
 
-    const toImport = state.pendingImport.map(item => {
+    let toImport = state.pendingImport.map(item => {
       if (isFullRestore) {
         const { _restoreTripId, _restoreCollections, _isFullRestore, id, _id, userId, ...rest } = item;
         return { ...rest, tripId: tripIdMap[_restoreTripId] || null, collections: (_restoreCollections || []).map(c => colIdMap[c] || c).filter(Boolean) };
@@ -4609,6 +4683,14 @@ async function confirmImport() {
         createdAt: (item.visits?.[0]?.date) || new Date().toISOString().split('T')[0],
       };
     });
+
+    // Enrich uncategorized locations via Nominatim (OSM class/type)
+    const uncategorized = toImport.filter(l => l.category === 'location');
+    if (uncategorized.length > 0 && !isFullRestore) {
+      document.getElementById('import-preview').querySelector('h4').textContent =
+        `Enriching ${Math.min(uncategorized.length, 50)} uncategorized locations via Nominatim...`;
+      toImport = await enrichCategories(toImport);
+    }
 
     const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
     state.locations.push(...saved);
