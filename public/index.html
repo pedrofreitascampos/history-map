@@ -1380,6 +1380,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           </div>
         </div>
         <div class="form-group">
+          <label>Categories <span style="font-weight:400;color:var(--text-muted);font-size:10px;text-transform:none;letter-spacing:0;">(click to toggle)</span></label>
+          <div class="filter-chips" id="planner-categories" style="max-height:100px;overflow-y:auto;"></div>
+        </div>
+        <div class="form-group">
           <label>Max Price</label>
           <div class="filter-group">
             <button class="filter-group-btn active" data-pp="0" onclick="setPlannerPrice(0,this)">Any</button>
@@ -2220,7 +2224,7 @@ function switchView(viewId) {
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
   if (viewId === 'collections-view') renderCollections();
-  if (viewId === 'planner-view') previewGuideLocations();
+  if (viewId === 'planner-view') { buildPlannerCategories(); previewGuideLocations(); }
   if (viewId === 'regions-view') renderRegionsMap();
   if (viewId === 'trips-view') {
     populateTripSelector();
@@ -3576,6 +3580,35 @@ function setGuideInclude(val, btn) {
   previewGuideLocations();
 }
 
+let plannerCategories = new Set(); // empty = all
+
+function buildPlannerCategories() {
+  const container = document.getElementById('planner-categories');
+  if (!container) return;
+  container.innerHTML = Object.entries(CATEGORIES).map(([key, cat]) => {
+    const active = plannerCategories.size === 0 || plannerCategories.has(key) ? ' active' : '';
+    return `<button class="filter-chip${active}" onclick="togglePlannerCat('${key}', this)" style="font-size:11px;padding:3px 8px;"><span class="chip-emoji">${cat.emoji}</span> ${cat.label}</button>`;
+  }).join('');
+}
+
+function togglePlannerCat(key, btn) {
+  if (plannerCategories.size === 0) {
+    // First click: select only this one
+    plannerCategories = new Set(Object.keys(CATEGORIES));
+    plannerCategories.delete(key);
+    // Invert: now we remove the clicked one... actually, let's select ONLY this one
+    plannerCategories = new Set([key]);
+  } else if (plannerCategories.has(key)) {
+    plannerCategories.delete(key);
+    if (plannerCategories.size === 0) plannerCategories = new Set(); // back to all
+  } else {
+    plannerCategories.add(key);
+    if (plannerCategories.size === Object.keys(CATEGORIES).length) plannerCategories = new Set(); // all selected = reset
+  }
+  buildPlannerCategories();
+  previewGuideLocations();
+}
+
 function setPlannerParty(val, btn) {
   plannerParty = val;
   btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
@@ -3632,6 +3665,8 @@ function getGuideLocations() {
     const meetsGoogle = (l.googleRating || 0) >= minGoogle;
     const meetsMine = (l.myRating || 0) >= minMine;
     if (!meetsGoogle && !meetsMine) return false;
+    // Category filter
+    if (plannerCategories.size > 0 && !plannerCategories.has(l.category)) return false;
     // Party filter: exclude categories with 0 weight
     const weights = PARTY_WEIGHTS[plannerParty] || {};
     if (weights[l.category] === 0) return false;
@@ -3705,29 +3740,40 @@ async function discoverPlaces(region, maxResults) {
     const center = { lat: parseFloat(geoResults[0].lat), lng: parseFloat(geoResults[0].lon) };
     const radiusKm = parseFloat(document.getElementById('guide-radius').value) || 50;
 
-    // Search for various POI types
-    const poiTypes = ['restaurant','hotel','museum','park','monument','bar','cafe','stadium','theatre'];
+    // Map categories to Nominatim search terms
+    const catSearchTerms = {
+      restaurant: 'restaurant', hotel: 'hotel', bar: 'bar', club: 'nightclub',
+      monument: 'monument', museum: 'museum', park: 'park', stadium: 'stadium',
+      festival: 'concert hall', location: 'viewpoint', airport: 'airport',
+      show: 'theatre', shopping: 'market', cafe: 'cafe',
+    };
+    // Use selected categories, or all if none selected
+    const searchCats = plannerCategories.size > 0 ? [...plannerCategories] : Object.keys(catSearchTerms);
     const allResults = [];
-    for (const type of poiTypes) {
+
+    for (const cat of searchCats) {
       if (allResults.length >= maxResults) break;
+      const term = catSearchTerms[cat];
+      if (!term) continue;
+      output.innerHTML = `<p style="color:var(--text-muted);">🔍 Searching ${CATEGORIES[cat]?.emoji || ''} ${term}s near ${region}...</p>`;
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(type + ' near ' + region)}&format=json&limit=8&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+        await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(term + ' in ' + region)}&format=json&limit=10&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
         const results = await res.json();
         results.forEach(r => {
           const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
-          if (haversineKm(center.lat, center.lng, lat, lng) <= radiusKm) {
+          if (haversineKm(center.lat, center.lng, lat, lng) <= radiusKm && r.name) {
             allResults.push({
-              name: r.name || r.display_name.split(',')[0],
+              name: r.name,
               lat, lng,
               address: r.display_name || '',
-              category: inferCategory(type + ' ' + (r.name || '')),
+              category: cat,
               status: 'bucket',
               googleRating: null, myRating: 0,
-              tags: [type], priceLevel: null,
+              tags: [term], priceLevel: null,
             });
           }
         });
-        await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
       } catch {}
     }
 
