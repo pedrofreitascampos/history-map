@@ -14,6 +14,8 @@ const PORT = process.env.PORT || 3001;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 const JWT_SECRET = process.env.JWT_SECRET || 'history-map-dev-secret-change-me';
+// Comma-separated list of allowed emails. Empty = anyone can register/sign in.
+const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
@@ -45,6 +47,9 @@ app.post('/api/auth/register', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     if (password.length < 4) return res.status(400).json({ error: 'Password too short' });
+    if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username.toLowerCase())) {
+      return res.status(403).json({ error: 'Registration is restricted. Contact the admin.' });
+    }
 
     const existing = await db.users.findOne({ username });
     if (existing) return res.status(409).json({ error: 'Username taken' });
@@ -93,6 +98,10 @@ app.post('/api/auth/google', async (req, res) => {
     // Find or create user by Google ID
     let user = await db.users.findOne({ googleId });
     if (!user) {
+      // Check allowlist for new users
+      if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email.toLowerCase())) {
+        return res.status(403).json({ error: 'Access restricted. Contact the admin.' });
+      }
       // Check if email matches an existing password user — link accounts
       user = await db.users.findOne({ username: email });
       if (user) {
