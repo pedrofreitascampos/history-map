@@ -1694,7 +1694,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 const CATEGORIES = {
   restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)', hasPrice: true,
     suggestedTags: ['Italian','Japanese','Portuguese','French','Mexican','Indian','Chinese','Thai','Korean','Mediterranean','Seafood','Steakhouse','Vegan','Brunch','Fine Dining','Street Food','Tapas','Sushi','Pizza','Burger'] },
-  hotel:      { emoji: '🛏️', label: 'Hotel / Sleep', color: 'var(--cat-hotel)', hasPrice: true,
+  hotel:      { emoji: '🛏️', label: 'Sleep', color: 'var(--cat-hotel)', hasPrice: true,
     suggestedTags: ['Hotel','Hostel','Airbnb','Resort','B&B','Boutique','Camping','Villa'] },
   bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)', hasPrice: true,
     suggestedTags: ['Cocktail','Wine Bar','Rooftop','Dive Bar','Speakeasy','Beer Garden','Pub','Sports Bar'] },
@@ -1709,7 +1709,9 @@ const CATEGORIES = {
   stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)',
     suggestedTags: ['Football','Basketball','Tennis','Baseball','Rugby','Olympic','Motorsport','Cricket'] },
   festival:   { emoji: '🎪', label: 'Festival', color: 'var(--cat-event)',
-    suggestedTags: ['Music Festival','Concert','Conference','Exhibition','Food Festival','Market','Carnival'] },
+    suggestedTags: ['Music Festival','Concert','Food Festival','Market','Carnival'] },
+  event:      { emoji: '🎫', label: 'Event', color: 'var(--cat-event)',
+    suggestedTags: ['Conference','Exhibition','Sports Event','Wedding','Race','Marathon','Meetup','Convention','Trade Show'] },
   location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)',
     suggestedTags: ['Viewpoint','Neighborhood','Square','Street','Landmark'] },
   airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)',
@@ -3646,7 +3648,7 @@ const PARTY_WEIGHTS = {
   any: {},
   couple: { restaurant: 2.0, bar: 1.8, cafe: 1.5, museum: 1.5, monument: 1.3, show: 1.5, park: 1.2, shopping: 1.3, club: 0.8, stadium: 0.6, airport: 0.1 },
   family: { park: 2.5, museum: 2.5, show: 2.0, monument: 1.8, restaurant: 1.5, cafe: 1.3, location: 1.2, shopping: 1.0, stadium: 0.8, bar: 0, club: 0, airport: 0.1 },
-  friends: { bar: 2.0, restaurant: 2.0, club: 2.0, stadium: 2.0, festival: 2.0, cafe: 1.5, show: 1.3, shopping: 1.2, museum: 0.8, park: 0.8, airport: 0.1 },
+  friends: { bar: 2.0, restaurant: 2.0, club: 2.0, stadium: 2.0, festival: 2.0, event: 1.5, cafe: 1.5, show: 1.3, shopping: 1.2, museum: 0.8, park: 0.8, airport: 0.1 },
 };
 
 function setGuideInclude(val, btn) {
@@ -3826,8 +3828,8 @@ async function discoverPlaces(region, maxResults) {
     const catSearchTerms = {
       restaurant: 'restaurant', hotel: 'hotel', bar: 'bar', club: 'nightclub',
       monument: 'monument', museum: 'museum', park: 'park', stadium: 'stadium',
-      festival: 'concert hall', location: 'viewpoint', airport: 'airport',
-      show: 'theatre', shopping: 'market', cafe: 'cafe',
+      festival: 'concert hall', event: 'convention centre', location: 'viewpoint',
+      airport: 'airport', show: 'theatre', shopping: 'market', cafe: 'cafe',
     };
     // Use selected categories, or all if none selected
     const searchCats = plannerCategories.size > 0 ? [...plannerCategories] : Object.keys(catSearchTerms);
@@ -4629,7 +4631,8 @@ function inferCategory(text) {
   if (/café|cafe|coffee|starbucks|bakery|padaria|pastelaria|pastry|patisserie/i.test(t)) return 'cafe';
   if (/shop|mall|centro comercial|market|mercado|marché|store|boutique|outlet|bazar|bazaar|feira/i.test(t)) return 'shopping';
   if (/theater|theatre|teatro|cinema|opera|ballet|comedy|cabaret|circus|cirque|aquarium|zoo|aquário|amusement|theme park|roller coaster/i.test(t)) return 'show';
-  if (/festival|concert|concerto|evento|conference|feira|carnival|carnaval|rock in rio|tomorrowland|coachella|glastonbury|lollapalooza/i.test(t)) return 'festival';
+  if (/festival|carnival|carnaval|rock in rio|tomorrowland|coachella|glastonbury|lollapalooza|primavera sound|burning man/i.test(t)) return 'festival';
+  if (/conference|convention|expo|exhibition|trade show|marathon|race\b|meetup|summit|wedding|gala|congress/i.test(t)) return 'event';
   if (/viewpoint|miradouro|belvedere|lookout|plaza|square|praça|piazza|platz|bridge|ponte|puente|brücke/i.test(t)) return 'location';
   return 'location';
 }
