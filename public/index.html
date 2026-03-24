@@ -3606,18 +3606,14 @@ async function addSearchResultToCollection(colId, idx) {
 }
 
 async function openNewCollectionModal() {
-  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):\n\nYou can add locations to it afterwards from this tab or from the location edit modal.');
+  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):');
   if (!name) return;
-  const emoji = prompt('Emoji icon:', '🏆') || '🏆';
-  const desc = prompt('Description (optional):') || '';
-  const totalStr = prompt('Total items to track completion (e.g. 1199 for UNESCO sites).\nLeave empty for open-ended collections:');
-  const totalItems = totalStr ? parseInt(totalStr) : null;
 
   try {
-    const col = mapId(await api('POST', '/collections', { name, emoji, description: desc, totalItems }));
+    const col = mapId(await api('POST', '/collections', { name, emoji: '🏆', description: '', totalItems: null }));
     state.collections.push(col);
     renderCollections();
-  } catch (err) { alert('Failed: ' + err.message); }
+  } catch (err) { alert('Failed to create collection: ' + err.message); }
 }
 
 async function editCollection(id) {

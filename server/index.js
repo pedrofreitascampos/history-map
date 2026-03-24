@@ -238,10 +238,15 @@ app.get('/api/collections', auth, async (req, res) => {
 });
 
 app.post('/api/collections', auth, async (req, res) => {
-  const col = { ...req.body, userId: req.user.id };
-  delete col._id;
-  const saved = await db.collections.insert(col);
-  res.json(saved);
+  try {
+    const col = { ...req.body, userId: req.user.id };
+    delete col._id;
+    const saved = await db.collections.insert(col);
+    res.json(saved);
+  } catch (err) {
+    console.error('Create collection error:', err);
+    res.status(500).json({ error: 'Failed to create collection: ' + err.message });
+  }
 });
 
 app.put('/api/collections/:id', auth, async (req, res) => {

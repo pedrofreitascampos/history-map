@@ -225,28 +225,52 @@ describe('Trips', () => {
 describe('Collections', () => {
   let colId;
 
-  test('create collection', async () => {
+  test('create collection with just a name', async () => {
+    // Regression: creating with minimal fields (just name) must work.
+    // Frontend now only sends name + defaults, no multi-prompt.
     const res = await request(app).post('/api/collections').set('Authorization', `Bearer ${token}`)
-      .send({ name: 'UNESCO', emoji: '🏰', totalItems: 1199 });
+      .send({ name: 'My Places', emoji: '🏆', description: '', totalItems: null });
     expect(res.status).toBe(200);
+    expect(res.body.name).toBe('My Places');
+    expect(res.body._id).toBeDefined();
     colId = res.body._id;
+  });
+
+  test('create collection with full fields', async () => {
+    const res = await request(app).post('/api/collections').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'UNESCO', emoji: '🏰', description: 'World Heritage', totalItems: 1199 });
+    expect(res.status).toBe(200);
+    expect(res.body.totalItems).toBe(1199);
+  });
+
+  test('create collection with null optional fields', async () => {
+    // Regression: null totalItems, empty description must not crash
+    const res = await request(app).post('/api/collections').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Open Ended', emoji: '📋', description: null, totalItems: null });
+    expect(res.status).toBe(200);
+    expect(res.body.totalItems).toBeNull();
   });
 
   test('list collections', async () => {
     const res = await request(app).get('/api/collections').set('Authorization', `Bearer ${token}`);
-    expect(res.body).toHaveLength(1);
+    expect(res.body).toHaveLength(3);
   });
 
   test('update collection', async () => {
     const res = await request(app).put(`/api/collections/${colId}`).set('Authorization', `Bearer ${token}`)
-      .send({ totalItems: 1200 });
+      .send({ totalItems: 1200, emoji: '🌍' });
     expect(res.body.totalItems).toBe(1200);
+    expect(res.body.emoji).toBe('🌍');
   });
 
   test('delete collection', async () => {
-    await request(app).delete(`/api/collections/${colId}`).set('Authorization', `Bearer ${token}`);
+    // Delete all 3
     const list = await request(app).get('/api/collections').set('Authorization', `Bearer ${token}`);
-    expect(list.body).toHaveLength(0);
+    for (const c of list.body) {
+      await request(app).delete(`/api/collections/${c._id}`).set('Authorization', `Bearer ${token}`);
+    }
+    const after = await request(app).get('/api/collections').set('Authorization', `Bearer ${token}`);
+    expect(after.body).toHaveLength(0);
   });
 });
 
