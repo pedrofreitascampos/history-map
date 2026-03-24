@@ -3340,19 +3340,21 @@ function viewCollection(colId) {
     </div>
   </div>`;
 
-  // Add existing locations (multi-select)
+  // Add existing locations (multi-select with category filter)
   const available = state.locations.filter(l => !(l.collections || []).includes(colId));
+  const catOptions = Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
   html += `<div style="grid-column:1/-1;margin-bottom:8px;">
     <details>
       <summary style="font-size:12px;color:var(--accent);cursor:pointer;">Add existing locations to this collection</summary>
-      <div style="margin-top:8px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;">
-        ${available.length === 0 ? '<span style="font-size:12px;color:var(--text-muted);">All locations already in this collection.</span>' :
-          available.map(l => {
-            const c = CATEGORIES[l.category] || CATEGORIES.location;
-            return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'">
-              <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${l.name}
-            </label>`;
-          }).join('')}
+      <div style="display:flex;gap:8px;margin:8px 0;">
+        <select class="filter-select" id="col-add-cat-filter" onchange="filterColAddList()" style="flex:1;">
+          <option value="">All categories</option>
+          ${catOptions}
+        </select>
+        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="filterColAddList()" style="flex:1;">
+      </div>
+      <div id="col-add-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;">
+        ${renderColAddItems(available)}
       </div>
       <button class="btn btn-primary" style="margin-top:8px;font-size:12px;padding:7px 14px;" onclick="bulkAddToCollection('${colId}')">Add Selected</button>
     </details>
@@ -3392,6 +3394,30 @@ function viewCollection(colId) {
 
 
 // ── Collection: bulk add existing locations ──
+function renderColAddItems(items) {
+  if (items.length === 0) return '<span style="font-size:12px;color:var(--text-muted);">No matching locations.</span>';
+  return items.map(l => {
+    const c = CATEGORIES[l.category] || CATEGORIES.location;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'">
+      <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${l.name} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
+    </label>`;
+  }).join('');
+}
+
+function filterColAddList() {
+  const catFilter = document.getElementById('col-add-cat-filter')?.value || '';
+  const textFilter = (document.getElementById('col-add-search')?.value || '').toLowerCase();
+  // Get the current collection ID from the page context
+  const colId = document.querySelector('[onclick*="bulkAddToCollection"]')?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+  const available = state.locations.filter(l => {
+    if (colId && (l.collections || []).includes(colId)) return false;
+    if (catFilter && l.category !== catFilter) return false;
+    if (textFilter && !(l.name || '').toLowerCase().includes(textFilter)) return false;
+    return true;
+  });
+  document.getElementById('col-add-list').innerHTML = renderColAddItems(available);
+}
+
 async function bulkAddToCollection(colId) {
   const checkboxes = document.querySelectorAll('.col-bulk-cb:checked');
   if (checkboxes.length === 0) { alert('Select at least one location.'); return; }
