@@ -277,6 +277,29 @@ describe('Frontend invariants (code checks)', () => {
     // Must remove heatLayer at start of renderMarkers to prevent ghost layers
     expect(indexHtml).toContain('map.removeLayer(heatLayer)');
   });
+
+  test('heatLayer is recreated fresh each render, not reused via setOptions', () => {
+    // Regression: setOptions on an existing removed heatLayer is unreliable
+    // and causes the layer to break when filters change.
+    // renderMarkers must create a new L.heatLayer() each time heat mode renders.
+    const renderBody = indexHtml.substring(
+      indexHtml.indexOf('function renderMarkers()'),
+      indexHtml.indexOf('function renderMarkers()') + 3000
+    );
+    expect(renderBody).toContain('heatLayer = L.heatLayer(');
+    expect(renderBody).not.toContain('heatLayer.setOptions');
+    expect(renderBody).not.toContain('heatLayer.setLatLngs');
+  });
+
+  test('heatLayer initialized as null in initMap, not pre-created', () => {
+    // Regression: pre-creating heatLayer in initMap then trying to reconfigure
+    // it in renderMarkers caused stale state. Must be null until first heat render.
+    expect(indexHtml).toContain('heatLayer = null;');
+  });
+
+  test('renderMarkers has full teardown comment documenting invariants', () => {
+    expect(indexHtml).toContain('INVARIANT (regression fix): renderMarkers MUST fully tear down');
+  });
 });
 
 // ─── Static files ────────────────────────────────────────

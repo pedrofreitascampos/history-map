@@ -1987,7 +1987,7 @@ function initMap() {
   });
   map.addLayer(markersLayer);
 
-  heatLayer = L.heatLayer([], { radius: 40, blur: 30, maxZoom: 15, minOpacity: 0.15, max: 1.0, gradient: {0.0:'transparent',0.2:'#ffc14422',0.4:'#ffc14466',0.6:'#ffc144aa',0.8:'#ffc144',1:'#fff'} });
+  heatLayer = null; // created fresh in renderMarkers when heat mode is active
 
   // Context menu
   map.on('contextmenu', function(e) {
@@ -2073,24 +2073,32 @@ function _heatZoomHandler() {
   if (z < 10 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
 }
 
+// INVARIANT (regression fix): renderMarkers MUST fully tear down ALL layers and listeners
+// before rebuilding. Every code path must: (1) remove heatLayer, (2) remove _individualMarkersLayer,
+// (3) clear markersLayer, (4) remove zoomend listener. Then rebuild only what's needed.
+// This prevents ghost layers when switching filters or toggling map style.
 function renderMarkers() {
-  // Clean up previous state completely
+  // 1. Full teardown — always, regardless of mode
   markersLayer.clearLayers();
   map.off('zoomend', _heatZoomHandler);
   if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
-  if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+  if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
 
   const filtered = getFilteredLocations();
 
   if (state.mapStyle === 'heat') {
-    // Heat mode: heatmap always on, individual markers at high zoom
+    // 2a. Recreate heat layer fresh (setOptions on existing layer is unreliable)
     const count = filtered.length || 1;
     const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
-    heatLayer.setLatLngs(filtered.map(l => [l.lat, l.lng, intensity]));
-    heatLayer.setOptions({ radius: 35, blur: 25, max: intensity });
+    if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    heatLayer = L.heatLayer(
+      filtered.map(l => [l.lat, l.lng, intensity]),
+      { radius: 35, blur: 25, max: intensity, maxZoom: 15, minOpacity: 0.15,
+        gradient: {0.0:'transparent',0.2:'#ffc14422',0.4:'#ffc14466',0.6:'#ffc144aa',0.8:'#ffc144',1:'#fff'} }
+    );
     map.addLayer(heatLayer);
 
-    // Individual markers layer (shown/hidden by zoom)
+    // 2b. Individual markers (shown at high zoom)
     _individualMarkersLayer = L.layerGroup();
     filtered.forEach(loc => {
       const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
@@ -2098,10 +2106,9 @@ function renderMarkers() {
       _individualMarkersLayer.addLayer(marker);
     });
     map.on('zoomend', _heatZoomHandler);
-    _heatZoomHandler(); // apply immediately
+    _heatZoomHandler();
   } else {
-    // Cluster mode (default)
-    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    // 2c. Cluster mode
     filtered.forEach(loc => {
       const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
       marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
