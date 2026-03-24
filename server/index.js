@@ -32,7 +32,11 @@ function audit(event, details, req) {
 
 // Middleware
 app.set('trust proxy', 1); // Trust first proxy (Render)
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Required for Google Sign-In
+}));
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
