@@ -2077,43 +2077,58 @@ function _heatZoomHandler() {
 // before rebuilding. Every code path must: (1) remove heatLayer, (2) remove _individualMarkersLayer,
 // (3) clear markersLayer, (4) remove zoomend listener. Then rebuild only what's needed.
 // This prevents ghost layers when switching filters or toggling map style.
+// INVARIANT: heatLayer must be recreated fresh each render (no setOptions/setLatLngs).
+// INVARIANT: all heat/layer operations wrapped in try/catch — map may not be visible
+// when called from Import tab, causing Leaflet.heat _animating null errors.
+let _renderMarkersPending = false;
 function renderMarkers() {
-  // 1. Full teardown — always, regardless of mode
-  markersLayer.clearLayers();
-  map.off('zoomend', _heatZoomHandler);
-  if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
-  if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+  if (!map) return;
 
-  const filtered = getFilteredLocations();
+  // If map tab is not active, defer rendering until it becomes active
+  if (!document.getElementById('map-view')?.classList.contains('active')) {
+    _renderMarkersPending = true;
+    return;
+  }
 
-  if (state.mapStyle === 'heat') {
-    // 2a. Recreate heat layer fresh (setOptions on existing layer is unreliable)
-    const count = filtered.length || 1;
-    const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
-    if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
-    heatLayer = L.heatLayer(
-      filtered.map(l => [l.lat, l.lng, intensity]),
-      { radius: 35, blur: 25, max: intensity, maxZoom: 15, minOpacity: 0.15,
-        gradient: {0.0:'transparent',0.2:'#ffc14422',0.4:'#ffc14466',0.6:'#ffc144aa',0.8:'#ffc144',1:'#fff'} }
-    );
-    map.addLayer(heatLayer);
+  try {
+    // 1. Full teardown — always, regardless of mode
+    markersLayer.clearLayers();
+    map.off('zoomend', _heatZoomHandler);
+    if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
+    if (heatLayer) { try { map.removeLayer(heatLayer); } catch {} heatLayer = null; }
 
-    // 2b. Individual markers (shown at high zoom)
-    _individualMarkersLayer = L.layerGroup();
-    filtered.forEach(loc => {
-      const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-      marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
-      _individualMarkersLayer.addLayer(marker);
-    });
-    map.on('zoomend', _heatZoomHandler);
-    _heatZoomHandler();
-  } else {
-    // 2c. Cluster mode
-    filtered.forEach(loc => {
-      const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-      marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
-      markersLayer.addLayer(marker);
-    });
+    const filtered = getFilteredLocations();
+
+    if (state.mapStyle === 'heat') {
+      // 2a. Recreate heat layer fresh
+      const count = filtered.length || 1;
+      const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
+      heatLayer = L.heatLayer(
+        filtered.map(l => [l.lat, l.lng, intensity]),
+        { radius: 35, blur: 25, max: intensity, maxZoom: 15, minOpacity: 0.15,
+          gradient: {0.0:'transparent',0.2:'#ffc14422',0.4:'#ffc14466',0.6:'#ffc144aa',0.8:'#ffc144',1:'#fff'} }
+      );
+      map.addLayer(heatLayer);
+
+      // 2b. Individual markers (shown at high zoom)
+      _individualMarkersLayer = L.layerGroup();
+      filtered.forEach(loc => {
+        const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+        marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+        _individualMarkersLayer.addLayer(marker);
+      });
+      map.on('zoomend', _heatZoomHandler);
+      _heatZoomHandler();
+    } else {
+      // 2c. Cluster mode
+      filtered.forEach(loc => {
+        const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+        marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+        markersLayer.addLayer(marker);
+      });
+    }
+  } catch (err) {
+    console.warn('renderMarkers error (map may not be visible):', err.message);
   }
 }
 
@@ -2267,7 +2282,12 @@ function switchView(viewId) {
   document.getElementById('sidebar').style.display = showSidebar ? '' : 'none';
   document.getElementById('sidebar-toggle').style.display = showSidebar ? '' : 'none';
 
-  if (viewId === 'map-view') setTimeout(() => map.invalidateSize(), 100);
+  if (viewId === 'map-view') {
+    setTimeout(() => {
+      map.invalidateSize();
+      if (_renderMarkersPending) { _renderMarkersPending = false; renderMarkers(); }
+    }, 150);
+  }
   if (viewId === 'import-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();

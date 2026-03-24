@@ -149,6 +149,27 @@ describe('Import approval flow', () => {
     expect(res.body[0].needsApproval).toBe(false);
   });
 
+  test('auto-approved import does not require subsequent approval', async () => {
+    // Regression: importing with auto-approve then calling renderMarkers
+    // crashed with _animating null because map wasn't active
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
+      .send({ locations: [
+        { name: 'AutoPlace1', lat: 10, lng: 10, category: 'stadium', needsApproval: false, suggestedCategory: null },
+        { name: 'AutoPlace2', lat: 11, lng: 11, category: 'bar', needsApproval: false, suggestedCategory: null },
+      ]});
+    expect(res.status).toBe(200);
+    // Verify none need approval
+    res.body.forEach(loc => {
+      expect(loc.needsApproval).toBe(false);
+      expect(loc.suggestedCategory).toBeNull();
+    });
+    // Verify they show up in regular listing without needing approval
+    const list = await request(app).get('/api/locations').set('Authorization', `Bearer ${token}`);
+    const autoPlaces = list.body.filter(l => l.name.startsWith('AutoPlace'));
+    expect(autoPlaces).toHaveLength(2);
+    autoPlaces.forEach(l => expect(l.needsApproval).toBe(false));
+  });
+
   test('approve location updates category and clears needsApproval', async () => {
     // Find a pending location
     const list = await request(app).get('/api/locations').set('Authorization', `Bearer ${token}`);
@@ -299,6 +320,27 @@ describe('Frontend invariants (code checks)', () => {
 
   test('renderMarkers has full teardown comment documenting invariants', () => {
     expect(indexHtml).toContain('INVARIANT (regression fix): renderMarkers MUST fully tear down');
+  });
+
+  test('renderMarkers defers when map tab is not active', () => {
+    // Regression: calling renderMarkers from Import tab with heatmap mode
+    // caused _animating null error because Leaflet.heat canvas not ready
+    expect(indexHtml).toContain('_renderMarkersPending = true');
+    expect(indexHtml).toContain("map-view')?.classList.contains('active')");
+  });
+
+  test('renderMarkers wraps heat operations in try/catch', () => {
+    // Regression: Leaflet.heat throws on _animating when map not visible
+    const renderBody = indexHtml.substring(
+      indexHtml.indexOf('function renderMarkers()'),
+      indexHtml.indexOf('function renderMarkers()') + 4000
+    );
+    expect(renderBody).toContain("catch (err)");
+    expect(renderBody).toContain("map may not be visible");
+  });
+
+  test('switchView flushes pending render when returning to map', () => {
+    expect(indexHtml).toContain('_renderMarkersPending = false; renderMarkers()');
   });
 });
 
