@@ -3740,8 +3740,14 @@ async function generateGuide() {
   });
   if (locs.length > maxTotal) locs = locs.slice(0, maxTotal);
 
+  // Auto-adjust days if not enough locations
+  const effectiveDays = Math.min(numDays, Math.max(1, Math.ceil(locs.length / 2)));
+  if (effectiveDays < numDays) {
+    console.log(`Adjusted from ${numDays} to ${effectiveDays} days for ${locs.length} locations`);
+  }
+
   // Cluster into days
-  const days = clusterIntoDays(locs, numDays).map(d => d.slice(0, maxPerDay));
+  const days = clusterIntoDays(locs, effectiveDays).map(d => d.slice(0, maxPerDay));
 
   // Estimate drive times per day via OSRM
   const daysWithDriving = await estimateDriveTimes(days);
@@ -3850,7 +3856,7 @@ async function estimateDriveTimes(days) {
 
 function clusterIntoDays(locations, numDays) {
   const locs = [...locations];
-  const n = Math.min(numDays, locs.length);
+  const n = Math.min(numDays, Math.max(1, Math.floor(locs.length / 2)));
 
   if (n <= 1) return [orderByProximity(locs)];
 
