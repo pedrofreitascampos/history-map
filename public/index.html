@@ -1292,6 +1292,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
         <select class="filter-select" id="trip-selector" onchange="selectTrip(this.value)" style="flex:1;max-width:300px;"></select>
+        <button class="btn btn-secondary" onclick="promptNewTrip().then(()=>{populateTripSelector();})" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
       </div>
       <div id="trip-map" style="flex:1;"></div>
     </div>
@@ -5240,6 +5241,17 @@ function parseGoogleRawLocations(data) {
     }));
 }
 
+function findDuplicate(item) {
+  // Check against existing locations: same name (case-insensitive) OR within 50m
+  const nameLower = (item.name || '').toLowerCase();
+  for (const existing of state.locations) {
+    if (nameLower && (existing.name || '').toLowerCase() === nameLower) return existing;
+    if (item.lat && item.lng && existing.lat && existing.lng &&
+        haversineKm(item.lat, item.lng, existing.lat, existing.lng) < 0.05) return existing;
+  }
+  return null;
+}
+
 function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
   const isRestore = items[0]?._isFullRestore;
@@ -5248,28 +5260,78 @@ function showImportPreview(items) {
     hasVisits ? '📅 Google Timeline' :
     items[0]?._googleUrl !== undefined ? '⭐ Google Saved Places' :
     items[0]?._folderName ? '🗺️ Google My Maps' : '📁 File Import';
-  document.getElementById('import-count').textContent = `${items.length} locations — ${format}`;
+
+  // Flag duplicates
+  let dupCount = 0;
+  items.forEach(item => {
+    item._duplicate = findDuplicate(item);
+    if (item._duplicate) dupCount++;
+  });
+
+  const dupMsg = dupCount > 0 ? ` · ⚠️ ${dupCount} possible duplicate${dupCount > 1 ? 's' : ''}` : '';
+  document.getElementById('import-count').textContent = `${items.length} locations — ${format}${dupMsg}`;
+
   const tbody = document.getElementById('import-tbody');
-  tbody.innerHTML = items.slice(0, 200).map(item => {
+  tbody.innerHTML = items.slice(0, 200).map((item, idx) => {
     const cat = CATEGORIES[item.category] || CATEGORIES.location;
     const visits = (item.visits || []).length;
-    return `<tr>
-      <td>${item.name}</td>
+    const isDup = !!item._duplicate;
+    const rowStyle = isDup ? 'background:rgba(251,191,36,0.08);' : '';
+    const dupLabel = isDup ? `<span style="color:var(--accent);font-size:10px;" title="Matches: ${(item._duplicate.name||'').replace(/"/g,'&quot;')}">⚠️dup</span>` : '';
+    return `<tr style="${rowStyle}">
+      <td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" class="import-row-cb" data-idx="${idx}" checked ${isDup ? '' : ''}>
+        ${item.name} ${dupLabel}
+      </label></td>
       <td>${cat.emoji} ${cat.label}</td>
-      <td>${item.lat.toFixed(4)}</td>
-      <td>${item.lng.toFixed(4)}</td>
+      <td>${item.lat?.toFixed(4) || '?'}</td>
+      <td>${item.lng?.toFixed(4) || '?'}</td>
       <td>${item.status}${visits ? ` · ${visits} visit${visits>1?'s':''}` : ''}</td>
     </tr>`;
   }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>` : '');
+
+  // If there are duplicates, add a skip-duplicates button
+  if (dupCount > 0) {
+    const actionsDiv = document.querySelector('.import-actions');
+    if (actionsDiv && !document.getElementById('skip-dups-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'skip-dups-btn';
+      btn.className = 'btn btn-secondary';
+      btn.style.cssText = 'font-size:11px;padding:6px 10px;';
+      btn.textContent = `Uncheck ${dupCount} duplicates`;
+      btn.onclick = () => {
+        document.querySelectorAll('.import-row-cb').forEach(cb => {
+          const idx = parseInt(cb.dataset.idx);
+          if (items[idx]?._duplicate) cb.checked = false;
+        });
+      };
+      actionsDiv.insertBefore(btn, actionsDiv.querySelector('.btn-secondary'));
+    }
+  }
 }
 
 function cancelImport() {
   state.pendingImport = [];
   document.getElementById('import-preview').classList.remove('active');
+  const skipBtn = document.getElementById('skip-dups-btn');
+  if (skipBtn) skipBtn.remove();
 }
 
 async function confirmImport() {
+  // Filter out unchecked rows (user deselected duplicates etc.)
+  const checkboxes = document.querySelectorAll('.import-row-cb');
+  if (checkboxes.length > 0) {
+    const uncheckedIdxs = new Set();
+    checkboxes.forEach(cb => { if (!cb.checked) uncheckedIdxs.add(parseInt(cb.dataset.idx)); });
+    if (uncheckedIdxs.size > 0) {
+      state.pendingImport = state.pendingImport.filter((_, i) => !uncheckedIdxs.has(i));
+    }
+  }
+  // Clean up dup markers
+  state.pendingImport.forEach(item => delete item._duplicate);
+
   const count = state.pendingImport.length;
+  if (count === 0) { alert('No locations selected.'); return; }
   const isFullRestore = state.pendingImport[0]?._isFullRestore;
   const autoApprove = document.getElementById('import-auto-approve')?.checked || false;
 

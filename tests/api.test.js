@@ -353,6 +353,20 @@ describe('Import parsers', () => {
     expect(indexHtml).toContain('data.locations[0]?.latitudeE7');
   });
 
+  test('import preview has dedup detection', () => {
+    // Regression: importing the same data twice created duplicates.
+    // Preview must flag items that match existing locations by name or proximity.
+    expect(indexHtml).toContain('function findDuplicate');
+    expect(indexHtml).toContain('_duplicate');
+    expect(indexHtml).toContain('skip-dups-btn');
+  });
+
+  test('confirmImport respects unchecked rows', () => {
+    // Users can uncheck duplicates before importing
+    expect(indexHtml).toContain('import-row-cb');
+    expect(indexHtml).toContain('uncheckedIdxs');
+  });
+
   test('Timeline Edits parser handles placeAggregateInfo with latE7/lngE7', () => {
     expect(indexHtml).toContain('parseGoogleTimelineEdits');
     expect(indexHtml).toContain('placeAggregateInfo');
