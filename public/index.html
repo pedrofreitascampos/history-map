@@ -1453,6 +1453,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="been">✅ Been</option>
         <option value="bucket">⭐ Bucket</option>
       </select>
+      <select class="filter-select" id="bulk-filter-tag" onchange="renderBulkList()" style="width:140px;font-size:12px;">
+        <option value="">All tags</option>
+      </select>
       <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." oninput="renderBulkList()" style="flex:1;font-size:12px;padding:6px 10px;">
       <button class="add-small-btn" onclick="selectAllBulk()" style="border-style:solid;font-size:11px;">Select all</button>
       <button class="add-small-btn" onclick="clearBulkSelection()" style="border-style:solid;font-size:11px;">Clear</button>
@@ -2328,6 +2331,12 @@ function initBulkView() {
   const colAction = document.getElementById('bulk-collection');
   colAction.innerHTML = '<option value="">Collection →</option>' +
     state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+  // Populate tag filter
+  const allTags = {};
+  state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0)+1; }));
+  const tagFilter = document.getElementById('bulk-filter-tag');
+  tagFilter.innerHTML = '<option value="">All tags</option>' +
+    Object.entries(allTags).sort((a,b) => b[1]-a[1]).map(([t, n]) => `<option value="${t}">${t} (${n})</option>`).join('');
   bulkSelected.clear();
   renderBulkList();
 }
@@ -2335,10 +2344,12 @@ function initBulkView() {
 function getBulkFiltered() {
   const cat = document.getElementById('bulk-filter-cat')?.value || '';
   const status = document.getElementById('bulk-filter-status')?.value || '';
+  const tag = document.getElementById('bulk-filter-tag')?.value || '';
   const name = (document.getElementById('bulk-filter-name')?.value || '').toLowerCase();
   return state.locations.filter(l => {
     if (cat && l.category !== cat) return false;
     if (status && l.status !== status) return false;
+    if (tag && !(l.tags || []).includes(tag)) return false;
     if (name && !(l.name || '').toLowerCase().includes(name)) return false;
     return true;
   });
@@ -2365,6 +2376,7 @@ function renderBulkList() {
       <span style="font-size:16px;">${c.emoji}</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${statusIcon} ${loc.name}</span>
       <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${c.label}</span>
+      ${(loc.tags||[]).length ? `<span style="font-size:10px;color:var(--text-muted);">${(loc.tags||[]).slice(0,2).join(', ')}</span>` : ''}
       ${rating ? `<span style="font-size:11px;color:var(--accent);">${rating}</span>` : ''}
       ${trip ? `<span style="font-size:10px;color:var(--text-muted);background:var(--bg-tertiary);padding:1px 6px;border-radius:8px;">${trip.name}</span>` : ''}
     </label>`;
