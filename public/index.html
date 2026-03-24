@@ -4966,7 +4966,7 @@ async function startApp(username) {
   applyTheme(localStorage.getItem('hm_theme') || 'midnight');
 
   await loadFromServer();
-  if (state.locations.length === 0) await generateSampleData();
+  // No sample data seeding — start with a clean slate
 
   buildCategoryFilters();
   buildModalCategories();
