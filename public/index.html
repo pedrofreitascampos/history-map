@@ -1220,10 +1220,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Heatmap</h4>
-      <div class="heatmap-toggle" id="heatmap-toggle" onclick="toggleHeatmap()">
-        <div class="toggle-switch"></div>
-        <span>Show heat overlay</span>
+      <h4>Map Style</h4>
+      <div class="filter-group">
+        <button class="filter-group-btn active" data-mapstyle="clusters" onclick="setMapStyle('clusters',this)">📍 Clusters</button>
+        <button class="filter-group-btn" data-mapstyle="heat" onclick="setMapStyle('heat',this)">🔥 Heatmap</button>
       </div>
     </div>
 
@@ -1743,7 +1743,7 @@ let state = {
   modalTags: [],
   modalPrice: 0,
   modalCollections: [],
-  heatmapOn: false,
+  mapStyle: 'clusters', // 'clusters' or 'heat'
   pendingImport: [],
   pendingRestoreTrips: [],
   contextMenuLatLng: null,
@@ -2058,23 +2058,43 @@ function createPopupContent(loc) {
   </div>`;
 }
 
+let _individualMarkersLayer = null;
+
 function renderMarkers() {
   markersLayer.clearLayers();
+  if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
   const filtered = getFilteredLocations();
 
-  filtered.forEach(loc => {
-    const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-    marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
-    markersLayer.addLayer(marker);
-  });
-
-  // Heatmap
-  if (state.heatmapOn) {
-    const beenLocs = filtered.filter(l => l.status === 'been');
-    heatLayer.setLatLngs(beenLocs.map(l => [l.lat, l.lng, 1]));
+  if (state.mapStyle === 'heat') {
+    // Heat mode: heatmap always on, individual markers at high zoom
+    heatLayer.setLatLngs(filtered.map(l => [l.lat, l.lng, 1]));
     if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+
+    _individualMarkersLayer = L.layerGroup();
+    filtered.forEach(loc => {
+      const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+      marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+      _individualMarkersLayer.addLayer(marker);
+    });
+    // Show/hide individual markers based on zoom
+    const updateMarkersVisibility = () => {
+      const zoom = map.getZoom();
+      if (zoom >= 11 && !map.hasLayer(_individualMarkersLayer)) map.addLayer(_individualMarkersLayer);
+      if (zoom < 11 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
+      // Fade heat at high zoom
+      heatLayer.setOptions({ opacity: zoom >= 13 ? 0.3 : zoom >= 11 ? 0.6 : 0.8 });
+    };
+    map.off('zoomend', updateMarkersVisibility);
+    map.on('zoomend', updateMarkersVisibility);
+    updateMarkersVisibility();
   } else {
+    // Cluster mode (default)
     if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    filtered.forEach(loc => {
+      const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+      marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+      markersLayer.addLayer(marker);
+    });
   }
 }
 
@@ -2193,9 +2213,12 @@ function applyFilters() {
   renderMarkers();
 }
 
-function toggleHeatmap() {
-  state.heatmapOn = !state.heatmapOn;
-  document.getElementById('heatmap-toggle').classList.toggle('active', state.heatmapOn);
+function setMapStyle(style, btn) {
+  state.mapStyle = style;
+  if (btn) {
+    btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
   renderMarkers();
 }
 
@@ -3618,9 +3641,9 @@ let plannerMaxPrice = 0;
 // Party type → category weight adjustments
 const PARTY_WEIGHTS = {
   any: {},
-  couple: { restaurant: 1.5, bar: 1.3, cafe: 1.2, club: 0.5, museum: 1.2 },
-  family: { park: 1.5, museum: 1.5, show: 1.3, restaurant: 1.2, bar: 0.3, club: 0, monument: 1.3 },
-  friends: { bar: 1.5, restaurant: 1.3, club: 1.5, stadium: 1.3, festival: 1.5, cafe: 1.2 },
+  couple: { restaurant: 2.0, bar: 1.8, cafe: 1.5, museum: 1.5, monument: 1.3, show: 1.5, park: 1.2, shopping: 1.3, club: 0.8, stadium: 0.6, airport: 0.1 },
+  family: { park: 2.5, museum: 2.5, show: 2.0, monument: 1.8, restaurant: 1.5, cafe: 1.3, location: 1.2, shopping: 1.0, stadium: 0.8, bar: 0, club: 0, airport: 0.1 },
+  friends: { bar: 2.0, restaurant: 2.0, club: 2.0, stadium: 2.0, festival: 2.0, cafe: 1.5, show: 1.3, shopping: 1.2, museum: 0.8, park: 0.8, airport: 0.1 },
 };
 
 function setGuideInclude(val, btn) {
@@ -3756,14 +3779,14 @@ async function generateGuide() {
   }
 
   // Score and sort by rating + party weight
+  // Base score of 3 for unrated locations so party weights still matter
   const weights = PARTY_WEIGHTS[plannerParty] || {};
-  locs.sort((a, b) => {
-    const wA = weights[a.category] ?? 1;
-    const wB = weights[b.category] ?? 1;
-    const scoreA = Math.max(a.myRating || 0, (a.googleRating || 0)) * wA;
-    const scoreB = Math.max(b.myRating || 0, (b.googleRating || 0)) * wB;
-    return scoreB - scoreA;
+  locs.forEach(l => {
+    const w = weights[l.category] ?? 1;
+    const rating = Math.max(l.myRating || 0, l.googleRating || 0) || 3;
+    l._score = rating * w;
   });
+  locs.sort((a, b) => b._score - a._score);
   if (locs.length > maxTotal) locs = locs.slice(0, maxTotal);
 
   // Auto-adjust days if not enough locations
