@@ -1289,9 +1289,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
         <select class="filter-select" id="trip-selector" onchange="selectTrip(this.value)" style="flex:1;max-width:300px;"></select>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;white-space:nowrap;">
-          <input type="checkbox" id="road-routes-toggle" onchange="selectTrip(document.getElementById('trip-selector').value)"> Road routes
-        </label>
       </div>
       <div id="trip-map" style="flex:1;"></div>
     </div>
@@ -3048,12 +3045,7 @@ function selectTrip(tripId) {
 
   // Draw path
   if (tripLocs.length > 1) {
-    const useRoads = document.getElementById('road-routes-toggle')?.checked;
-    if (useRoads) {
-      drawRoadRoutes(tripLocs, trip.color || '#ffc144');
-    } else {
-      drawStraightPath(tripLocs, trip.color || '#ffc144');
-    }
+    drawRoadRoutes(tripLocs, trip.color || '#ffc144');
   }
 
   tripMap.fitBounds(bounds, { padding: [40, 40] });
