@@ -2061,37 +2061,40 @@ function createPopupContent(loc) {
 }
 
 let _individualMarkersLayer = null;
+// Stable reference for zoomend handler so we can remove it properly
+function _heatZoomHandler() {
+  if (!_individualMarkersLayer || !map) return;
+  const z = map.getZoom();
+  if (z >= 10 && !map.hasLayer(_individualMarkersLayer)) map.addLayer(_individualMarkersLayer);
+  if (z < 10 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
+}
 
 function renderMarkers() {
+  // Clean up previous state completely
   markersLayer.clearLayers();
+  map.off('zoomend', _heatZoomHandler);
   if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
+  if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+
   const filtered = getFilteredLocations();
 
   if (state.mapStyle === 'heat') {
     // Heat mode: heatmap always on, individual markers at high zoom
-    // Scale intensity: fewer POIs = brighter per point
     const count = filtered.length || 1;
     const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
     heatLayer.setLatLngs(filtered.map(l => [l.lat, l.lng, intensity]));
-    // Adjust heat radius based on zoom
     heatLayer.setOptions({ radius: 35, blur: 25, max: intensity });
-    if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+    map.addLayer(heatLayer);
 
-    // Individual markers always available but hidden at low zoom
+    // Individual markers layer (shown/hidden by zoom)
     _individualMarkersLayer = L.layerGroup();
     filtered.forEach(loc => {
       const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
       marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
       _individualMarkersLayer.addLayer(marker);
     });
-    const updateHeatZoom = () => {
-      const z = map.getZoom();
-      if (z >= 10 && !map.hasLayer(_individualMarkersLayer)) map.addLayer(_individualMarkersLayer);
-      if (z < 10 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
-    };
-    map.off('zoomend', updateHeatZoom);
-    map.on('zoomend', updateHeatZoom);
-    updateHeatZoom();
+    map.on('zoomend', _heatZoomHandler);
+    _heatZoomHandler(); // apply immediately
   } else {
     // Cluster mode (default)
     if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
