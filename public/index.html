@@ -2708,31 +2708,48 @@ function renderApproval() {
   }
   setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
-  container.innerHTML = pending.map(loc => {
+  container.innerHTML = pending.map((loc, idx) => {
     const suggested = CATEGORIES[loc.suggestedCategory] || CATEGORIES.location;
-    return `<div class="approval-card">
+    const catOptions = Object.entries(CATEGORIES).map(([k, c]) =>
+      `<option value="${k}" ${k === (loc.suggestedCategory || 'location') ? 'selected' : ''}>${c.emoji} ${c.label}</option>`
+    ).join('');
+    return `<div class="approval-card" data-loc-idx="${idx}">
       <h3>${loc.name}</h3>
-      <div class="addr">${loc.address}</div>
-      <div class="approval-suggestion">
-        <span class="sugg-emoji">${suggested.emoji}</span>
-        <span class="sugg-text">Suggested: <strong>${suggested.label}</strong></span>
-        <span class="sugg-conf">87%</span>
+      <div class="addr">${loc.address || 'No address'}</div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Category</label>
+        <select class="filter-select approval-cat-select" data-approval-idx="${idx}" style="width:100%;">
+          ${catOptions}
+        </select>
       </div>
       <div class="approval-actions">
-        <button class="btn btn-primary" onclick="approveLocation('${loc.id}')">✅ Approve</button>
-        <button class="btn btn-secondary" onclick="openEditModal('${loc.id}')">✏️ Edit</button>
+        <button class="btn btn-primary" onclick="approveByIndex(${idx})">✅ Approve</button>
+        <button class="btn btn-secondary" onclick="openEditModal('${(loc.id || '').replace(/'/g, "\\'")}')">✏️ Edit</button>
       </div>
     </div>`;
   }).join('');
 }
 
-async function approveLocation(id) {
-  const loc = state.locations.find(l => l.id === id);
-  if (!loc) return;
-  const updates = { needsApproval: false, suggestedCategory: null };
-  if (loc.suggestedCategory) updates.category = loc.suggestedCategory;
+async function approveByIndex(idx) {
+  const pending = state.locations.filter(l => l.needsApproval);
+  const loc = pending[idx];
+  if (!loc) { console.error('No pending location at index', idx); return; }
+  const locId = loc.id || loc._id;
+  if (!locId) { console.error('Location has no ID', loc); return; }
+
+  // Get the selected category from the dropdown
+  const select = document.querySelector(`[data-approval-idx="${idx}"]`);
+  const chosenCategory = select ? select.value : (loc.suggestedCategory || 'location');
+
+  const updates = { needsApproval: false, suggestedCategory: null, category: chosenCategory };
   Object.assign(loc, updates);
-  await api('PUT', '/locations/' + id, updates);
+  try {
+    await api('PUT', '/locations/' + locId, updates);
+  } catch (err) {
+    console.error('Approve failed:', err);
+    alert('Failed to approve: ' + err.message);
+    return;
+  }
   renderApproval();
   updateApprovalBadge();
   renderMarkers();
@@ -2741,10 +2758,11 @@ async function approveLocation(id) {
 async function bulkApprove() {
   const pending = state.locations.filter(l => l.needsApproval);
   const updates = pending.map(loc => {
+    const locId = loc.id || loc._id;
     const u = { needsApproval: false, suggestedCategory: null };
     if (loc.suggestedCategory) u.category = loc.suggestedCategory;
     Object.assign(loc, u);
-    return api('PUT', '/locations/' + loc.id, u);
+    return api('PUT', '/locations/' + locId, u);
   });
   await Promise.all(updates);
   renderApproval();
@@ -4493,20 +4511,22 @@ function parseKML(content) {
 }
 
 function inferCategory(text) {
-  const t = text.toLowerCase();
-  if (/restaurant|food|eat|dine|sushi|pizza|burger/i.test(t)) return 'restaurant';
-  if (/hotel|hostel|airbnb|stay|sleep|inn|lodge/i.test(t)) return 'hotel';
-  if (/bar|pub|tavern|cocktail/i.test(t)) return 'bar';
-  if (/club|disco|nightlife/i.test(t)) return 'club';
-  if (/museum|gallery|exhibit/i.test(t)) return 'museum';
-  if (/monument|temple|shrine|church|cathedral|castle|palace|tower/i.test(t)) return 'monument';
-  if (/park|forest|nature|lake|mountain|trail|garden/i.test(t)) return 'park';
-  if (/stadium|arena/i.test(t)) return 'stadium';
-  if (/airport|terminal|flight/i.test(t)) return 'airport';
-  if (/café|cafe|coffee/i.test(t)) return 'cafe';
-  if (/shop|mall|market|store|boutique/i.test(t)) return 'shopping';
-  if (/theater|theatre|cinema|show|opera|circus/i.test(t)) return 'show';
-  if (/festival|concert|event|conference/i.test(t)) return 'festival';
+  const t = (text || '').toLowerCase();
+  // Order matters: more specific patterns first
+  if (/stadium|estádio|estadio|arena|stade|stadion|olympiastadion|allianz arena|wembley|camp nou|bernabéu|anfield|old trafford|maracanã/i.test(t)) return 'stadium';
+  if (/airport|aeroporto|aeropuerto|flughafen|aéroport|terminal|airways/i.test(t)) return 'airport';
+  if (/museum|museu|museo|musée|galerie|gallery|exhibit|pinacoteca|kunsthalle/i.test(t)) return 'museum';
+  if (/restaurant|ristorante|restaurante|trattoria|osteria|brasserie|bistro|food|dine|dining|sushi|pizza|burger|steakhouse|grill|taqueria|ramen|izakaya|churrascaria|kebab|tandoori|dim sum|noodle/i.test(t)) return 'restaurant';
+  if (/hotel|hostel|airbnb|resort|pousada|pension|pensão|albergo|lodge|inn\b|motel|guesthouse|b&b/i.test(t)) return 'hotel';
+  if (/\bbar\b|pub\b|tavern|cocktail|speakeasy|beer|cervejaria|biergarten|wine bar|rooftop bar/i.test(t)) return 'bar';
+  if (/club|disco|nightclub|nightlife|techno|berghain|fabric/i.test(t)) return 'club';
+  if (/monument|memorial|temple|shrine|church|cathedral|basilica|mosque|synagogue|castle|château|castle|palace|palácio|palazzo|fort|fortress|citadel|tower|torre|ruins|acropolis|colosseum|pantheon|arch|gate\b|porta\b/i.test(t)) return 'monument';
+  if (/national park|parque|park\b|forest|floresta|nature|reserve|jardim|garden|botanical|waterfall|cascade|canyon|gorge|volcano|vulcão|mountain|serra|trail|hiking|beach|praia|playa|lake|lago|island|ilha/i.test(t)) return 'park';
+  if (/café|cafe|coffee|starbucks|bakery|padaria|pastelaria|pastry|patisserie/i.test(t)) return 'cafe';
+  if (/shop|mall|centro comercial|market|mercado|marché|store|boutique|outlet|bazar|bazaar|feira/i.test(t)) return 'shopping';
+  if (/theater|theatre|teatro|cinema|opera|ballet|comedy|cabaret|circus|cirque|aquarium|zoo|aquário|amusement|theme park|roller coaster/i.test(t)) return 'show';
+  if (/festival|concert|concerto|evento|conference|feira|carnival|carnaval|rock in rio|tomorrowland|coachella|glastonbury|lollapalooza/i.test(t)) return 'festival';
+  if (/viewpoint|miradouro|belvedere|lookout|plaza|square|praça|piazza|platz|bridge|ponte|puente|brücke/i.test(t)) return 'location';
   return 'location';
 }
 
