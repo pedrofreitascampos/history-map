@@ -459,6 +459,19 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).not.toContain(">My Places</button>");
   });
 
+  test('bulk edit mode exists with select/apply/delete', () => {
+    expect(indexHtml).toContain('function toggleBulkMode');
+    expect(indexHtml).toContain('function applyBulkEdit');
+    expect(indexHtml).toContain('function deleteBulkSelection');
+    expect(indexHtml).toContain('bulkSelected');
+  });
+
+  test('markers support bulk selection in bulk mode', () => {
+    expect(indexHtml).toContain('function bindMarkerBehavior');
+    expect(indexHtml).toContain('toggleBulkSelect');
+    expect(indexHtml).toContain("data-bulk-id");
+  });
+
   test('planner renders an itinerary map', () => {
     expect(indexHtml).toContain('id="planner-map"');
     expect(indexHtml).toContain('function renderPlannerMap');

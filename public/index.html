@@ -199,6 +199,7 @@ body {
 .marker-icon:hover { transform: scale(1.25); z-index: 9999 !important; }
 .marker-icon.been { border: 2.5px solid; }
 .marker-icon.bucket { border: 2.5px dashed; opacity: 0.8; }
+.marker-icon.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
 .marker-icon.needs-approval {
   border: 2.5px solid var(--danger);
   animation: pulse-approval 2s infinite;
@@ -1228,6 +1229,47 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
+    <button class="sidebar-add-btn" id="bulk-edit-toggle" onclick="toggleBulkMode()" style="margin-top:4px;border-color:var(--border);color:var(--text-secondary);">☑️ Bulk Edit Mode</button>
+
+    <div id="bulk-edit-panel" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--accent-dim);">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">
+        <span id="bulk-selected-count">0</span> selected
+        <span style="float:right;cursor:pointer;font-size:11px;color:var(--text-muted);" onclick="clearBulkSelection()">clear</span>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:10px;">Set Category</label>
+        <select class="filter-select" id="bulk-category">
+          <option value="">— don't change —</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:10px;">Set Status</label>
+        <select class="filter-select" id="bulk-status">
+          <option value="">— don't change —</option>
+          <option value="been">✅ Been</option>
+          <option value="bucket">⭐ Bucket List</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:10px;">Set Trip</label>
+        <select class="filter-select" id="bulk-trip">
+          <option value="">— don't change —</option>
+          <option value="_none">No trip</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:10px;">Add Tag</label>
+        <input type="text" class="form-input" id="bulk-tag" placeholder="Tag to add" style="font-size:12px;padding:6px 10px;">
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:10px;">Add to Collection</label>
+        <select class="filter-select" id="bulk-collection">
+          <option value="">— don't change —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="applyBulkEdit()" style="width:100%;font-size:12px;">Apply to Selected</button>
+      <button class="btn btn-danger" onclick="deleteBulkSelection()" style="width:100%;margin-top:6px;font-size:11px;padding:6px;">Delete Selected</button>
+    </div>
   </aside>
 
   <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">◀</button>
@@ -2024,13 +2066,26 @@ function createMarkerIcon(loc) {
   const cls = loc.needsApproval ? 'needs-approval' : loc.status;
   const bg = loc.status === 'been' ? hex + '22' : 'rgba(10,14,23,0.8)';
 
+  const selectedCls = bulkMode && bulkSelected.has(loc.id || loc._id) ? ' selected' : '';
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};">${cat.emoji}</div>`,
+    html: `<div class="marker-icon ${cls}${selectedCls}" data-bulk-id="${loc.id || loc._id || ''}" style="border-color:${hex};background:${bg};">${cat.emoji}</div>`,
     iconSize: [38, 38],
     iconAnchor: [19, 19],
     popupAnchor: [0, -22],
   });
+}
+
+function bindMarkerBehavior(marker, loc) {
+  if (bulkMode) {
+    marker.on('click', () => {
+      const locId = loc.id || loc._id;
+      toggleBulkSelect(locId);
+      marker.setIcon(createMarkerIcon(loc));
+    });
+  } else {
+    marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+  }
 }
 
 function createPopupContent(loc) {
@@ -2114,7 +2169,7 @@ function renderMarkers() {
       _individualMarkersLayer = L.layerGroup();
       filtered.forEach(loc => {
         const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-        marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+        bindMarkerBehavior(marker, loc);
         _individualMarkersLayer.addLayer(marker);
       });
       map.on('zoomend', _heatZoomHandler);
@@ -2123,7 +2178,7 @@ function renderMarkers() {
       // 2c. Cluster mode
       filtered.forEach(loc => {
         const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-        marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+        bindMarkerBehavior(marker, loc);
         markersLayer.addLayer(marker);
       });
     }
@@ -2260,6 +2315,117 @@ function setMapStyle(style, btn) {
     btn.classList.add('active');
   }
   renderMarkers();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* BULK EDIT                                                             */
+/* ═══════════════════════════════════════════════════════════════════════ */
+let bulkMode = false;
+let bulkSelected = new Set(); // location IDs
+
+function toggleBulkMode() {
+  bulkMode = !bulkMode;
+  const btn = document.getElementById('bulk-edit-toggle');
+  const panel = document.getElementById('bulk-edit-panel');
+  btn.style.borderColor = bulkMode ? 'var(--accent)' : 'var(--border)';
+  btn.style.color = bulkMode ? 'var(--accent)' : 'var(--text-secondary)';
+  panel.style.display = bulkMode ? '' : 'none';
+  if (bulkMode) {
+    bulkSelected.clear();
+    updateBulkCount();
+    populateBulkDropdowns();
+  } else {
+    bulkSelected.clear();
+    renderMarkers();
+  }
+}
+
+function populateBulkDropdowns() {
+  const catSel = document.getElementById('bulk-category');
+  catSel.innerHTML = '<option value="">— don\'t change —</option>' +
+    Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
+
+  const tripSel = document.getElementById('bulk-trip');
+  tripSel.innerHTML = '<option value="">— don\'t change —</option><option value="_none">No trip</option>' +
+    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  const colSel = document.getElementById('bulk-collection');
+  colSel.innerHTML = '<option value="">— don\'t change —</option>' +
+    state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+}
+
+function toggleBulkSelect(locId) {
+  if (bulkSelected.has(locId)) bulkSelected.delete(locId);
+  else bulkSelected.add(locId);
+  updateBulkCount();
+  // Update marker visual
+  const el = document.querySelector(`[data-bulk-id="${locId}"]`);
+  if (el) el.classList.toggle('selected', bulkSelected.has(locId));
+}
+
+function updateBulkCount() {
+  document.getElementById('bulk-selected-count').textContent = bulkSelected.size;
+}
+
+function clearBulkSelection() {
+  bulkSelected.clear();
+  updateBulkCount();
+  document.querySelectorAll('.marker-icon.selected').forEach(el => el.classList.remove('selected'));
+}
+
+async function applyBulkEdit() {
+  if (bulkSelected.size === 0) { alert('Select locations on the map first.'); return; }
+
+  const category = document.getElementById('bulk-category').value;
+  const status = document.getElementById('bulk-status').value;
+  const trip = document.getElementById('bulk-trip').value;
+  const tag = document.getElementById('bulk-tag').value.trim();
+  const colId = document.getElementById('bulk-collection').value;
+
+  if (!category && !status && !trip && !tag && !colId) { alert('Choose at least one field to change.'); return; }
+
+  const updates = [];
+  for (const locId of bulkSelected) {
+    const loc = state.locations.find(l => (l.id || l._id) === locId);
+    if (!loc) continue;
+    const patch = {};
+    if (category) { loc.category = category; patch.category = category; }
+    if (status) { loc.status = status; patch.status = status; }
+    if (trip === '_none') { loc.tripId = null; patch.tripId = null; }
+    else if (trip) { loc.tripId = trip; patch.tripId = trip; }
+    if (tag && !(loc.tags || []).includes(tag)) {
+      loc.tags = [...(loc.tags || []), tag]; patch.tags = loc.tags;
+    }
+    if (colId && !(loc.collections || []).includes(colId)) {
+      loc.collections = [...(loc.collections || []), colId]; patch.collections = loc.collections;
+    }
+    if (Object.keys(patch).length > 0) {
+      updates.push(api('PUT', '/locations/' + locId, patch));
+    }
+  }
+  await Promise.all(updates);
+  bulkSelected.clear();
+  updateBulkCount();
+  document.getElementById('bulk-tag').value = '';
+  renderMarkers();
+  populateFilterDropdowns();
+  alert(`Updated ${updates.length} locations.`);
+}
+
+async function deleteBulkSelection() {
+  if (bulkSelected.size === 0) return;
+  if (!confirm(`Delete ${bulkSelected.size} locations? This cannot be undone.`)) return;
+  const deletes = [];
+  for (const locId of bulkSelected) {
+    deletes.push(api('DELETE', '/locations/' + locId));
+    state.locations = state.locations.filter(l => (l.id || l._id) !== locId);
+  }
+  await Promise.all(deletes);
+  bulkSelected.clear();
+  updateBulkCount();
+  renderMarkers();
+  populateFilterDropdowns();
+  updateApprovalBadge();
 }
 
 function toggleSidebar() {
