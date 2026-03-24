@@ -4644,6 +4644,45 @@ async function enrichCategories(locations) {
   return locations;
 }
 
+// Background enrichment — runs after import is done, updates locations one by one
+async function enrichInBackground(locations) {
+  const max = Math.min(locations.length, 50);
+  let enriched = 0;
+  for (let i = 0; i < max; i++) {
+    const loc = locations[i];
+    const locId = loc.id || loc._id;
+    if (!locId) continue;
+    try {
+      await new Promise(r => setTimeout(r, 1100));
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      if (!data) continue;
+      const osmCat = osmToCategory(data.class, data.type);
+      const newCat = osmCat || inferCategory((data.name || '') + ' ' + (data.display_name || ''));
+      if (newCat !== 'location') {
+        loc.category = newCat;
+        loc.suggestedCategory = newCat;
+        if (!loc.address && data.display_name) loc.address = data.display_name;
+        // Update in state
+        const stateIdx = state.locations.findIndex(l => (l.id || l._id) === locId);
+        if (stateIdx >= 0) Object.assign(state.locations[stateIdx], { category: newCat, suggestedCategory: newCat, address: loc.address });
+        // Persist to server
+        await api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: loc.address || undefined });
+        enriched++;
+      }
+    } catch {}
+  }
+  if (enriched > 0) {
+    console.log(`Background enrichment: updated ${enriched} categories`);
+    renderMarkers();
+    renderApproval();
+    updateApprovalBadge();
+  }
+}
+
 function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
   const isRestore = items[0]?._isFullRestore;
@@ -4721,14 +4760,7 @@ async function confirmImport() {
       };
     });
 
-    // Enrich uncategorized locations via Nominatim (OSM class/type)
-    const uncategorized = toImport.filter(l => l.category === 'location');
-    if (uncategorized.length > 0 && !isFullRestore) {
-      document.getElementById('import-preview').querySelector('h4').textContent =
-        `Enriching ${Math.min(uncategorized.length, 50)} uncategorized locations via Nominatim...`;
-      toImport = await enrichCategories(toImport);
-    }
-
+    // Save immediately — don't block on enrichment
     const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
     state.locations.push(...saved);
     state.pendingImport = [];
@@ -4736,8 +4768,16 @@ async function confirmImport() {
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
-    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Review them in the approval queue below.'}`);
     renderApproval();
+    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Review them in the approval queue below.'}`);
+
+    // Enrich uncategorized locations in background (non-blocking)
+    if (!isFullRestore) {
+      const uncategorized = saved.filter(l => (l.category === 'location') && l.lat && l.lng);
+      if (uncategorized.length > 0) {
+        enrichInBackground(uncategorized);
+      }
+    }
   } catch (err) { alert('Import failed: ' + err.message); }
 }
 
