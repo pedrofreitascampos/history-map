@@ -3990,15 +3990,15 @@ function initRegionsMap() {
 
 async function loadRegionBoundaries() {
   if (regionsGeoData) return regionsGeoData;
-  document.getElementById('regions-summary').textContent = 'Loading admin-1 boundaries (first load may take a moment)...';
+  document.getElementById('regions-summary').textContent = 'Loading boundaries...';
   try {
-    const res = await fetch('/api/admin1-boundaries');
-    if (!res.ok) throw new Error('Server returned ' + res.status);
+    const res = await fetch('/admin1.json');
+    if (!res.ok) throw new Error('Failed to load: ' + res.status);
     regionsGeoData = await res.json();
     return regionsGeoData;
   } catch (err) {
     console.error('Failed to load admin-1 boundaries:', err);
-    document.getElementById('regions-summary').textContent = 'Failed to load boundaries. Retrying...';
+    document.getElementById('regions-summary').textContent = 'Failed to load boundaries.';
     return null;
   }
 }
