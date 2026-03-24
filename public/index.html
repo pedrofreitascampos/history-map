@@ -1229,46 +1229,25 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
-    <button class="sidebar-add-btn" id="bulk-edit-toggle" onclick="toggleBulkMode()" style="margin-top:4px;border-color:var(--border);color:var(--text-secondary);">☑️ Bulk Edit Mode</button>
+    <button class="sidebar-add-btn" id="bulk-edit-toggle" onclick="toggleBulkMode()" style="margin-top:4px;border-color:var(--border);color:var(--text-secondary);">☑️ Bulk Edit</button>
 
-    <div id="bulk-edit-panel" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--accent-dim);">
-      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">
-        <span id="bulk-selected-count">0</span> selected
-        <span style="float:right;cursor:pointer;font-size:11px;color:var(--text-muted);" onclick="clearBulkSelection()">clear</span>
+    <div id="bulk-edit-panel" style="display:none;margin-top:8px;">
+      <div style="padding:10px;border-radius:var(--radius);background:var(--accent-dim);border:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:13px;color:var(--accent);font-weight:600;"><span id="bulk-selected-count">0</span> selected</span>
+        <span style="cursor:pointer;font-size:11px;color:var(--text-muted);text-decoration:underline;" onclick="clearBulkSelection()">clear</span>
       </div>
-      <div class="form-group" style="margin-bottom:8px;">
-        <label style="font-size:10px;">Set Category</label>
-        <select class="filter-select" id="bulk-category">
-          <option value="">— don't change —</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:8px;">
-        <label style="font-size:10px;">Set Status</label>
-        <select class="filter-select" id="bulk-status">
-          <option value="">— don't change —</option>
-          <option value="been">✅ Been</option>
-          <option value="bucket">⭐ Bucket List</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:8px;">
-        <label style="font-size:10px;">Set Trip</label>
-        <select class="filter-select" id="bulk-trip">
-          <option value="">— don't change —</option>
-          <option value="_none">No trip</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:8px;">
-        <label style="font-size:10px;">Add Tag</label>
-        <input type="text" class="form-input" id="bulk-tag" placeholder="Tag to add" style="font-size:12px;padding:6px 10px;">
-      </div>
-      <div class="form-group" style="margin-bottom:8px;">
-        <label style="font-size:10px;">Add to Collection</label>
-        <select class="filter-select" id="bulk-collection">
-          <option value="">— don't change —</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" onclick="applyBulkEdit()" style="width:100%;font-size:12px;">Apply to Selected</button>
-      <button class="btn btn-danger" onclick="deleteBulkSelection()" style="width:100%;margin-top:6px;font-size:11px;padding:6px;">Delete Selected</button>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Click pins on the map to select. Then apply changes below.</div>
+      <select class="filter-select" id="bulk-category" style="margin-bottom:6px;font-size:12px;"><option value="">Category: no change</option></select>
+      <select class="filter-select" id="bulk-status" style="margin-bottom:6px;font-size:12px;">
+        <option value="">Status: no change</option>
+        <option value="been">✅ Been</option>
+        <option value="bucket">⭐ Bucket List</option>
+      </select>
+      <select class="filter-select" id="bulk-trip" style="margin-bottom:6px;font-size:12px;"><option value="">Trip: no change</option><option value="_none">No trip</option></select>
+      <input type="text" class="form-input" id="bulk-tag" placeholder="Add tag..." style="font-size:12px;padding:6px 10px;margin-bottom:6px;">
+      <select class="filter-select" id="bulk-collection" style="margin-bottom:8px;font-size:12px;"><option value="">Collection: no change</option></select>
+      <button class="btn btn-primary" onclick="applyBulkEdit()" style="width:100%;font-size:12px;padding:8px;">Apply to Selected</button>
+      <button class="btn btn-danger" onclick="deleteBulkSelection()" style="width:100%;margin-top:4px;font-size:11px;padding:5px;">Delete Selected</button>
     </div>
   </aside>
 
@@ -2077,10 +2056,14 @@ function createMarkerIcon(loc) {
 }
 
 function bindMarkerBehavior(marker, loc) {
-  if (bulkMode) {
-    marker.on('click', () => {
-      const locId = loc.id || loc._id;
-      toggleBulkSelect(locId);
+  const locId = loc.id || loc._id;
+  if (bulkMode && locId) {
+    // In bulk mode: click toggles selection, no popup
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (bulkSelected.has(locId)) bulkSelected.delete(locId);
+      else bulkSelected.add(locId);
+      updateBulkCount();
       marker.setIcon(createMarkerIcon(loc));
     });
   } else {
@@ -4026,49 +4009,82 @@ async function discoverPlaces(region, maxResults) {
   output.innerHTML = '<p style="color:var(--text-muted);">🔍 Discovering places near ' + region + '...</p>';
 
   try {
-    // Search for the region to get center coordinates
+    // 1. Get region center + bounding box
     const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(region)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
     const geoResults = await geoRes.json();
-    if (geoResults.length === 0) return [];
-    const center = { lat: parseFloat(geoResults[0].lat), lng: parseFloat(geoResults[0].lon) };
+    if (geoResults.length === 0) { output.innerHTML = '<p style="color:var(--danger);">Region not found.</p>'; return []; }
+
+    const geo = geoResults[0];
+    const center = { lat: parseFloat(geo.lat), lng: parseFloat(geo.lon) };
     const radiusKm = parseFloat(document.getElementById('guide-radius').value) || 50;
 
-    // Map categories to Nominatim search terms
-    const catSearchTerms = {
-      restaurant: 'restaurant', hotel: 'hotel', bar: 'bar', club: 'nightclub',
-      monument: 'monument', museum: 'museum', park: 'park', stadium: 'stadium',
-      festival: 'concert hall', event: 'convention centre', location: 'viewpoint',
-      airport: 'airport', show: 'theatre', shopping: 'market', cafe: 'cafe',
+    // Calculate viewbox from center + radius
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.cos(center.lat * Math.PI / 180));
+    const viewbox = `${center.lng - lngDelta},${center.lat + latDelta},${center.lng + lngDelta},${center.lat - latDelta}`;
+
+    // 2. Search by OSM amenity/tourism/leisure types using viewbox
+    const osmQueries = {
+      restaurant: ['amenity=restaurant', 'amenity=fast_food'],
+      hotel: ['tourism=hotel', 'tourism=hostel'],
+      bar: ['amenity=bar', 'amenity=pub'],
+      club: ['amenity=nightclub'],
+      monument: ['tourism=attraction', 'historic=monument', 'historic=castle'],
+      museum: ['tourism=museum'],
+      park: ['leisure=park', 'leisure=nature_reserve'],
+      stadium: ['leisure=stadium'],
+      festival: ['amenity=arts_centre'],
+      event: ['amenity=conference_centre'],
+      location: ['tourism=viewpoint'],
+      airport: ['aeroway=aerodrome'],
+      show: ['amenity=theatre', 'amenity=cinema'],
+      shopping: ['shop=mall', 'amenity=marketplace'],
+      cafe: ['amenity=cafe'],
     };
-    // Use selected categories, or all if none selected
-    const searchCats = plannerCategories.size > 0 ? [...plannerCategories] : Object.keys(catSearchTerms);
+
+    const searchCats = plannerCategories.size > 0 ? [...plannerCategories] : Object.keys(osmQueries);
     const allResults = [];
+    let searched = 0;
 
     for (const cat of searchCats) {
       if (allResults.length >= maxResults) break;
-      const term = catSearchTerms[cat];
-      if (!term) continue;
-      output.innerHTML = `<p style="color:var(--text-muted);">🔍 Searching ${CATEGORIES[cat]?.emoji || ''} ${term}s near ${region}...</p>`;
-      try {
-        await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(term + ' in ' + region)}&format=json&limit=10&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
-        const results = await res.json();
-        results.forEach(r => {
-          const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
-          if (haversineKm(center.lat, center.lng, lat, lng) <= radiusKm && r.name) {
-            allResults.push({
-              name: r.name,
-              lat, lng,
-              address: r.display_name || '',
-              category: cat,
-              status: 'bucket',
-              googleRating: null, myRating: 0,
-              tags: [term], priceLevel: null,
-            });
-          }
-        });
-      } catch {}
+      const queries = osmQueries[cat];
+      if (!queries) continue;
+      const catEmoji = CATEGORIES[cat]?.emoji || '';
+
+      for (const q of queries) {
+        if (allResults.length >= maxResults) break;
+        searched++;
+        output.innerHTML = `<p style="color:var(--text-muted);">🔍 ${catEmoji} Searching ${q.split('=')[1]}s... (${allResults.length} found)</p>`;
+
+        try {
+          await new Promise(r => setTimeout(r, 1100));
+          // Use Nominatim with viewbox + bounded to search within region
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?` +
+            `q=${encodeURIComponent(q.split('=')[1])}&format=json&limit=15&addressdetails=1` +
+            `&viewbox=${viewbox}&bounded=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const results = await res.json();
+          results.forEach(r => {
+            const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+            if (r.name && haversineKm(center.lat, center.lng, lat, lng) <= radiusKm) {
+              allResults.push({
+                name: r.name, lat, lng,
+                address: r.display_name || '',
+                category: osmToCategory(r.class, r.type) || cat,
+                status: 'bucket',
+                googleRating: null, myRating: 0,
+                tags: [], priceLevel: null,
+              });
+            }
+          });
+        } catch {}
+      }
     }
+
+    output.innerHTML = `<p style="color:var(--text-muted);">Found ${allResults.length} places, deduplicating...</p>`;
 
     // Deduplicate by proximity
     const unique = [];
@@ -4077,9 +4093,11 @@ async function discoverPlaces(region, maxResults) {
         unique.push(loc);
       }
     });
+    console.log(`Discover: searched ${searched} queries, found ${allResults.length} raw, ${unique.length} unique`);
     return unique.slice(0, maxResults);
   } catch (err) {
     console.error('Discover failed:', err);
+    output.innerHTML = `<p style="color:var(--danger);">Discovery failed: ${err.message}</p>`;
     return [];
   }
 }

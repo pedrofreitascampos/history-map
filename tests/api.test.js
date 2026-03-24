@@ -472,6 +472,23 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).toContain("data-bulk-id");
   });
 
+  test('discover uses viewbox bounded search, not "X in Y" queries', () => {
+    // Regression: "restaurant in Lisbon" as Nominatim query doesn't work.
+    // Must use viewbox+bounded parameter for geographic filtering.
+    const discoverFn = indexHtml.substring(
+      indexHtml.indexOf('async function discoverPlaces'),
+      indexHtml.indexOf('async function discoverPlaces') + 4000
+    );
+    expect(discoverFn).toContain('viewbox=');
+    expect(discoverFn).toContain('bounded=1');
+    expect(discoverFn).not.toContain("term + ' in ' + region");
+  });
+
+  test('discover calculates viewbox from center + radius', () => {
+    expect(indexHtml).toContain('latDelta = radiusKm / 111');
+    expect(indexHtml).toContain('lngDelta = radiusKm /');
+  });
+
   test('planner renders an itinerary map', () => {
     expect(indexHtml).toContain('id="planner-map"');
     expect(indexHtml).toContain('function renderPlannerMap');
