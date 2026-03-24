@@ -4483,14 +4483,29 @@ function parseJSON(content) {
     return parseGoogleTimelineOld(data);
   }
 
-  // 4. Google Timeline — new format (array of objects with visit/activity)
+  // 4. Google Timeline — array of placeVisit objects (mid-era format)
+  if (Array.isArray(data) && data[0]?.placeVisit) {
+    return parseGoogleTimelineOld({ timelineObjects: data });
+  }
+
+  // 5. Google Timeline — new format (array with visit/topCandidate)
   if (Array.isArray(data) && data[0]?.visit) {
     return parseGoogleTimelineNew(data);
   }
 
-  // 5. Google Timeline — new format wrapped in object
+  // 6. Google Timeline — new format (array with startTime + visit)
+  if (Array.isArray(data) && data[0]?.startTime && data[0]?.endTime) {
+    return parseGoogleTimelineNew(data);
+  }
+
+  // 7. Google Timeline — semanticSegments wrapper
   if (data.semanticSegments || data.rawSignals) {
     return parseGoogleTimelineSegments(data);
+  }
+
+  // 8. Google Timeline — Location History wrapper with locations array
+  if (data.locations && Array.isArray(data.locations) && data.locations[0]?.latitudeE7) {
+    return parseGoogleRawLocations(data);
   }
 
   // 6. Generic GeoJSON
@@ -4640,37 +4655,63 @@ function parseGoogleTimelineSegments(data) {
   return results;
 }
 
+function parseCSVLine(line, delim) {
+  const vals = [];
+  let current = '', inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes; }
+    else if (ch === delim && !inQuotes) { vals.push(current.trim()); current = ''; }
+    else { current += ch; }
+  }
+  vals.push(current.trim());
+  return vals;
+}
+
 function parseCSV(content) {
-  const lines = content.trim().split('\n');
+  const lines = content.trim().split('\n').map(l => l.replace(/\r$/, ''));
   if (lines.length < 2) return [];
   // Auto-detect delimiter: semicolon (Mapstr) or comma
   const firstLine = lines[0];
   const delim = firstLine.includes(';') ? ';' : ',';
-  const headers = firstLine.split(delim).map(h => h.trim().toLowerCase().replace(/"/g,''));
+  const headers = parseCSVLine(firstLine, delim).map(h => h.toLowerCase().replace(/"/g, ''));
 
   return lines.slice(1).map(line => {
-    // Handle quoted fields with embedded delimiters
-    const vals = [];
-    let current = '', inQuotes = false;
-    for (const ch of line) {
-      if (ch === '"') { inQuotes = !inQuotes; }
-      else if (ch === delim && !inQuotes) { vals.push(current.trim()); current = ''; }
-      else { current += ch; }
-    }
-    vals.push(current.trim());
-
+    const vals = parseCSVLine(line, delim);
     const obj = {};
     headers.forEach((h, i) => obj[h] = vals[i] || '');
 
-    // Mapstr uses 'name', 'latitude', 'longitude', and may include 'tags', 'note', 'address'
-    const name = obj.name || obj.title || obj.nom || 'Unknown';
-    const tags = (obj.tags || obj.tag || obj.liste || '').split(',').map(t => t.trim()).filter(Boolean);
+    const name = obj.title || obj.name || obj.nom || 'Unknown';
+    let lat = parseFloat(obj.lat || obj.latitude || 0);
+    let lng = parseFloat(obj.lng || obj.longitude || obj.lon || 0);
+
+    // Google Takeout Saved Places CSV: coords are in the URL column
+    // Format: https://www.google.com/maps/place/.../@lat,lng,zoomz/...
+    if ((!lat || !lng) && (obj.url || obj.link || obj['google maps url'])) {
+      const url = obj.url || obj.link || obj['google maps url'];
+      const coordMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (coordMatch) {
+        lat = parseFloat(coordMatch[1]);
+        lng = parseFloat(coordMatch[2]);
+      }
+    }
+
+    // Also try 'place url', 'maps url' variations
+    if ((!lat || !lng)) {
+      for (const key of Object.keys(obj)) {
+        if (key.includes('url') || key.includes('link')) {
+          const coordMatch = (obj[key] || '').match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+          if (coordMatch) { lat = parseFloat(coordMatch[1]); lng = parseFloat(coordMatch[2]); break; }
+        }
+      }
+    }
+
+    const tags = (obj.tags || obj.tag || obj.liste || obj.label || '').split(',').map(t => t.trim()).filter(Boolean);
+    const address = obj.address || obj.adresse || obj.city || obj.location || '';
     return {
       name,
-      lat: parseFloat(obj.lat || obj.latitude || 0),
-      lng: parseFloat(obj.lng || obj.longitude || obj.lon || 0),
-      category: inferCategory(name + ' ' + (obj.tags || '') + ' ' + (obj.category || '')),
-      address: obj.address || obj.adresse || obj.city || '',
+      lat, lng,
+      category: inferCategory(name + ' ' + (obj.tags || obj.label || '') + ' ' + (obj.category || '') + ' ' + address),
+      address,
       status: 'been',
       notes: obj.note || obj.notes || obj.comment || '',
       tags,
@@ -4865,6 +4906,36 @@ async function enrichInBackground(locations) {
     renderApproval();
     updateApprovalBadge();
   }
+}
+
+// ── Google Timeline: Raw location records (Records.json / Location History.json) ──
+function parseGoogleRawLocations(data) {
+  // Raw GPS records — group by approximate location to find "places"
+  const grid = new Map(); // grid cell → { lat, lng, count, dates }
+  (data.locations || []).forEach(loc => {
+    const lat = (loc.latitudeE7 || 0) / 1e7;
+    const lng = (loc.longitudeE7 || 0) / 1e7;
+    if (!lat || !lng) return;
+    // Round to ~100m grid for clustering
+    const key = lat.toFixed(3) + '|' + lng.toFixed(3);
+    if (!grid.has(key)) grid.set(key, { lat, lng, count: 0, dates: new Set() });
+    const cell = grid.get(key);
+    cell.count++;
+    if (loc.timestamp) {
+      try { cell.dates.add(new Date(loc.timestamp).toISOString().split('T')[0]); } catch {}
+    }
+  });
+  // Only keep cells with multiple readings (actual places, not drive-by)
+  return [...grid.values()]
+    .filter(c => c.count >= 3)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 500) // cap at 500 places
+    .map(c => ({
+      name: `Location (${c.lat.toFixed(4)}, ${c.lng.toFixed(4)})`,
+      lat: c.lat, lng: c.lng,
+      category: 'location', address: '', status: 'been',
+      visits: [...c.dates].sort().slice(0, 10).map(d => ({ date: d, notes: '' })),
+    }));
 }
 
 function showImportPreview(items) {
