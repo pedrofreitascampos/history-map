@@ -265,7 +265,11 @@ app.post('/api/collections/bulk', auth, async (req, res) => {
 
 // ── Admin-1 boundaries proxy (Natural Earth, cached) ─────
 const ADMIN1_CACHE = path.join(__dirname, '..', 'data', 'admin1-simplified.json');
-const NE_ADMIN1_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson';
+// Try 10m first via jsdelivr (faster CDN), fall back to 50m from GitHub
+const NE_ADMIN1_URLS = [
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_admin_1_states_provinces.geojson',
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson',
+];
 
 app.get('/api/admin1-boundaries', async (req, res) => {
   try {
@@ -280,9 +284,21 @@ app.get('/api/admin1-boundaries', async (req, res) => {
     }
 
     console.log('Fetching admin-1 boundaries from Natural Earth...');
-    const response = await fetch(NE_ADMIN1_URL);
-    if (!response.ok) throw new Error('Failed to fetch: ' + response.status);
-    const geojson = await response.json();
+    let geojson = null;
+    for (const url of NE_ADMIN1_URLS) {
+      try {
+        console.log('Trying:', url.substring(0, 60) + '...');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!response.ok) continue;
+        geojson = await response.json();
+        console.log(`Got ${geojson.features?.length || 0} features`);
+        break;
+      } catch (e) { console.warn('URL failed:', e.message); }
+    }
+    if (!geojson) throw new Error('All sources failed');
 
     // Simplify: keep only essential properties, reduce coordinate precision
     const simplified = {
@@ -295,8 +311,8 @@ app.get('/api/admin1-boundaries', async (req, res) => {
           iso_country: f.properties.iso_a2 || f.properties.ISO_A2 || '',
           type_en: f.properties.type_en || '',
         },
-        geometry: simplifyGeometry(f.geometry, 2), // 2 decimal places ≈ 1km precision
-      })).filter(f => f.geometry && f.properties.name),
+        geometry: simplifyGeometry(f.geometry, 1), // 1 decimal place ≈ 10km, keeps file small
+      })).filter(f => f.geometry && f.properties.name && f.geometry.coordinates?.length > 0),
     };
 
     fs.writeFileSync(ADMIN1_CACHE, JSON.stringify(simplified));
