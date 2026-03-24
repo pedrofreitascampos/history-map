@@ -1142,7 +1142,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
   <div class="topbar-actions">
     <button class="btn-icon" onclick="exportData()" title="Export Data">💾</button>
-    <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">🌙</button>
+    <button class="btn-icon" id="theme-toggle" onclick="cycleTheme()" title="Change Theme">🌙</button>
     <div class="user-info">
       <span class="username" id="display-username"></span>
       <button class="btn-logout" onclick="logout()">Sign out</button>
@@ -4596,28 +4596,82 @@ function exportData() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* THEME                                                                 */
 /* ═══════════════════════════════════════════════════════════════════════ */
-function toggleTheme() {
-  const html = document.documentElement;
-  const isDark = html.getAttribute('data-theme') === 'dark';
-  if (isDark) {
-    document.body.style.setProperty('--bg-primary', '#f5f0eb');
-    document.body.style.setProperty('--bg-secondary', '#ffffff');
-    document.body.style.setProperty('--bg-tertiary', '#f0ebe3');
-    document.body.style.setProperty('--bg-card', 'rgba(255,255,255,0.9)');
-    document.body.style.setProperty('--bg-glass', 'rgba(255,255,255,0.85)');
-    document.body.style.setProperty('--text-primary', '#1a1a1a');
-    document.body.style.setProperty('--text-secondary', '#555');
-    document.body.style.setProperty('--text-muted', '#888');
-    document.body.style.setProperty('--border', 'rgba(0,0,0,0.1)');
-    document.body.style.setProperty('--border-strong', 'rgba(0,0,0,0.2)');
-    html.setAttribute('data-theme', 'light');
-    document.getElementById('theme-toggle').textContent = '☀️';
-  } else {
-    // Reset to dark
-    ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-card','--bg-glass','--text-primary','--text-secondary','--text-muted','--border','--border-strong'].forEach(p => document.body.style.removeProperty(p));
-    html.setAttribute('data-theme', 'dark');
-    document.getElementById('theme-toggle').textContent = '🌙';
-  }
+const THEMES = {
+  midnight: {
+    icon: '🌙', label: 'Midnight',
+    vars: {} // default CSS vars
+  },
+  parchment: {
+    icon: '☀️', label: 'Parchment',
+    vars: {
+      '--bg-primary':'#f5f0eb','--bg-secondary':'#ffffff','--bg-tertiary':'#f0ebe3',
+      '--bg-card':'rgba(255,255,255,0.9)','--bg-glass':'rgba(255,255,255,0.85)',
+      '--text-primary':'#1a1a1a','--text-secondary':'#555','--text-muted':'#888',
+      '--border':'rgba(0,0,0,0.1)','--border-strong':'rgba(0,0,0,0.2)',
+      '--accent':'#b8860b','--accent-dim':'rgba(184,134,11,0.12)','--accent-glow':'rgba(184,134,11,0.3)',
+    }
+  },
+  ocean: {
+    icon: '🌊', label: 'Ocean',
+    vars: {
+      '--bg-primary':'#0b1628','--bg-secondary':'#0f1f3d','--bg-tertiary':'#152a4a',
+      '--bg-card':'rgba(15,31,61,0.85)','--bg-glass':'rgba(11,22,40,0.75)',
+      '--text-primary':'#e0eaf5','--text-secondary':'#7a9cc6','--text-muted':'#4a6d8c',
+      '--border':'rgba(59,130,246,0.15)','--border-strong':'rgba(59,130,246,0.3)',
+      '--accent':'#38bdf8','--accent-dim':'rgba(56,189,248,0.12)','--accent-glow':'rgba(56,189,248,0.3)',
+    }
+  },
+  forest: {
+    icon: '🌲', label: 'Forest',
+    vars: {
+      '--bg-primary':'#0a1510','--bg-secondary':'#111f18','--bg-tertiary':'#1a2e22',
+      '--bg-card':'rgba(17,31,24,0.85)','--bg-glass':'rgba(10,21,16,0.75)',
+      '--text-primary':'#e0f0e8','--text-secondary':'#7ab893','--text-muted':'#4a8060',
+      '--border':'rgba(74,222,128,0.12)','--border-strong':'rgba(74,222,128,0.25)',
+      '--accent':'#4ade80','--accent-dim':'rgba(74,222,128,0.12)','--accent-glow':'rgba(74,222,128,0.3)',
+    }
+  },
+  volcano: {
+    icon: '🌋', label: 'Volcano',
+    vars: {
+      '--bg-primary':'#140a0a','--bg-secondary':'#1f1111','--bg-tertiary':'#2e1a1a',
+      '--bg-card':'rgba(31,17,17,0.85)','--bg-glass':'rgba(20,10,10,0.75)',
+      '--text-primary':'#f0e0e0','--text-secondary':'#c67a7a','--text-muted':'#8c4a4a',
+      '--border':'rgba(239,68,68,0.12)','--border-strong':'rgba(239,68,68,0.25)',
+      '--accent':'#f87171','--accent-dim':'rgba(248,113,113,0.12)','--accent-glow':'rgba(248,113,113,0.3)',
+    }
+  },
+  aurora: {
+    icon: '🌌', label: 'Aurora',
+    vars: {
+      '--bg-primary':'#0d0a1a','--bg-secondary':'#151028','--bg-tertiary':'#1e1635',
+      '--bg-card':'rgba(21,16,40,0.85)','--bg-glass':'rgba(13,10,26,0.75)',
+      '--text-primary':'#e8e0f5','--text-secondary':'#a78bfa','--text-muted':'#6d5a9e',
+      '--border':'rgba(167,139,250,0.12)','--border-strong':'rgba(167,139,250,0.25)',
+      '--accent':'#c084fc','--accent-dim':'rgba(192,132,252,0.12)','--accent-glow':'rgba(192,132,252,0.3)',
+    }
+  },
+};
+const THEME_ORDER = ['midnight','parchment','ocean','forest','volcano','aurora'];
+let currentTheme = localStorage.getItem('hm_theme') || 'midnight';
+
+function applyTheme(name) {
+  const theme = THEMES[name] || THEMES.midnight;
+  const allVars = ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-card','--bg-glass',
+    '--text-primary','--text-secondary','--text-muted','--border','--border-strong',
+    '--accent','--accent-dim','--accent-glow'];
+  allVars.forEach(v => document.body.style.removeProperty(v));
+  Object.entries(theme.vars).forEach(([k,v]) => document.body.style.setProperty(k, v));
+  document.documentElement.setAttribute('data-theme', name === 'parchment' ? 'light' : 'dark');
+  document.getElementById('theme-toggle').textContent = theme.icon;
+  currentTheme = name;
+  localStorage.setItem('hm_theme', name);
+}
+
+function cycleTheme() {
+  const idx = THEME_ORDER.indexOf(currentTheme);
+  const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+  applyTheme(next);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -4626,6 +4680,7 @@ function toggleTheme() {
 async function startApp(username) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('display-username').textContent = username;
+  applyTheme(localStorage.getItem('hm_theme') || 'midnight');
 
   await loadFromServer();
   if (state.locations.length === 0) await generateSampleData();
