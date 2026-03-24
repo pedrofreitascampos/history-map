@@ -1,7 +1,8 @@
 const Datastore = require('nedb-promises');
 const path = require('path');
 
-const dataDir = path.join(__dirname, '..', 'data');
+// Use /data on Render (persistent disk mount), local ./data for dev
+const dataDir = process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..', 'data');
 
 const users = Datastore.create({ filename: path.join(dataDir, 'users.db'), autoload: true });
 const locations = Datastore.create({ filename: path.join(dataDir, 'locations.db'), autoload: true });
