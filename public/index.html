@@ -2706,7 +2706,10 @@ function renderApproval() {
     container.innerHTML = '';
     return;
   }
-  setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  // Only auto-scroll if Import tab is active
+  if (document.getElementById('import-view')?.classList.contains('active')) {
+    setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  }
 
   container.innerHTML = pending.map((loc, idx) => {
     const suggested = CATEGORIES[loc.suggestedCategory] || CATEGORIES.location;
@@ -4756,6 +4759,7 @@ async function startApp(username) {
   populateFilterDropdowns();
   initImport();
   updateApprovalBadge();
+  renderApproval();
 
   if (!map) initMap();
   else { renderMarkers(); setTimeout(() => map.invalidateSize(), 100); }
