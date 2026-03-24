@@ -459,17 +459,16 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).not.toContain(">My Places</button>");
   });
 
-  test('bulk edit mode exists with select/apply/delete', () => {
-    expect(indexHtml).toContain('function toggleBulkMode');
+  test('bulk edit is a separate tab with list-based selection', () => {
+    // Regression: bulk edit on map tab caused cluster conflicts and unresponsiveness.
+    // Must be a separate view with checkbox list, not map marker selection.
+    expect(indexHtml).toContain('id="bulk-view"');
+    expect(indexHtml).toContain('function initBulkView');
+    expect(indexHtml).toContain('function renderBulkList');
     expect(indexHtml).toContain('function applyBulkEdit');
-    expect(indexHtml).toContain('function deleteBulkSelection');
-    expect(indexHtml).toContain('bulkSelected');
-  });
-
-  test('markers support bulk selection in bulk mode', () => {
-    expect(indexHtml).toContain('function bindMarkerBehavior');
-    expect(indexHtml).toContain('toggleBulkSelect');
-    expect(indexHtml).toContain("data-bulk-id");
+    // Must NOT interfere with map markers
+    expect(indexHtml).not.toContain('data-bulk-id');
+    expect(indexHtml).not.toContain('toggleBulkMode');
   });
 
   test('discover uses viewbox bounded search, not "X in Y" queries', () => {
