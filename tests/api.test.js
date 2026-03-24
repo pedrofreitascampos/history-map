@@ -128,6 +128,47 @@ describe('Locations', () => {
   });
 });
 
+// ─── Auto-approve & Approval ─────────────────────────────
+describe('Import approval flow', () => {
+  test('bulk import with needsApproval flag', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
+      .send({ locations: [
+        { name: 'Pending1', lat: 1, lng: 1, category: 'location', needsApproval: true, suggestedCategory: 'restaurant' },
+        { name: 'Pending2', lat: 2, lng: 2, category: 'location', needsApproval: true, suggestedCategory: 'stadium' },
+      ]});
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].needsApproval).toBe(true);
+  });
+
+  test('auto-approved imports have needsApproval false', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
+      .send({ locations: [
+        { name: 'AutoApproved', lat: 3, lng: 3, category: 'restaurant', needsApproval: false },
+      ]});
+    expect(res.body[0].needsApproval).toBe(false);
+  });
+
+  test('approve location updates category and clears needsApproval', async () => {
+    // Find a pending location
+    const list = await request(app).get('/api/locations').set('Authorization', `Bearer ${token}`);
+    const pending = list.body.find(l => l.needsApproval && l.name === 'Pending1');
+    expect(pending).toBeDefined();
+
+    // Approve it with a new category
+    const res = await request(app).put(`/api/locations/${pending._id}`).set('Authorization', `Bearer ${token}`)
+      .send({ needsApproval: false, suggestedCategory: null, category: 'restaurant' });
+    expect(res.status).toBe(200);
+    expect(res.body.needsApproval).toBe(false);
+    expect(res.body.category).toBe('restaurant');
+
+    // Verify it stays approved on re-fetch
+    const refetch = await request(app).get('/api/locations').set('Authorization', `Bearer ${token}`);
+    const approved = refetch.body.find(l => l._id === pending._id);
+    expect(approved.needsApproval).toBe(false);
+  });
+});
+
 // ─── Trips ───────────────────────────────────────────────
 describe('Trips', () => {
   let tripId;

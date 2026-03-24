@@ -2774,29 +2774,34 @@ function renderApproval() {
   }).join('');
 }
 
+let _approving = false; // prevent double-click
 async function approveByIndex(idx) {
-  const pending = state.locations.filter(l => l.needsApproval);
-  const loc = pending[idx];
-  if (!loc) { console.error('No pending location at index', idx); return; }
-  const locId = loc.id || loc._id;
-  if (!locId) { console.error('Location has no ID', loc); return; }
-
-  // Get the selected category from the dropdown
-  const select = document.querySelector(`[data-approval-idx="${idx}"]`);
-  const chosenCategory = select ? select.value : (loc.suggestedCategory || 'location');
-
-  const updates = { needsApproval: false, suggestedCategory: null, category: chosenCategory };
-  Object.assign(loc, updates);
+  if (_approving) return;
+  _approving = true;
   try {
+    const pending = state.locations.filter(l => l.needsApproval);
+    const loc = pending[idx];
+    if (!loc) { console.error('No pending location at index', idx); return; }
+    const locId = loc.id || loc._id;
+    if (!locId) { console.error('Location has no ID', loc); return; }
+
+    // Get the selected category from the dropdown
+    const select = document.querySelector(`[data-approval-idx="${idx}"]`);
+    const chosenCategory = select ? select.value : (loc.suggestedCategory || 'location');
+
+    // Update server first, then local state
+    const updates = { needsApproval: false, suggestedCategory: null, category: chosenCategory };
     await api('PUT', '/locations/' + locId, updates);
+    Object.assign(loc, updates);
+    renderApproval();
+    updateApprovalBadge();
+    renderMarkers();
   } catch (err) {
     console.error('Approve failed:', err);
     alert('Failed to approve: ' + err.message);
-    return;
+  } finally {
+    _approving = false;
   }
-  renderApproval();
-  updateApprovalBadge();
-  renderMarkers();
 }
 
 async function bulkApprove() {
@@ -4220,7 +4225,10 @@ async function renderRegionsMap() {
 
   const { regionCounts, regionLocs } = countLocationsByRegion(geo);
   _regionData = { regionCounts, regionLocs, geo };
-  const maxCount = Math.max(1, ...regionCounts.values());
+  const counts = [...regionCounts.values()];
+  const maxCount = Math.max(1, ...counts);
+  const minCount = Math.min(...counts);
+  const range = maxCount - minCount || 1;
   const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
 
   if (regionsLayer) regionsMap.removeLayer(regionsLayer);
@@ -4240,10 +4248,13 @@ async function renderRegionsMap() {
         visitedRegions.add(feature.properties.name);
         visitedCountries.add(feature.properties.country);
       }
-      const intensity = count > 0 ? 0.2 + 0.8 * (count / maxCount) : 0;
+      // Use logarithmic scale for better differentiation + relative rank
+      const rank = count > 0 ? (count - minCount) / range : 0; // 0-1 relative to other regions
+      const logIntensity = count > 0 ? Math.log(count + 1) / Math.log(maxCount + 1) : 0;
+      const intensity = count > 0 ? 0.15 + 0.85 * Math.max(rank, logIntensity) : 0;
       return {
         fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
-        fillOpacity: count > 0 ? 0.65 : 0,
+        fillOpacity: count > 0 ? 0.35 + 0.5 * intensity : 0,
         weight: count > 0 ? 1.2 : 0.2,
         color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.05)',
       };
@@ -4729,6 +4740,9 @@ async function enrichInBackground(locations) {
     const loc = locations[i];
     const locId = loc.id || loc._id;
     if (!locId) continue;
+    // Skip if already approved while enrichment was running
+    const current = state.locations.find(l => (l.id || l._id) === locId);
+    if (current && !current.needsApproval && current.category !== 'location') continue;
     try {
       await new Promise(r => setTimeout(r, 1100));
       const res = await fetch(
@@ -4846,7 +4860,8 @@ async function confirmImport() {
     populateFilterDropdowns();
     updateApprovalBadge();
     renderApproval();
-    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${isFullRestore ? '' : ' Review them in the approval queue below.'}`);
+    const pendingCount = saved.filter(l => l.needsApproval).length;
+    alert(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations!${pendingCount > 0 ? ' Review them in the approval queue below.' : ''}`);
 
     // Enrich uncategorized locations in background (non-blocking)
     if (!isFullRestore) {
