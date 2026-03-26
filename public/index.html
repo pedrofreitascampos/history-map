@@ -1158,6 +1158,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
   <div class="topbar-actions">
     <button class="btn-icon" onclick="exportData()" title="Export Data">💾</button>
+    <button class="btn-icon" onclick="openAccountModal()" title="Account & Backups">👤</button>
     <button class="btn-icon" id="theme-toggle" onclick="cycleTheme()" title="Change Theme">🌙</button>
     <div class="user-info">
       <span class="username" id="display-username"></span>
@@ -1740,6 +1741,36 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="openAddTripFromManager()">+ Add Trip</button>
       <button class="btn btn-secondary" onclick="closeTripManager()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Account Modal -->
+<div class="modal-overlay" id="account-modal">
+  <div class="modal" style="width:460px;">
+    <div class="modal-header">
+      <h2>Account & Backups</h2>
+      <button class="modal-close" onclick="closeAccountModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:12px;border-radius:var(--radius);background:var(--bg-tertiary);">
+        <span style="font-size:28px;">👤</span>
+        <div>
+          <div style="font-size:14px;font-weight:500;" id="account-username"></div>
+          <div style="font-size:12px;color:var(--text-muted);" id="account-stats"></div>
+        </div>
+      </div>
+      <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:12px;">Automatic Backups</h4>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Daily backups are created automatically. Last 7 days kept.</p>
+      <div id="account-backups" style="margin-bottom:16px;"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="exportData()" style="flex:1;font-size:12px;">💾 Export Now</button>
+        <button class="btn btn-secondary" onclick="downloadLatestBackup()" style="flex:1;font-size:12px;">📥 Download Latest Backup</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div></div>
+      <button class="btn btn-secondary" onclick="closeAccountModal()">Close</button>
     </div>
   </div>
 </div>
@@ -4669,6 +4700,71 @@ function interpolateColor(c1, c2, t) {
   const g = Math.round(g1 + (g2 - g1) * t);
   const b = Math.round(b1 + (b2 - b1) * t);
   return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ACCOUNT & BACKUPS                                                     */
+/* ═══════════════════════════════════════════════════════════════════════ */
+async function openAccountModal() {
+  document.getElementById('account-modal').classList.add('open');
+  document.getElementById('account-username').textContent = document.getElementById('display-username').textContent;
+  document.getElementById('account-stats').textContent =
+    `${state.locations.length} locations · ${state.trips.length} trips · ${state.collections.length} collections`;
+  // Load backup list
+  const backupsDiv = document.getElementById('account-backups');
+  backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Loading backups...</span>';
+  try {
+    const backups = await api('GET', '/admin/backups');
+    if (backups.length === 0) {
+      backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No backups yet. First backup runs within 24h of server start.</span>';
+    } else {
+      backupsDiv.innerHTML = backups.map(b => {
+        const sizeKB = (b.size / 1024).toFixed(1);
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+          <span style="flex:1;">${b.date} <span style="color:var(--text-muted);">(${sizeKB}KB)</span></span>
+          <button class="add-small-btn" onclick="downloadBackup('${b.name}')" style="border-style:solid;padding:3px 8px;font-size:11px;">Download</button>
+          <button class="add-small-btn" onclick="restoreBackup('${b.name}')" style="border-style:solid;padding:3px 8px;font-size:11px;color:var(--accent);">Restore</button>
+        </div>`;
+      }).join('');
+    }
+  } catch {
+    // Non-admin: just show download latest
+    backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Backups are created daily automatically.</span>';
+  }
+}
+
+function closeAccountModal() {
+  document.getElementById('account-modal').classList.remove('open');
+}
+
+function downloadLatestBackup() {
+  window.open('/api/my-backup', '_blank');
+}
+
+function downloadBackup(filename) {
+  window.open('/api/admin/backups/' + filename, '_blank');
+}
+
+async function restoreBackup(filename) {
+  if (!confirm('Restore this backup? This will ADD all locations from the backup. Existing data is not deleted.')) return;
+  try {
+    const res = await fetch('/api/admin/backups/' + filename, { headers: apiHeaders() });
+    const data = await res.json();
+    // Use the same import flow — set as pending and run confirmImport
+    state.pendingImport = (data.locations || []).map(item => ({
+      ...item,
+      _restoreTripId: item.tripId,
+      _restoreCollections: item.collections || [],
+      _isFullRestore: true,
+    }));
+    state.pendingRestoreTrips = data.trips || [];
+    state.pendingRestoreCollections = data.collections || [];
+    closeAccountModal();
+    switchView('import-view');
+    showImportPreview(state.pendingImport);
+  } catch (err) {
+    alert('Restore failed: ' + err.message);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
