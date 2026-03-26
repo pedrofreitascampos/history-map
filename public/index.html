@@ -4870,7 +4870,7 @@ async function openAccountModal() {
       placesDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
         <span style="color:var(--success);">●</span> Connected
         <span style="color:var(--text-muted);flex:1;">${unsynced} locations not yet synced</span>
-        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="if(confirm('This will make ${unsynced} Google Places API requests (~$${(unsynced*0.017).toFixed(2)} against your $200/month free credit). Continue?'))bulkGoogleSync()" style="font-size:11px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
+        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="if(confirm('This will use ${unsynced} of your 5,000 free monthly Find Place requests${unsynced > 5000 ? ' (over free tier — extra cost ~$'+ ((unsynced-5000)*0.017).toFixed(2) +')' : ' (within free tier — $0)'}. Continue?'))bulkGoogleSync()" style="font-size:11px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
         <label style="font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;cursor:pointer;">
@@ -4884,7 +4884,7 @@ async function openAccountModal() {
     } else {
       placesDiv.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
         <span style="color:var(--text-muted);">●</span> Not configured — search uses OpenStreetMap.
-        <div style="margin-top:4px;">To enable: add <code>GOOGLE_PLACES_KEY</code> env var on Render. You get $200/month free from Google Cloud.</div>
+        <div style="margin-top:4px;">To enable: add <code>GOOGLE_PLACES_KEY</code> env var on Render. 5,000 free searches + 5,000 free syncs per month.</div>
       </div>`;
     }
   } catch { placesDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
