@@ -2570,7 +2570,7 @@ async function mapSearch() {
   const resultsDiv = document.getElementById('map-search-results');
   resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Searching...</span>';
   try {
-    const useGoogle = await checkPlacesEnabled();
+    const useGoogle = await shouldUseGoogle();
 
     if (useGoogle) {
       // Google Places search (proxied through server)
@@ -4870,9 +4870,17 @@ async function openAccountModal() {
       placesDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
         <span style="color:var(--success);">●</span> Connected
         <span style="color:var(--text-muted);flex:1;">${unsynced} locations not yet synced</span>
-        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="bulkGoogleSync()" style="font-size:11px;padding:4px 10px;">Sync ${Math.min(unsynced, 50)} now</button>` : ''}
+        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="if(confirm('This will make ${unsynced} Google Places API requests (~$${(unsynced*0.017).toFixed(2)} against your $200/month free credit). Continue?'))bulkGoogleSync()" style="font-size:11px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Search uses Google Places. Set GOOGLE_PLACES_KEY env var on Render.</div>`;
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <label style="font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;cursor:pointer;">
+          Search provider:
+          <select class="filter-select" id="search-provider-toggle" onchange="setSearchProvider(this.value)" style="width:140px;font-size:11px;padding:3px 6px;">
+            <option value="google" ${localStorage.getItem('hm_search_provider') !== 'osm' ? 'selected' : ''}>Google Places</option>
+            <option value="osm" ${localStorage.getItem('hm_search_provider') === 'osm' ? 'selected' : ''}>OpenStreetMap</option>
+          </select>
+        </label>
+      </div>`;
     } else {
       placesDiv.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
         <span style="color:var(--text-muted);">●</span> Not configured — search uses OpenStreetMap.
@@ -4915,31 +4923,49 @@ async function checkPlacesEnabled() {
   return _placesEnabled;
 }
 
+function getSearchProvider() {
+  return localStorage.getItem('hm_search_provider') || 'google';
+}
+function setSearchProvider(val) {
+  localStorage.setItem('hm_search_provider', val);
+}
+async function shouldUseGoogle() {
+  return getSearchProvider() === 'google' && await checkPlacesEnabled();
+}
+
 async function bulkGoogleSync() {
-  const unsynced = state.locations.filter(l => !l._googleSyncedAt).slice(0, 50);
-  if (unsynced.length === 0) { alert('All locations already synced.'); return; }
+  const allUnsynced = state.locations.filter(l => !l._googleSyncedAt);
+  if (allUnsynced.length === 0) { alert('All locations already synced.'); return; }
   const placesDiv = document.getElementById('account-places-status');
-  placesDiv.innerHTML = `<div style="font-size:12px;color:var(--accent);padding:8px;">Syncing ${unsynced.length} locations with Google Places...</div>`;
-  try {
-    const toSync = unsynced.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address }));
-    const results = await api('POST', '/places/bulk-sync', { locations: toSync });
-    let updated = 0;
-    results.forEach(r => {
-      if (r.found) {
+  let totalUpdated = 0, totalProcessed = 0;
+
+  // Process in batches of 50
+  for (let i = 0; i < allUnsynced.length; i += 50) {
+    const batch = allUnsynced.slice(i, i + 50);
+    totalProcessed += batch.length;
+    placesDiv.innerHTML = `<div style="font-size:12px;color:var(--accent);padding:8px;">Syncing ${totalProcessed}/${allUnsynced.length} locations...</div>`;
+    try {
+      const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address }));
+      const results = await api('POST', '/places/bulk-sync', { locations: toSync });
+      results.forEach(r => {
         const loc = state.locations.find(l => (l.id || l._id) === r.id);
         if (loc) {
-          if (r.googleRating) loc.googleRating = r.googleRating;
-          if (r.priceLevel) loc.priceLevel = r.priceLevel;
-          if (r.address && !loc.address) loc.address = r.address;
+          if (r.found) {
+            if (r.googleRating) loc.googleRating = r.googleRating;
+            if (r.priceLevel) loc.priceLevel = r.priceLevel;
+            if (r.address && !loc.address) loc.address = r.address;
+            totalUpdated++;
+          }
           loc._googleSyncedAt = r._googleSyncedAt;
-          updated++;
         }
-      }
-    });
-    renderMarkers();
-    alert(`Synced! ${updated} locations updated with Google ratings.`);
-    openAccountModal(); // refresh
-  } catch (err) { alert('Sync failed: ' + err.message); }
+      });
+    } catch (err) {
+      console.warn('Batch sync error:', err.message);
+    }
+  }
+  renderMarkers();
+  alert(`Done! ${totalUpdated}/${allUnsynced.length} locations updated with Google data.`);
+  openAccountModal();
 }
 
 async function syncSingleLocation(locId) {
