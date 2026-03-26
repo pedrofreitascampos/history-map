@@ -1623,6 +1623,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             <option value="">Add to collection...</option>
           </select>
           <button class="add-small-btn" onclick="addCollectionToLoc()">Add</button>
+          <button class="add-small-btn" onclick="createCollectionFromModal()">+ New</button>
         </div>
       </div>
 
@@ -3923,6 +3924,17 @@ function renderModalCollections() {
   sel.innerHTML = '<option value="">Add to collection...</option>' +
     state.collections.filter(c => !locCols.includes(c.id))
       .map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+}
+
+async function createCollectionFromModal() {
+  const name = prompt('Collection name:');
+  if (!name) return;
+  try {
+    const col = mapId(await api('POST', '/collections', { name, emoji: '🏆', description: '', totalItems: null }));
+    state.collections.push(col);
+    state.modalCollections.push(col.id);
+    renderModalCollections();
+  } catch (err) { alert('Failed: ' + err.message); }
 }
 
 function addCollectionToLoc() {
