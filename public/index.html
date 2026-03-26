@@ -1774,6 +1774,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div style="font-size:12px;color:var(--text-muted);" id="account-stats"></div>
         </div>
       </div>
+      <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Google Places API</h4>
+      <div id="account-places-status" style="margin-bottom:16px;"></div>
+
       <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:12px;">Automatic Backups</h4>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Daily backups are created automatically. Last 7 days kept.</p>
       <div id="account-backups" style="margin-bottom:16px;"></div>
@@ -2186,6 +2189,7 @@ function createPopupContent(loc) {
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
     <button class="popup-btn" onclick="openEditModal('${esc(loc.id)}')">✏️ Edit Details</button>
+    ${!loc._googleSyncedAt ? `<button class="popup-btn" onclick="syncSingleLocation('${esc(loc.id)}')" style="margin-top:4px;">🔄 Sync with Google</button>` : ''}
   </div>`;
 }
 
@@ -2566,24 +2570,43 @@ async function mapSearch() {
   const resultsDiv = document.getElementById('map-search-results');
   resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Searching...</span>';
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
-    const results = await res.json();
-    if (results.length === 0) {
-      resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">No results.</span>';
-      return;
+    const useGoogle = await checkPlacesEnabled();
+
+    if (useGoogle) {
+      // Google Places search (proxied through server)
+      const center = map.getCenter();
+      const data = await api('GET', `/places/search?q=${encodeURIComponent(query)}&lat=${center.lat}&lng=${center.lng}`);
+      state._mapSearchResults = data.map(r => ({
+        name: r.name, lat: r.lat, lng: r.lng,
+        address: r.address,
+        category: inferCategory(r.name + ' ' + (r.types || []).join(' ')),
+        googleRating: r.googleRating,
+        priceLevel: r.priceLevel,
+        _googlePlaceId: r.placeId,
+      }));
+    } else {
+      // Nominatim fallback
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+      const results = await res.json();
+      if (results.length === 0) {
+        resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">No results.</span>';
+        return;
+      }
+      state._mapSearchResults = results.map(r => ({
+        name: r.name || r.display_name.split(',')[0],
+        lat: parseFloat(r.lat), lng: parseFloat(r.lon),
+        address: r.display_name,
+        category: osmToCategory(r.class, r.type) || inferCategory(r.name || r.display_name),
+      }));
     }
-    state._mapSearchResults = results.map(r => ({
-      name: r.name || r.display_name.split(',')[0],
-      lat: parseFloat(r.lat), lng: parseFloat(r.lon),
-      address: r.display_name,
-      category: osmToCategory(r.class, r.type) || inferCategory(r.name || r.display_name),
-    }));
     resultsDiv.innerHTML = state._mapSearchResults.map((r, i) => {
       const cat = CATEGORIES[r.category] || CATEGORIES.location;
+      const ratingBadge = r.googleRating ? `<span style="font-size:10px;color:var(--accent);">⭐${r.googleRating}</span>` : '';
+      const priceBadge = r.priceLevel ? `<span style="font-size:10px;color:var(--text-muted);">${'€'.repeat(r.priceLevel)}</span>` : '';
       return `<div style="display:flex;align-items:center;gap:6px;padding:6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
         onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
         <span onclick="flyToSearchResult(${i})" style="flex:1;min-width:0;">
-          <div style="font-weight:500;">${cat.emoji} ${esc(r.name)}</div>
+          <div style="font-weight:500;">${cat.emoji} ${esc(r.name)} ${ratingBadge} ${priceBadge}</div>
           <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
         </span>
         <button class="add-small-btn" onclick="addSearchResultAsLocation(${i})" style="border-style:solid;padding:2px 6px;font-size:10px;flex-shrink:0;">+ Add</button>
@@ -2605,7 +2628,8 @@ async function addSearchResultAsLocation(idx) {
   openAddModal(r.lat, r.lng);
   document.getElementById('loc-name').value = r.name;
   document.getElementById('loc-address').value = r.address;
-  // Select the inferred category
+  if (r.googleRating) document.getElementById('loc-google-rating').value = r.googleRating;
+  if (r.priceLevel) { state.modalPrice = r.priceLevel; setModalPrice(r.priceLevel); }
   state.modalCategory = r.category;
   document.querySelectorAll('.category-option').forEach(o => o.classList.toggle('selected', o.dataset.cat === r.category));
   renderModalTags();
@@ -4836,6 +4860,27 @@ async function openAccountModal() {
   document.getElementById('account-username').textContent = document.getElementById('display-username').textContent;
   document.getElementById('account-stats').textContent =
     `${state.locations.length} locations · ${state.trips.length} trips · ${state.collections.length} collections`;
+
+  // Google Places status
+  const placesDiv = document.getElementById('account-places-status');
+  try {
+    const ps = await api('GET', '/places/status');
+    const unsynced = state.locations.filter(l => !l._googleSyncedAt).length;
+    if (ps.enabled) {
+      placesDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
+        <span style="color:var(--success);">●</span> Connected
+        <span style="color:var(--text-muted);flex:1;">${unsynced} locations not yet synced</span>
+        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="bulkGoogleSync()" style="font-size:11px;padding:4px 10px;">Sync ${Math.min(unsynced, 50)} now</button>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Search uses Google Places. Set GOOGLE_PLACES_KEY env var on Render.</div>`;
+    } else {
+      placesDiv.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
+        <span style="color:var(--text-muted);">●</span> Not configured — search uses OpenStreetMap.
+        <div style="margin-top:4px;">To enable: add <code>GOOGLE_PLACES_KEY</code> env var on Render. You get $200/month free from Google Cloud.</div>
+      </div>`;
+    }
+  } catch { placesDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
+
   // Load backup list
   const backupsDiv = document.getElementById('account-backups');
   backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Loading backups...</span>';
@@ -4857,6 +4902,69 @@ async function openAccountModal() {
     // Non-admin: just show download latest
     backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Backups are created daily automatically.</span>';
   }
+}
+
+let _placesEnabled = null; // cached
+
+async function checkPlacesEnabled() {
+  if (_placesEnabled !== null) return _placesEnabled;
+  try {
+    const ps = await api('GET', '/places/status');
+    _placesEnabled = ps.enabled;
+  } catch { _placesEnabled = false; }
+  return _placesEnabled;
+}
+
+async function bulkGoogleSync() {
+  const unsynced = state.locations.filter(l => !l._googleSyncedAt).slice(0, 50);
+  if (unsynced.length === 0) { alert('All locations already synced.'); return; }
+  const placesDiv = document.getElementById('account-places-status');
+  placesDiv.innerHTML = `<div style="font-size:12px;color:var(--accent);padding:8px;">Syncing ${unsynced.length} locations with Google Places...</div>`;
+  try {
+    const toSync = unsynced.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address }));
+    const results = await api('POST', '/places/bulk-sync', { locations: toSync });
+    let updated = 0;
+    results.forEach(r => {
+      if (r.found) {
+        const loc = state.locations.find(l => (l.id || l._id) === r.id);
+        if (loc) {
+          if (r.googleRating) loc.googleRating = r.googleRating;
+          if (r.priceLevel) loc.priceLevel = r.priceLevel;
+          if (r.address && !loc.address) loc.address = r.address;
+          loc._googleSyncedAt = r._googleSyncedAt;
+          updated++;
+        }
+      }
+    });
+    renderMarkers();
+    alert(`Synced! ${updated} locations updated with Google ratings.`);
+    openAccountModal(); // refresh
+  } catch (err) { alert('Sync failed: ' + err.message); }
+}
+
+async function syncSingleLocation(locId) {
+  const enabled = await checkPlacesEnabled();
+  if (!enabled) { alert('Google Places API not configured. Add GOOGLE_PLACES_KEY in Render env vars.'); return; }
+  const loc = state.locations.find(l => (l.id || l._id) === locId);
+  if (!loc) return;
+  try {
+    const result = await api('POST', '/places/sync', { name: loc.name, lat: loc.lat, lng: loc.lng });
+    if (result.found) {
+      if (result.googleRating) loc.googleRating = result.googleRating;
+      if (result.priceLevel != null) loc.priceLevel = result.priceLevel;
+      if (result.address && !loc.address) loc.address = result.address;
+      loc._googleSyncedAt = new Date().toISOString();
+      await api('PUT', '/locations/' + locId, {
+        googleRating: loc.googleRating, priceLevel: loc.priceLevel,
+        address: loc.address, _googleSyncedAt: loc._googleSyncedAt,
+        _googlePlaceId: result.placeId || null,
+      });
+      map.closePopup();
+      renderMarkers();
+    } else {
+      alert('Place not found on Google Maps.');
+    }
+  } catch (err) { alert('Sync failed: ' + err.message); }
 }
 
 function closeAccountModal() {

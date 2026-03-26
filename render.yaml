@@ -12,3 +12,5 @@ services:
         value: production
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: GOOGLE_PLACES_KEY
+        sync: false

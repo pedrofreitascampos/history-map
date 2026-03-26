@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3001;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 const JWT_SECRET = process.env.JWT_SECRET || 'history-map-dev-secret-change-me';
+const GOOGLE_PLACES_KEY = process.env.GOOGLE_PLACES_KEY || '';
 // Comma-separated list of allowed emails. Empty = anyone can register/sign in.
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 // First email in allowlist is considered admin
@@ -425,6 +426,106 @@ app.get('/api/my-backup', auth, async (req, res) => {
       .sort().reverse();
     if (userBackups.length === 0) return res.status(404).json({ error: 'No backups for your account yet' });
     res.download(path.join(BACKUP_DIR, userBackups[0]));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Google Places API (proxied, key never exposed) ───────
+app.get('/api/places/status', auth, (req, res) => {
+  res.json({ enabled: !!GOOGLE_PLACES_KEY });
+});
+
+app.get('/api/places/search', auth, async (req, res) => {
+  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  try {
+    const { q, lat, lng } = req.query;
+    if (!q) return res.status(400).json({ error: 'Query required' });
+    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${GOOGLE_PLACES_KEY}`;
+    if (lat && lng) url += `&location=${lat},${lng}&radius=50000`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      return res.status(502).json({ error: 'Places API: ' + data.status });
+    }
+    res.json((data.results || []).slice(0, 10).map(p => ({
+      name: p.name,
+      address: p.formatted_address || '',
+      lat: p.geometry?.location?.lat,
+      lng: p.geometry?.location?.lng,
+      googleRating: p.rating || null,
+      priceLevel: p.price_level || null,
+      placeId: p.place_id || '',
+      types: p.types || [],
+      userRatingsTotal: p.user_ratings_total || 0,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/places/sync', auth, async (req, res) => {
+  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  try {
+    const { name, lat, lng } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name required' });
+    // Find place by name + location
+    const query = `${name}${lat ? ` ${lat},${lng}` : ''}`;
+    let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${GOOGLE_PLACES_KEY}`;
+    if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.status !== 'OK' || !data.candidates?.length) {
+      return res.json({ found: false });
+    }
+    const p = data.candidates[0];
+    res.json({
+      found: true,
+      googleRating: p.rating || null,
+      priceLevel: p.price_level || null,
+      address: p.formatted_address || '',
+      placeId: p.place_id || '',
+      userRatingsTotal: p.user_ratings_total || 0,
+      lat: p.geometry?.location?.lat,
+      lng: p.geometry?.location?.lng,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk sync — accepts array of { id, name, lat, lng }
+// Skips locations that already have googleRating (already synced)
+// Adds _googleSyncedAt timestamp so we don't re-sync
+app.post('/api/places/bulk-sync', auth, async (req, res) => {
+  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  try {
+    const { locations } = req.body;
+    if (!Array.isArray(locations)) return res.status(400).json({ error: 'Array required' });
+    const results = [];
+    for (const loc of locations.slice(0, 50)) { // Cap at 50 per request
+      try {
+        let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.name)}&inputtype=textquery&fields=rating,price_level,formatted_address,place_id,user_ratings_total&key=${GOOGLE_PLACES_KEY}`;
+        if (loc.lat && loc.lng) url += `&locationbias=point:${loc.lat},${loc.lng}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.status === 'OK' && data.candidates?.length) {
+          const p = data.candidates[0];
+          const updates = { _googleSyncedAt: new Date().toISOString() };
+          if (p.rating) updates.googleRating = p.rating;
+          if (p.price_level != null) updates.priceLevel = p.price_level;
+          if (p.formatted_address && !loc.address) updates.address = p.formatted_address;
+          if (p.place_id) updates._googlePlaceId = p.place_id;
+          await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: updates });
+          results.push({ id: loc.id, ...updates, found: true });
+        } else {
+          // Mark as synced (not found) so we don't retry
+          await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: { _googleSyncedAt: new Date().toISOString() } });
+          results.push({ id: loc.id, found: false });
+        }
+      } catch { results.push({ id: loc.id, found: false }); }
+    }
+    res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
