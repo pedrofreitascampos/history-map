@@ -2143,19 +2143,25 @@ function bindMarkerBehavior(marker, loc) {
   marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
 }
 
+// Escape HTML to prevent XSS in innerHTML
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function createPopupContent(loc) {
   const cat = CATEGORIES[loc.category] || CATEGORIES.location;
   const trip = state.trips.find(t => t.id === loc.tripId);
   const visitDates = (loc.visits || []).map(v => v.date).filter(Boolean).join(', ');
   const googleStars = loc.googleRating ? '⭐ ' + loc.googleRating : '—';
   const myStars = loc.myRating ? '★ ' + loc.myRating + '/5' : '—';
-  const peopleTags = (loc.people || []).map(p => `<span class="popup-tag">${p}</span>`).join('');
+  const peopleTags = (loc.people || []).map(p => `<span class="popup-tag">${esc(p)}</span>`).join('');
 
   const priceStr = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
-  const tagChips = (loc.tags || []).map(t => `<span class="popup-tag">${t}</span>`).join('');
+  const tagChips = (loc.tags || []).map(t => `<span class="popup-tag">${esc(t)}</span>`).join('');
 
   return `<div class="popup-inner">
-    <h3>${cat.emoji} ${loc.name}</h3>
+    <h3>${cat.emoji} ${esc(loc.name)}</h3>
     <div class="popup-cat">${cat.label}${priceStr} · ${loc.status === 'been' ? '✅ Been' : '⭐ Bucket List'}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
@@ -2163,10 +2169,10 @@ function createPopupContent(loc) {
     </div>
     ${tagChips ? `<div class="popup-tags">${tagChips}</div>` : ''}
     ${visitDates ? `<div class="popup-meta">📅 ${visitDates}</div>` : ''}
-    ${trip ? `<div class="popup-meta">🧳 ${trip.name}</div>` : ''}
+    ${trip ? `<div class="popup-meta">🧳 ${esc(trip.name)}</div>` : ''}
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
-    ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${loc.notes}</div>` : ''}
-    <button class="popup-btn" onclick="openEditModal('${loc.id}')">✏️ Edit Details</button>
+    ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
+    <button class="popup-btn" onclick="openEditModal('${esc(loc.id)}')">✏️ Edit Details</button>
   </div>`;
 }
 
@@ -2230,12 +2236,13 @@ function renderMarkers() {
       map.on('zoomend', _heatZoomHandler);
       _heatZoomHandler();
     } else {
-      // 2c. Cluster mode (default)
-      filtered.forEach(loc => {
+      // 2c. Cluster mode (default) — batch add for performance
+      const markers = filtered.map(loc => {
         const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
         bindMarkerBehavior(marker, loc);
-        markersLayer.addLayer(marker);
+        return marker;
       });
+      markersLayer.addLayers(markers);
     }
   } catch (err) {
     console.warn('renderMarkers error (map may not be visible):', err.message);
@@ -2319,15 +2326,29 @@ function populateFilterDropdowns() {
   buildTagFilters();
 }
 
+let _tagFilterCache = '';
 function buildTagFilters() {
   const allTags = {};
   state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0) + 1; }));
+  // Skip rebuild if tags haven't changed
+  const cacheKey = Object.entries(allTags).sort().map(([t,c])=>t+c).join('|');
+  if (cacheKey === _tagFilterCache) return;
+  _tagFilterCache = cacheKey;
   const sorted = Object.entries(allTags).sort((a,b) => b[1] - a[1]);
   const container = document.getElementById('tag-filters');
-  container.innerHTML = sorted.map(([tag, count]) => {
-    const active = state.filters.tags.has(tag) ? ' active' : '';
-    return `<button class="filter-chip${active}" onclick="toggleTagFilter('${tag.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 8px;">${tag} <span style="opacity:0.5">${count}</span></button>`;
-  }).join('') || '<span style="font-size:11px;color:var(--text-muted);">No tags yet</span>';
+  container.innerHTML = '';
+  if (sorted.length === 0) {
+    container.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">No tags yet</span>';
+  } else {
+    sorted.forEach(([tag, count]) => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-chip' + (state.filters.tags.has(tag) ? ' active' : '');
+      btn.style.cssText = 'font-size:11px;padding:3px 8px;';
+      btn.textContent = `${tag} (${count})`;
+      btn.onclick = () => toggleTagFilter(tag);
+      container.appendChild(btn);
+    });
+  }
 }
 
 function toggleTagFilter(tag) {
@@ -2355,12 +2376,15 @@ function clearPriceFilter() {
   applyFilters();
 }
 
+let _filterTimer = null;
 function applyFilters() {
   state.filters.trip = document.getElementById('trip-filter').value;
   state.filters.person = document.getElementById('people-filter').value;
   state.filters.minRating = parseFloat(document.getElementById('rating-filter').value);
   state.filters.minGoogleRating = parseFloat(document.getElementById('google-rating-filter').value);
-  renderMarkers();
+  // Debounce: avoid re-rendering 5000 markers on every rapid filter click
+  if (_filterTimer) clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(() => { _filterTimer = null; renderMarkers(); }, 80);
 }
 
 function setMapStyle(style, btn) {

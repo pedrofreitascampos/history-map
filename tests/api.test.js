@@ -473,6 +473,55 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).not.toContain(">My Places</button>");
   });
 
+  // ── Security ──
+  test('XSS: esc() helper exists and is used in popup content', () => {
+    expect(indexHtml).toContain('function esc(str)');
+    expect(indexHtml).toContain('esc(loc.name)');
+    expect(indexHtml).toContain('esc(loc.notes)');
+    expect(indexHtml).toContain('esc(p)'); // people tags
+    expect(indexHtml).toContain('esc(t)'); // tag chips
+  });
+
+  test('XSS: tag filter uses DOM API not innerHTML with onclick', () => {
+    // Regression: tag names in onclick attributes allow XSS
+    const tagBuildFn = indexHtml.substring(
+      indexHtml.indexOf('function buildTagFilters()'),
+      indexHtml.indexOf('function buildTagFilters()') + 1000
+    );
+    expect(tagBuildFn).toContain('document.createElement');
+    expect(tagBuildFn).toContain('.textContent');
+    expect(tagBuildFn).not.toContain("onclick=\"toggleTagFilter('");
+  });
+
+  test('path traversal: backup download uses path.resolve + path.basename', () => {
+    const serverJs = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    expect(serverJs).toContain('path.resolve(');
+    expect(serverJs).toContain('path.basename(');
+    expect(serverJs).toContain("normalizedDir + path.sep");
+  });
+
+  test('DB has indexes on userId for all collections', () => {
+    const dbJs = fs.readFileSync(path.join(__dirname, '..', 'server', 'db.js'), 'utf-8');
+    expect(dbJs).toContain("locations.ensureIndex({ fieldName: 'userId' })");
+    expect(dbJs).toContain("trips.ensureIndex({ fieldName: 'userId' })");
+    expect(dbJs).toContain("collections.ensureIndex({ fieldName: 'userId' })");
+  });
+
+  // ── Performance ──
+  test('filter changes are debounced', () => {
+    expect(indexHtml).toContain('_filterTimer');
+    expect(indexHtml).toContain('setTimeout');
+    expect(indexHtml).toContain('clearTimeout(_filterTimer)');
+  });
+
+  test('cluster mode uses batch addLayers', () => {
+    expect(indexHtml).toContain('markersLayer.addLayers(markers)');
+  });
+
+  test('tag filter has rebuild cache', () => {
+    expect(indexHtml).toContain('_tagFilterCache');
+  });
+
   test('bulk edit is a separate tab with list-based selection', () => {
     // Regression: bulk edit on map tab caused cluster conflicts and unresponsiveness.
     // Must be a separate view with checkbox list, not map marker selection.

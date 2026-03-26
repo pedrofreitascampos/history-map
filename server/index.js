@@ -499,8 +499,10 @@ app.get('/api/admin/backups/:filename', auth, (req, res) => {
   if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
     return res.status(403).json({ error: 'Admin only' });
   }
-  const filePath = path.join(BACKUP_DIR, req.params.filename);
-  if (!filePath.startsWith(BACKUP_DIR) || !fs.existsSync(filePath)) {
+  // Prevent path traversal: resolve to absolute and verify it's inside BACKUP_DIR
+  const filePath = path.resolve(path.join(BACKUP_DIR, path.basename(req.params.filename)));
+  const normalizedDir = path.resolve(BACKUP_DIR);
+  if (!filePath.startsWith(normalizedDir + path.sep) || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Not found' });
   }
   res.download(filePath);
