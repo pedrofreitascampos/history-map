@@ -1895,21 +1895,32 @@ async function initGoogleSignIn() {
     const res = await fetch('/api/auth/google-client-id');
     const { clientId } = await res.json();
     if (!clientId) return;
-    // Show Google button
     document.getElementById('google-signin-divider').style.display = '';
     document.getElementById('google-signin-container').style.display = 'flex';
-    // Wait for GIS library to load
-    const waitForGoogle = () => new Promise((resolve) => {
-      if (window.google?.accounts) return resolve();
-      const check = setInterval(() => { if (window.google?.accounts) { clearInterval(check); resolve(); } }, 200);
-      setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+
+    // Wait for GIS library — 15s timeout, retry if needed
+    const waitForGoogle = (ms) => new Promise((resolve) => {
+      if (window.google?.accounts) return resolve(true);
+      const check = setInterval(() => { if (window.google?.accounts) { clearInterval(check); resolve(true); } }, 200);
+      setTimeout(() => { clearInterval(check); resolve(false); }, ms);
     });
-    await waitForGoogle();
-    if (!window.google?.accounts) return;
-    google.accounts.id.initialize({
-      client_id: clientId,
-      callback: handleGoogleCredential,
-    });
+
+    let loaded = await waitForGoogle(10000);
+    if (!loaded) {
+      // Retry: re-inject the script in case it failed to load
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      document.head.appendChild(script);
+      loaded = await waitForGoogle(10000);
+    }
+    if (!loaded) {
+      console.warn('Google Sign-In script failed to load');
+      document.getElementById('google-signin-container').innerHTML =
+        '<span style="font-size:11px;color:var(--text-muted);">Google Sign-In unavailable. Reload to retry.</span>';
+      return;
+    }
+
+    google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential });
     google.accounts.id.renderButton(
       document.getElementById('google-signin-container'),
       { theme: 'filled_black', size: 'large', width: 300, text: 'signin_with' }
