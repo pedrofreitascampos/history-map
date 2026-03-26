@@ -415,14 +415,103 @@ function simplifyGeometry(geom, precision) {
   return { type: geom.type, coordinates: round(geom.coordinates) };
 }
 
+// ── User's own latest backup ─────────────────────────────
+app.get('/api/my-backup', auth, async (req, res) => {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) return res.status(404).json({ error: 'No backups yet' });
+    const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const userBackups = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+      .sort().reverse();
+    if (userBackups.length === 0) return res.status(404).json({ error: 'No backups for your account yet' });
+    res.download(path.join(BACKUP_DIR, userBackups[0]));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Catch-all for SPA ────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// ── Auto-backup (daily, per user) ────────────────────────
+const BACKUP_DIR = path.join(process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..', 'data')), 'backups');
+const MAX_BACKUPS_PER_USER = 7; // Keep last 7 daily backups
+
+async function runBackup() {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const users = await db.users.find({});
+    const date = new Date().toISOString().split('T')[0];
+
+    for (const user of users) {
+      const userId = user._id;
+      const username = user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const backupFile = path.join(BACKUP_DIR, `${username}_${date}.json`);
+
+      // Skip if today's backup already exists
+      if (fs.existsSync(backupFile)) continue;
+
+      const [locations, trips, collections] = await Promise.all([
+        db.locations.find({ userId }),
+        db.trips.find({ userId }),
+        db.collections.find({ userId }),
+      ]);
+
+      const backup = {
+        exportDate: new Date().toISOString(),
+        username: user.username,
+        locations, trips, collections,
+      };
+
+      fs.writeFileSync(backupFile, JSON.stringify(backup));
+      console.log(`Backup: ${username} — ${locations.length} locations, ${trips.length} trips, ${collections.length} collections`);
+
+      // Prune old backups for this user
+      const userBackups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+        .sort().reverse();
+      for (const old of userBackups.slice(MAX_BACKUPS_PER_USER)) {
+        fs.unlinkSync(path.join(BACKUP_DIR, old));
+      }
+    }
+  } catch (err) {
+    console.error('Backup failed:', err.message);
+  }
+}
+
+// Admin endpoint to list/download backups
+app.get('/api/admin/backups', auth, async (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
+  const files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+  res.json(files.map(f => ({
+    name: f,
+    size: fs.statSync(path.join(BACKUP_DIR, f)).size,
+    date: f.match(/_(\d{4}-\d{2}-\d{2})\.json$/)?.[1] || '',
+  })));
+});
+
+app.get('/api/admin/backups/:filename', auth, (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  const filePath = path.join(BACKUP_DIR, req.params.filename);
+  if (!filePath.startsWith(BACKUP_DIR) || !fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.download(filePath);
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Oikumene server running on port ${PORT}`);
+    // Run backup on startup, then every 24h
+    runBackup();
+    setInterval(runBackup, 24 * 60 * 60 * 1000);
   });
 }
 
