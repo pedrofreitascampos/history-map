@@ -5332,19 +5332,21 @@ function showImportPreview(items) {
     </tr>`;
   }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>` : '');
 
-  // If there are duplicates, add a skip-duplicates button
+  // Skip-duplicates button (always recreate to avoid stale state)
+  const oldSkipBtn = document.getElementById('skip-dups-btn');
+  if (oldSkipBtn) oldSkipBtn.remove();
   if (dupCount > 0) {
     const actionsDiv = document.querySelector('.import-actions');
-    if (actionsDiv && !document.getElementById('skip-dups-btn')) {
+    if (actionsDiv) {
       const btn = document.createElement('button');
       btn.id = 'skip-dups-btn';
       btn.className = 'btn btn-secondary';
       btn.style.cssText = 'font-size:11px;padding:6px 10px;';
-      btn.textContent = `Uncheck ${dupCount} duplicates`;
+      btn.textContent = `Uncheck ${dupCount} duplicate${dupCount > 1 ? 's' : ''}`;
       btn.onclick = () => {
         document.querySelectorAll('.import-row-cb').forEach(cb => {
           const idx = parseInt(cb.dataset.idx);
-          if (items[idx]?._duplicate) cb.checked = false;
+          if (state.pendingImport[idx]?._duplicate) cb.checked = false;
         });
       };
       actionsDiv.insertBefore(btn, actionsDiv.querySelector('.btn-secondary'));
