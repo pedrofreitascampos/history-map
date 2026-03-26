@@ -1176,6 +1176,16 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <!-- FILTER SIDEBAR -->
   <aside id="sidebar">
     <div class="filter-section">
+      <div style="display:flex;gap:6px;">
+        <input type="text" class="form-input" id="map-search-input" placeholder="🔍 Search places..."
+          style="flex:1;font-size:12px;padding:6px 10px;"
+          onkeydown="if(event.key==='Enter'){mapSearch();event.preventDefault();}">
+        <button class="add-small-btn" onclick="mapSearch()" style="border-style:solid;padding:4px 8px;font-size:11px;">Go</button>
+      </div>
+      <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="filter-section">
       <h4>Status <span class="clear-btn" onclick="clearStatusFilter()">clear</span></h4>
       <div class="filter-group">
         <button class="filter-group-btn active" data-status="all" onclick="setStatusFilter('all', this)">All</button>
@@ -1507,8 +1517,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="drop-zone" id="drop-zone">
           <div class="dz-icon">📂</div>
           <div class="dz-text">Drag & drop files here or click to browse</div>
-          <div class="dz-formats">CSV, JSON, KML, GeoJSON · Google Takeout · Google Timeline · My Maps</div>
+          <div class="dz-formats">CSV, JSON, KML, GeoJSON · Multiple files or folders supported</div>
+          <div style="margin-top:8px;"><button class="add-small-btn" onclick="event.stopPropagation();document.getElementById('folder-input').click();" style="border-style:solid;font-size:11px;">📁 Import Folder</button></div>
           <input type="file" id="file-input" accept=".csv,.json,.kml,.geojson,.kmz" multiple>
+          <input type="file" id="folder-input" webkitdirectory style="display:none">
         </div>
         <div class="import-preview" id="import-preview">
           <h4>Preview (<span id="import-count">0</span> locations)</h4>
@@ -1610,7 +1622,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div id="loc-tag-suggestions" class="filter-chips" style="margin-bottom:8px;"></div>
         <div style="display:flex;gap:8px;">
           <input type="text" class="form-input" id="loc-tag-input" placeholder="Add custom tag" style="flex:1;"
-            onkeydown="if(event.key==='Enter'){addTag(); event.preventDefault();}">
+            onkeydown="if(event.key==='Enter'){addTag(); event.preventDefault();}" list="tag-datalist">
+          <datalist id="tag-datalist"></datalist>
           <button class="add-small-btn" onclick="addTag()">Add</button>
         </div>
       </div>
@@ -2547,6 +2560,59 @@ async function deleteBulkSelection() {
   updateApprovalBadge();
 }
 
+async function mapSearch() {
+  const query = document.getElementById('map-search-input').value.trim();
+  if (!query) return;
+  const resultsDiv = document.getElementById('map-search-results');
+  resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Searching...</span>';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+    const results = await res.json();
+    if (results.length === 0) {
+      resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">No results.</span>';
+      return;
+    }
+    state._mapSearchResults = results.map(r => ({
+      name: r.name || r.display_name.split(',')[0],
+      lat: parseFloat(r.lat), lng: parseFloat(r.lon),
+      address: r.display_name,
+      category: osmToCategory(r.class, r.type) || inferCategory(r.name || r.display_name),
+    }));
+    resultsDiv.innerHTML = state._mapSearchResults.map((r, i) => {
+      const cat = CATEGORIES[r.category] || CATEGORIES.location;
+      return `<div style="display:flex;align-items:center;gap:6px;padding:6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
+        onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
+        <span onclick="flyToSearchResult(${i})" style="flex:1;min-width:0;">
+          <div style="font-weight:500;">${cat.emoji} ${esc(r.name)}</div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
+        </span>
+        <button class="add-small-btn" onclick="addSearchResultAsLocation(${i})" style="border-style:solid;padding:2px 6px;font-size:10px;flex-shrink:0;">+ Add</button>
+      </div>`;
+    }).join('');
+  } catch { resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--danger);">Search failed.</span>'; }
+}
+
+function flyToSearchResult(idx) {
+  const r = state._mapSearchResults?.[idx];
+  if (!r) return;
+  map.setView([r.lat, r.lng], 15);
+  document.getElementById('map-search-results').innerHTML = '';
+}
+
+async function addSearchResultAsLocation(idx) {
+  const r = state._mapSearchResults?.[idx];
+  if (!r) return;
+  openAddModal(r.lat, r.lng);
+  document.getElementById('loc-name').value = r.name;
+  document.getElementById('loc-address').value = r.address;
+  // Select the inferred category
+  state.modalCategory = r.category;
+  document.querySelectorAll('.category-option').forEach(o => o.classList.toggle('selected', o.dataset.cat === r.category));
+  renderModalTags();
+  updatePriceVisibility();
+  document.getElementById('map-search-results').innerHTML = '';
+}
+
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
@@ -2757,20 +2823,44 @@ function removeVisit(i) {
 
 /* ── Tags & Price (modal) ── */
 function renderModalTags() {
-  // Render active tags
+  // Render active tags (XSS-safe)
   const container = document.getElementById('loc-tag-chips');
-  container.innerHTML = state.modalTags.map((t, i) =>
-    `<span class="people-tag">${t}<span class="remove-tag" onclick="removeTag(${i})">&times;</span></span>`
-  ).join('');
+  container.innerHTML = '';
+  state.modalTags.forEach((t, i) => {
+    const span = document.createElement('span');
+    span.className = 'people-tag';
+    span.textContent = t;
+    const rm = document.createElement('span');
+    rm.className = 'remove-tag';
+    rm.innerHTML = '&times;';
+    rm.onclick = () => removeTag(i);
+    span.appendChild(rm);
+    container.appendChild(span);
+  });
 
   // Render suggested tags for current category
   const cat = CATEGORIES[state.modalCategory];
   const suggestions = cat?.suggestedTags || [];
   const sugContainer = document.getElementById('loc-tag-suggestions');
-  sugContainer.innerHTML = suggestions
-    .filter(t => !state.modalTags.includes(t))
-    .map(t => `<button class="filter-chip" onclick="addTagDirect('${t.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 8px;">${t}</button>`)
-    .join('');
+  sugContainer.innerHTML = '';
+  suggestions.filter(t => !state.modalTags.includes(t)).forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-chip';
+    btn.style.cssText = 'font-size:11px;padding:3px 8px;';
+    btn.textContent = t;
+    btn.onclick = () => addTagDirect(t);
+    sugContainer.appendChild(btn);
+  });
+
+  // Populate tag autocomplete datalist with all existing tags
+  const datalist = document.getElementById('tag-datalist');
+  if (datalist) {
+    const allTags = new Set();
+    state.locations.forEach(l => (l.tags || []).forEach(t => allTags.add(t)));
+    datalist.innerHTML = [...allTags].sort()
+      .filter(t => !state.modalTags.includes(t))
+      .map(t => `<option value="${esc(t)}">`).join('');
+  }
 }
 function addTag() {
   const input = document.getElementById('loc-tag-input');
@@ -4818,31 +4908,53 @@ function initImport() {
     handleFiles(e.dataTransfer.files);
   });
   fileInput.addEventListener('change', e => handleFiles(e.target.files));
+  document.getElementById('folder-input').addEventListener('change', e => handleFiles(e.target.files));
 }
 
-function handleFiles(files) {
-  if (!files.length) return;
-  const file = files[0];
-  const ext = file.name.split('.').pop().toLowerCase();
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const content = e.target.result;
+async function handleFiles(files) {
+  const fileList = [...files].filter(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    return ['csv','json','geojson','kml','kmz'].includes(ext);
+  });
+  if (fileList.length === 0) { alert('No supported files found. Drop CSV, JSON, KML, or GeoJSON files.'); return; }
+
+  const allParsed = [];
+  for (const file of fileList) {
+    const ext = file.name.split('.').pop().toLowerCase();
     try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+
       let parsed = [];
       if (ext === 'json') parsed = parseJSON(content);
       else if (ext === 'csv') parsed = parseCSV(content);
       else if (ext === 'geojson') parsed = parseGeoJSON(content);
       else if (ext === 'kml') parsed = parseKML(content);
-      else { alert('Unsupported format'); return; }
 
       // Handle async parsers (geocoding CSV)
       if (parsed instanceof Promise) parsed = await parsed;
 
-      state.pendingImport = parsed;
-      showImportPreview(parsed);
-    } catch(err) { alert('Parse error: ' + err.message); }
-  };
-  reader.readAsText(file);
+      // Tag with source filename for context
+      parsed.forEach(item => { if (!item.tags) item.tags = []; });
+      if (fileList.length > 1) {
+        const tag = file.name.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
+        parsed.forEach(item => { if (!item.tags.includes(tag)) item.tags.push(tag); });
+      }
+
+      allParsed.push(...parsed);
+    } catch (err) {
+      console.warn(`Failed to parse ${file.name}:`, err.message);
+    }
+  }
+
+  if (allParsed.length === 0) { alert('No locations found in the imported files.'); return; }
+  console.log(`Imported ${allParsed.length} locations from ${fileList.length} file(s)`);
+  state.pendingImport = allParsed;
+  showImportPreview(allParsed);
 }
 
 function parseJSON(content) {
