@@ -152,6 +152,43 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+// ── Merge accounts (admin only) ───────────────────────────
+app.post('/api/admin/merge-accounts', auth, async (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  try {
+    const { fromUsername, toUsername } = req.body;
+    if (!fromUsername || !toUsername) return res.status(400).json({ error: 'fromUsername and toUsername required' });
+
+    const fromUser = await db.users.findOne({ username: fromUsername });
+    const toUser = await db.users.findOne({ username: toUsername });
+    if (!fromUser) return res.status(404).json({ error: `User "${fromUsername}" not found` });
+    if (!toUser) return res.status(404).json({ error: `User "${toUsername}" not found` });
+
+    const fromId = fromUser._id;
+    const toId = toUser._id;
+
+    // Move all data from source to target
+    const locCount = await db.locations.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
+    const tripCount = await db.trips.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
+    const colCount = await db.collections.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
+
+    // Copy googleId to target if source had one
+    if (fromUser.googleId && !toUser.googleId) {
+      await db.users.update({ _id: toId }, { $set: { googleId: fromUser.googleId, picture: fromUser.picture } });
+    }
+
+    // Delete source user
+    await db.users.remove({ _id: fromId });
+
+    audit('account_merge', { from: fromUsername, to: toUsername, locations: locCount, trips: tripCount, collections: colCount }, req);
+    res.json({ ok: true, merged: { locations: locCount, trips: tripCount, collections: colCount } });
+  } catch (err) {
+    res.status(500).json({ error: 'Merge failed: ' + err.message });
+  }
+});
+
 // ── Audit log (admin only) ────────────────────────────────
 app.get('/api/audit', auth, async (req, res) => {
   if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
