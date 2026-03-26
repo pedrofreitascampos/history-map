@@ -789,13 +789,26 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 /* RESPONSIVE                                                  */
 /* ═══════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-  #sidebar { width: 280px; }
-  .sidebar-toggle { left: 280px; }
-  #sidebar.collapsed ~ .sidebar-toggle { left: 0; }
+  #topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
+  .logo { font-size: 16px; }
+  .logo svg { width: 22px; height: 22px; }
+  .nav-tabs { order: 3; width: 100%; overflow-x: auto; padding: 2px; gap: 1px; }
+  .nav-tab { padding: 5px 8px; font-size: 12px; white-space: nowrap; }
   .nav-tab span.tab-label { display: none; }
+  .nav-tab .badge { font-size: 9px; padding: 0 4px; }
+  .topbar-actions { margin-left: auto; gap: 4px; }
+  .topbar-actions .btn-icon { width: 30px; height: 30px; font-size: 14px; }
+  #topbar .user-info { gap: 4px; }
+  #topbar .user-info .username { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn-logout { font-size: 10px; padding: 3px 6px; }
+  #app { top: 90px; }
+  #sidebar { top: 90px; width: 260px; }
+  .sidebar-toggle { top: 96px; left: 260px; }
+  #sidebar.collapsed ~ .sidebar-toggle { left: 0; }
   .modal { width: 95vw; }
   .stats-top-row { grid-template-columns: repeat(2, 1fr); }
   .category-stats-grid { grid-template-columns: 1fr; }
+  .import-sections { grid-template-columns: 1fr; }
 }
 
 /* ═══════════════════════════════════════════════════════════ */
