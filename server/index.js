@@ -189,6 +189,34 @@ app.post('/api/admin/merge-accounts', auth, async (req, res) => {
   }
 });
 
+// ── Reset password (admin only) ───────────────────────────
+app.post('/api/admin/reset-password', auth, async (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  try {
+    const { username, newPassword } = req.body;
+    if (!username || !newPassword) return res.status(400).json({ error: 'username and newPassword required' });
+    const user = await db.users.findOne({ username });
+    if (!user) return res.status(404).json({ error: `User "${username}" not found` });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.users.update({ _id: user._id }, { $set: { password: hash } });
+    audit('password_reset', { username, by: req.user.username }, req);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── List users (admin only) ──────────────────────────────
+app.get('/api/admin/users', auth, async (req, res) => {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  const users = await db.users.find({});
+  res.json(users.map(u => ({ _id: u._id, username: u.username, googleId: u.googleId || null, createdAt: u.createdAt })));
+});
+
 // ── Audit log (admin only) ────────────────────────────────
 app.get('/api/audit', auth, async (req, res) => {
   if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
