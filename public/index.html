@@ -4880,11 +4880,30 @@ async function openAccountModal() {
             <option value="osm" ${localStorage.getItem('hm_search_provider') === 'osm' ? 'selected' : ''}>OpenStreetMap</option>
           </select>
         </label>
-      </div>`;
+      </div>
+      <details style="margin-top:6px;">
+        <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <input type="password" class="form-input" id="places-key-input" placeholder="New key..." style="flex:1;font-size:12px;padding:6px 8px;">
+          <button class="btn btn-secondary" onclick="savePlacesKey()" style="font-size:11px;padding:4px 10px;">Save</button>
+          <button class="btn btn-danger" onclick="removePlacesKey()" style="font-size:11px;padding:4px 10px;">Remove</button>
+        </div>
+      </details>`;
     } else {
-      placesDiv.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
-        <span style="color:var(--text-muted);">●</span> Not configured — search uses OpenStreetMap.
-        <div style="margin-top:4px;">To enable: add <code>GOOGLE_PLACES_KEY</code> env var on Render. 5,000 free searches + 5,000 free syncs per month.</div>
+      // Load current key status from settings
+      let keyPreview = '';
+      try { const s = await api('GET', '/settings'); keyPreview = s.googlePlacesKey || ''; } catch {}
+      placesDiv.innerHTML = `<div style="font-size:12px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
+        <span style="color:var(--text-muted);">●</span> Not connected — search uses OpenStreetMap.
+        <div style="margin-top:8px;">
+          <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px;">Google Places API Key</label>
+          <div style="display:flex;gap:6px;">
+            <input type="password" class="form-input" id="places-key-input" placeholder="AIza..." value="${keyPreview ? '••••••••' : ''}"
+              style="flex:1;font-size:12px;padding:6px 8px;" onfocus="if(this.value.startsWith('••'))this.value=''">
+            <button class="btn btn-primary" onclick="savePlacesKey()" style="font-size:11px;padding:4px 10px;">Save</button>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">5,000 free searches + 5,000 free syncs per month. Key stored on server, never exposed to browser.</div>
+        </div>
       </div>`;
     }
   } catch { placesDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
@@ -4991,6 +5010,28 @@ async function syncSingleLocation(locId) {
       alert('Place not found on Google Maps.');
     }
   } catch (err) { alert('Sync failed: ' + err.message); }
+}
+
+async function savePlacesKey() {
+  const input = document.getElementById('places-key-input');
+  const key = input.value.trim();
+  if (!key || key.startsWith('••')) { alert('Enter a valid API key.'); return; }
+  try {
+    await api('PUT', '/settings', { googlePlacesKey: key });
+    _placesEnabled = null; // reset cache
+    alert('API key saved. Google Places search is now active.');
+    openAccountModal(); // refresh
+  } catch (err) { alert('Failed: ' + err.message); }
+}
+
+async function removePlacesKey() {
+  if (!confirm('Remove your Google Places API key?')) return;
+  try {
+    await api('PUT', '/settings', { googlePlacesKey: null });
+    _placesEnabled = null;
+    alert('API key removed. Search will use OpenStreetMap.');
+    openAccountModal();
+  } catch (err) { alert('Failed: ' + err.message); }
 }
 
 function closeAccountModal() {

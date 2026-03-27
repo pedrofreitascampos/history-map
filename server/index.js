@@ -416,6 +416,21 @@ function simplifyGeometry(geom, precision) {
   return { type: geom.type, coordinates: round(geom.coordinates) };
 }
 
+// ── User settings (API keys etc.) ────────────────────────
+app.get('/api/settings', auth, async (req, res) => {
+  const user = await db.users.findOne({ _id: req.user.id });
+  res.json({ googlePlacesKey: user?.googlePlacesKey ? '••••' + user.googlePlacesKey.slice(-4) : null });
+});
+
+app.put('/api/settings', auth, async (req, res) => {
+  const { googlePlacesKey } = req.body;
+  const updates = {};
+  if (googlePlacesKey !== undefined) updates.googlePlacesKey = googlePlacesKey || null;
+  await db.users.update({ _id: req.user.id }, { $set: updates });
+  audit('settings_update', { fields: Object.keys(updates) }, req);
+  res.json({ ok: true });
+});
+
 // ── User's own latest backup ─────────────────────────────
 app.get('/api/my-backup', auth, async (req, res) => {
   try {
@@ -432,16 +447,23 @@ app.get('/api/my-backup', auth, async (req, res) => {
 });
 
 // ── Google Places API (proxied, key never exposed) ───────
-app.get('/api/places/status', auth, (req, res) => {
-  res.json({ enabled: !!GOOGLE_PLACES_KEY });
+async function getPlacesKey(userId) {
+  const user = await db.users.findOne({ _id: userId });
+  return user?.googlePlacesKey || GOOGLE_PLACES_KEY || '';
+}
+
+app.get('/api/places/status', auth, async (req, res) => {
+  const key = await getPlacesKey(req.user.id);
+  res.json({ enabled: !!key });
 });
 
 app.get('/api/places/search', auth, async (req, res) => {
-  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  const placesKey = await getPlacesKey(req.user.id);
+  if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured. Add your key in Account settings.' });
   try {
     const { q, lat, lng } = req.query;
     if (!q) return res.status(400).json({ error: 'Query required' });
-    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${GOOGLE_PLACES_KEY}`;
+    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${placesKey}`;
     if (lat && lng) url += `&location=${lat},${lng}&radius=50000`;
     const response = await fetch(url);
     const data = await response.json();
@@ -465,13 +487,12 @@ app.get('/api/places/search', auth, async (req, res) => {
 });
 
 app.post('/api/places/sync', auth, async (req, res) => {
-  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  const placesKey = await getPlacesKey(req.user.id);
+  if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
   try {
     const { name, lat, lng } = req.body;
     if (!name) return res.status(400).json({ error: 'Name required' });
-    // Find place by name + location
-    const query = `${name}${lat ? ` ${lat},${lng}` : ''}`;
-    let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${GOOGLE_PLACES_KEY}`;
+    let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${placesKey}`;
     if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
     const response = await fetch(url);
     const data = await response.json();
@@ -498,14 +519,15 @@ app.post('/api/places/sync', auth, async (req, res) => {
 // Skips locations that already have googleRating (already synced)
 // Adds _googleSyncedAt timestamp so we don't re-sync
 app.post('/api/places/bulk-sync', auth, async (req, res) => {
-  if (!GOOGLE_PLACES_KEY) return res.status(501).json({ error: 'Google Places API not configured' });
+  const placesKey = await getPlacesKey(req.user.id);
+  if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
   try {
     const { locations } = req.body;
     if (!Array.isArray(locations)) return res.status(400).json({ error: 'Array required' });
     const results = [];
     for (const loc of locations.slice(0, 50)) { // Cap at 50 per request
       try {
-        let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.name)}&inputtype=textquery&fields=rating,price_level,formatted_address,place_id,user_ratings_total&key=${GOOGLE_PLACES_KEY}`;
+        let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.name)}&inputtype=textquery&fields=rating,price_level,formatted_address,place_id,user_ratings_total&key=${placesKey}`;
         if (loc.lat && loc.lng) url += `&locationbias=point:${loc.lat},${loc.lng}`;
         const response = await fetch(url);
         const data = await response.json();
