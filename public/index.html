@@ -1586,9 +1586,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
               <tbody id="import-tbody"></tbody>
             </table>
           </div>
-          <div class="import-actions">
+          <div class="import-actions" style="flex-wrap:wrap;">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:auto;">
               <input type="checkbox" id="import-auto-approve"> Auto-approve categories
+            </label>
+            <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:8px;">
+              <input type="checkbox" id="import-google-sync"> Sync Google ratings
             </label>
             <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
             <button class="btn btn-primary" onclick="confirmImport()">Import All</button>
@@ -5189,6 +5192,34 @@ async function shouldUseGoogle() {
   return getSearchProvider() === 'google' && await checkPlacesEnabled();
 }
 
+// Background sync for freshly imported locations (non-blocking)
+async function syncImportedLocations(locations) {
+  let totalUpdated = 0, batchErrors = 0;
+  for (let i = 0; i < locations.length; i += 50) {
+    const batch = locations.slice(i, i + 50);
+    try {
+      const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address, _googlePlaceId: l._googlePlaceId || null }));
+      const results = await api('POST', '/places/bulk-sync', { locations: toSync });
+      results.forEach(r => {
+        const loc = state.locations.find(l => (l.id || l._id) === r.id);
+        if (loc) {
+          if (r.found) {
+            if (r.googleRating) loc.googleRating = r.googleRating;
+            if (r.priceLevel) loc.priceLevel = r.priceLevel;
+            if (r.address && !loc.address) loc.address = r.address;
+            if (r._googlePlaceId) loc._googlePlaceId = r._googlePlaceId;
+            totalUpdated++;
+          }
+          loc._googleSyncedAt = r._googleSyncedAt || new Date().toISOString();
+        }
+      });
+    } catch { batchErrors++; }
+  }
+  renderMarkers();
+  const msg = `${totalUpdated}/${locations.length} imported locations synced with Google`;
+  showToast(batchErrors > 0 ? `${msg} (${batchErrors} batch errors)` : msg, batchErrors > 0 ? 'warn' : 'info');
+}
+
 async function bulkGoogleSync() {
   const allUnsynced = state.locations.filter(l => !l._googleSyncedAt);
   if (allUnsynced.length === 0) { showToast('All locations already synced'); return; }
@@ -6047,6 +6078,12 @@ function showImportPreview(items) {
       actionsDiv.insertBefore(btn, actionsDiv.querySelector('.btn-secondary'));
     }
   }
+
+  // Show Google sync toggle if Places API is configured
+  checkPlacesEnabled().then(enabled => {
+    const label = document.getElementById('import-sync-label');
+    if (label) label.style.display = enabled ? 'flex' : 'none';
+  });
 }
 
 function cancelImport() {
@@ -6106,7 +6143,7 @@ async function confirmImport() {
         const { _restoreTripId, _restoreCollections, _isFullRestore, id, _id, userId, ...rest } = item;
         return { ...rest, tripId: tripIdMap[_restoreTripId] || null, collections: (_restoreCollections || []).map(c => colIdMap[c] || c).filter(Boolean) };
       }
-      return {
+      const loc = {
         name: item.name, address: item.address || '',
         lat: item.lat, lng: item.lng, category: item.category, status: item.status,
         googleRating: null, myRating: 0, tripId: null, people: [],
@@ -6116,6 +6153,9 @@ async function confirmImport() {
         suggestedCategory: autoApprove ? null : item.category,
         createdAt: (item.visits?.[0]?.date) || new Date().toISOString().split('T')[0],
       };
+      if (item._googlePlaceId) loc._googlePlaceId = item._googlePlaceId;
+      if (item._googleUrl) loc._googleUrl = item._googleUrl;
+      return loc;
     });
 
     // Save immediately — don't block on enrichment
@@ -6136,6 +6176,16 @@ async function confirmImport() {
       const uncategorized = saved.filter(l => (l.category === 'location') && l.lat && l.lng);
       if (uncategorized.length > 0) {
         enrichInBackground(uncategorized);
+      }
+    }
+
+    // Google Places sync if opted in
+    const syncChecked = document.getElementById('import-google-sync')?.checked;
+    if (syncChecked && !isFullRestore) {
+      const toSync = saved.filter(l => !l._googleSyncedAt);
+      if (toSync.length > 0) {
+        showToast(`Syncing ${toSync.length} locations with Google Places...`);
+        syncImportedLocations(toSync);
       }
     }
   } catch (err) { alert('Import failed: ' + err.message); }
