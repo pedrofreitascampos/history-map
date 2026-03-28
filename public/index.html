@@ -5201,7 +5201,7 @@ async function bulkGoogleSync() {
     totalProcessed += batch.length;
     placesDiv.innerHTML = `<div style="font-size:12px;color:var(--accent);padding:8px;">Syncing ${totalProcessed}/${allUnsynced.length} locations...</div>`;
     try {
-      const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address }));
+      const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address, _googlePlaceId: l._googlePlaceId || null }));
       const results = await api('POST', '/places/bulk-sync', { locations: toSync });
       results.forEach(r => {
         const loc = state.locations.find(l => (l.id || l._id) === r.id);
@@ -5233,7 +5233,7 @@ async function syncSingleLocation(locId) {
   const loc = state.locations.find(l => (l.id || l._id) === locId);
   if (!loc) return;
   try {
-    const result = await api('POST', '/places/sync', { name: loc.name, lat: loc.lat, lng: loc.lng });
+    const result = await api('POST', '/places/sync', { name: loc.name, lat: loc.lat, lng: loc.lng, placeId: loc._googlePlaceId || null });
     if (result.found) {
       if (result.googleRating) loc.googleRating = result.googleRating;
       if (result.priceLevel != null) loc.priceLevel = result.priceLevel;

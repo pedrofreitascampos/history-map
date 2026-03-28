@@ -510,6 +510,35 @@ async function getPlacesKey(userId) {
   return user?.googlePlacesKey || GOOGLE_PLACES_KEY || '';
 }
 
+// Fetch place details by Place ID — more accurate + same cost as findplace
+async function fetchPlaceByPlaceId(placeId, placesKey) {
+  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${placesKey}`;
+  const _t0 = Date.now();
+  const response = await fetch(url);
+  const data = await response.json();
+  const ms = Date.now() - _t0;
+  if (data.status === 'OK' && data.result) {
+    const p = data.result;
+    return { found: true, rating: p.rating, price_level: p.price_level, formatted_address: p.formatted_address, place_id: p.place_id || placeId, user_ratings_total: p.user_ratings_total, lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng, ms, apiStatus: data.status };
+  }
+  return { found: false, ms, apiStatus: data.status };
+}
+
+// Fetch place by text search — fallback when no Place ID available
+async function fetchPlaceByText(name, lat, lng, placesKey, fields) {
+  let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=${fields || 'name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total'}&key=${placesKey}`;
+  if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
+  const _t0 = Date.now();
+  const response = await fetch(url);
+  const data = await response.json();
+  const ms = Date.now() - _t0;
+  if (data.status === 'OK' && data.candidates?.length) {
+    const p = data.candidates[0];
+    return { found: true, rating: p.rating, price_level: p.price_level, formatted_address: p.formatted_address, place_id: p.place_id, user_ratings_total: p.user_ratings_total, lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng, ms, apiStatus: data.status };
+  }
+  return { found: false, ms, apiStatus: data.status };
+}
+
 app.get('/api/places/status', auth, async (req, res) => {
   const key = await getPlacesKey(req.user.id);
   res.json({ enabled: !!key });
@@ -551,27 +580,26 @@ app.post('/api/places/sync', auth, async (req, res) => {
   const placesKey = await getPlacesKey(req.user.id);
   if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
   try {
-    const { name, lat, lng } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name required' });
-    let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${placesKey}`;
-    if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
-    const _t0 = Date.now();
-    const response = await fetch(url);
-    const data = await response.json();
-    log('info', 'places_api_call', { endpoint: 'findplace', input: name, status: data.status, found: !!(data.candidates?.length), ms: Date.now() - _t0, userId: req.user.id });
-    if (data.status !== 'OK' || !data.candidates?.length) {
-      return res.json({ found: false });
-    }
-    const p = data.candidates[0];
+    const { name, lat, lng, placeId } = req.body;
+    if (!name && !placeId) return res.status(400).json({ error: 'Name or placeId required' });
+
+    // Prefer Place ID lookup (exact match, same cost)
+    const result = placeId
+      ? await fetchPlaceByPlaceId(placeId, placesKey)
+      : await fetchPlaceByText(name, lat, lng, placesKey);
+
+    log('info', 'places_api_call', { endpoint: placeId ? 'details' : 'findplace', input: placeId || name, found: result.found, ms: result.ms, userId: req.user.id });
+
+    if (!result.found) return res.json({ found: false });
     res.json({
       found: true,
-      googleRating: p.rating || null,
-      priceLevel: p.price_level || null,
-      address: p.formatted_address || '',
-      placeId: p.place_id || '',
-      userRatingsTotal: p.user_ratings_total || 0,
-      lat: p.geometry?.location?.lat,
-      lng: p.geometry?.location?.lng,
+      googleRating: result.rating || null,
+      priceLevel: result.price_level || null,
+      address: result.formatted_address || '',
+      placeId: result.place_id || '',
+      userRatingsTotal: result.user_ratings_total || 0,
+      lat: result.lat,
+      lng: result.lng,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -591,31 +619,31 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
     const batchStart = Date.now();
     log('info', 'bulk_sync_start', { count: batch.length, userId: req.user.id });
     const results = [];
-    let found = 0, notFound = 0, errors = 0;
+    let found = 0, notFound = 0, errors = 0, byPlaceId = 0;
     for (const loc of batch) {
       try {
-        let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.name)}&inputtype=textquery&fields=rating,price_level,formatted_address,place_id,user_ratings_total&key=${placesKey}`;
-        if (loc.lat && loc.lng) url += `&locationbias=point:${loc.lat},${loc.lng}`;
-        const _t0 = Date.now();
-        const response = await fetch(url);
-        const data = await response.json();
-        const callMs = Date.now() - _t0;
-        if (data.status === 'OK' && data.candidates?.length) {
-          const p = data.candidates[0];
+        // Prefer Place ID lookup when available (exact match, same cost)
+        const hasPlaceId = loc.placeId || loc._googlePlaceId;
+        const result = hasPlaceId
+          ? await fetchPlaceByPlaceId(hasPlaceId, placesKey)
+          : await fetchPlaceByText(loc.name, loc.lat, loc.lng, placesKey, 'rating,price_level,formatted_address,place_id,user_ratings_total');
+        if (hasPlaceId) byPlaceId++;
+
+        if (result.found) {
           const updates = { _googleSyncedAt: new Date().toISOString() };
-          if (p.rating) updates.googleRating = p.rating;
-          if (p.price_level != null) updates.priceLevel = p.price_level;
-          if (p.formatted_address && !loc.address) updates.address = p.formatted_address;
-          if (p.place_id) updates._googlePlaceId = p.place_id;
+          if (result.rating) updates.googleRating = result.rating;
+          if (result.price_level != null) updates.priceLevel = result.price_level;
+          if (result.formatted_address && !loc.address) updates.address = result.formatted_address;
+          if (result.place_id) updates._googlePlaceId = result.place_id;
           await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: updates });
           results.push({ id: loc.id, ...updates, found: true });
           found++;
-          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: true, rating: p.rating, ms: callMs });
+          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: true, rating: result.rating, via: hasPlaceId ? 'placeId' : 'text', ms: result.ms });
         } else {
           await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: { _googleSyncedAt: new Date().toISOString() } });
           results.push({ id: loc.id, found: false });
           notFound++;
-          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: false, status: data.status, ms: callMs });
+          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: false, status: result.apiStatus, via: hasPlaceId ? 'placeId' : 'text', ms: result.ms });
         }
       } catch (err) {
         results.push({ id: loc.id, found: false });
@@ -623,7 +651,7 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
         log('warn', 'bulk_sync_item_error', { locId: loc.id, name: loc.name, error: err.message });
       }
     }
-    log('info', 'bulk_sync_done', { count: batch.length, found, notFound, errors, ms: Date.now() - batchStart, userId: req.user.id });
+    log('info', 'bulk_sync_done', { count: batch.length, found, notFound, errors, byPlaceId, byText: batch.length - byPlaceId, ms: Date.now() - batchStart, userId: req.user.id });
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
