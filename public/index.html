@@ -257,7 +257,7 @@ body {
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   transform: translateX(0);
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 16px;
@@ -454,6 +454,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 .star-rating .star.filled { color: var(--accent); }
 .star-rating .star:hover { color: var(--accent-glow); }
+.star-rating .star:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.star-rating .star:focus:not(:focus-visible) { outline: none; }
 
 .people-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .people-tag {
@@ -823,7 +825,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   #topbar { padding: 6px 8px; }
   .logo { font-size: 14px; }
   #topbar .user-info .username { display: none; }
-  #sidebar { width: 100vw; }
+  #sidebar { width: 100vw; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  #sidebar [style*="overflow-y:auto"], #sidebar [style*="overflow-y: auto"] { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .sidebar-toggle { left: 0; }
   #sidebar:not(.collapsed) ~ .sidebar-toggle { left: calc(100vw - 44px); }
   .stats-top-row { grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -833,6 +836,32 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   #bulk-view > div:nth-child(3) { flex-direction: column; }
   #bulk-view > div:nth-child(3) select,
   #bulk-view > div:nth-child(3) input { width: 100% !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* FOCUS & ACCESSIBILITY                                       */
+/* ═══════════════════════════════════════════════════════════ */
+/* Visible focus ring for keyboard users, hidden for mouse */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Modal close buttons need visible focus */
+.modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+/* Remove-tag buttons need adequate touch target */
+.people-tag .remove-tag { min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+/* Buttons in people/trip manager rows */
+@media (max-width: 768px) {
+  .add-small-btn { min-height: 44px; min-width: 44px; padding: 8px 12px !important; }
+  .context-menu-item { min-height: 44px; }
+  .modal-close { width: 44px; height: 44px; }
 }
 
 /* ═══════════════════════════════════════════════════════════ */
@@ -1554,7 +1583,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </select>
       <input type="text" class="form-input" id="bulk-tag" placeholder="+ tag" style="width:80px;font-size:12px;padding:6px 8px;">
       <select class="filter-select" id="bulk-collection" style="width:150px;font-size:12px;"><option value="">Collection →</option></select>
-      <button class="btn btn-primary" onclick="applyBulkEdit()" style="font-size:12px;padding:6px 14px;">Apply</button>
+      <button class="btn btn-primary" onclick="withLoading(this, applyBulkEdit)" style="font-size:12px;padding:6px 14px;">Apply</button>
       <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">Delete</button>
     </div>
     <!-- Location list -->
@@ -1590,11 +1619,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:auto;">
               <input type="checkbox" id="import-auto-approve"> Auto-approve categories
             </label>
-            <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:8px;">
-              <input type="checkbox" id="import-google-sync"> Sync Google ratings
+            <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:8px;" title="After import, look up each location on Google Places to fetch ratings and price levels. Uses your API key quota.">
+              <input type="checkbox" id="import-google-sync"> 🔄 Auto-sync with Google Places
             </label>
             <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
-            <button class="btn btn-primary" onclick="confirmImport()">Import All</button>
+            <button class="btn btn-primary" onclick="withLoading(this, confirmImport)">Import All</button>
           </div>
         </div>
       </div>
@@ -1641,7 +1670,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- ═══════════════════════ EDIT MODAL ═══════════════════════ -->
-<div class="modal-overlay" id="edit-modal">
+<div class="modal-overlay" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal">
     <div class="modal-header">
       <h2 id="modal-title">Add Location</h2>
@@ -1726,12 +1755,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
         <div class="form-group">
           <label>My Rating</label>
-          <div class="star-rating" id="my-rating">
-            <span class="star" data-val="1" onclick="setRating(1)">★</span>
-            <span class="star" data-val="2" onclick="setRating(2)">★</span>
-            <span class="star" data-val="3" onclick="setRating(3)">★</span>
-            <span class="star" data-val="4" onclick="setRating(4)">★</span>
-            <span class="star" data-val="5" onclick="setRating(5)">★</span>
+          <div class="star-rating" id="my-rating" role="radiogroup" aria-label="My rating">
+            <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" onclick="setRating(1)">★</span>
+            <span class="star" data-val="2" role="radio" tabindex="-1" aria-label="2 stars" onclick="setRating(2)">★</span>
+            <span class="star" data-val="3" role="radio" tabindex="-1" aria-label="3 stars" onclick="setRating(3)">★</span>
+            <span class="star" data-val="4" role="radio" tabindex="-1" aria-label="4 stars" onclick="setRating(4)">★</span>
+            <span class="star" data-val="5" role="radio" tabindex="-1" aria-label="5 stars" onclick="setRating(5)">★</span>
           </div>
         </div>
       </div>
@@ -1778,10 +1807,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- People Manager Modal -->
-<div class="modal-overlay" id="people-modal">
+<div class="modal-overlay" id="people-modal" role="dialog" aria-modal="true" aria-labelledby="people-modal-title">
   <div class="modal" style="width:420px;">
     <div class="modal-header">
-      <h2>Manage People</h2>
+      <h2 id="people-modal-title">Manage People</h2>
       <button class="modal-close" onclick="closePeopleManager()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
@@ -1799,10 +1828,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Trips Manager Modal -->
-<div class="modal-overlay" id="trips-modal">
+<div class="modal-overlay" id="trips-modal" role="dialog" aria-modal="true" aria-labelledby="trips-modal-title">
   <div class="modal" style="width:480px;">
     <div class="modal-header">
-      <h2>Manage Trips</h2>
+      <h2 id="trips-modal-title">Manage Trips</h2>
       <button class="modal-close" onclick="closeTripManager()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
@@ -1820,10 +1849,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Account Modal -->
-<div class="modal-overlay" id="account-modal">
+<div class="modal-overlay" id="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
   <div class="modal" style="width:460px;">
     <div class="modal-header">
-      <h2>Account & Backups</h2>
+      <h2 id="account-modal-title">Account & Backups</h2>
       <button class="modal-close" onclick="closeAccountModal()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
@@ -1879,6 +1908,16 @@ const CATEGORIES = {
   shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)', hasPrice: true },
   cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)', hasPrice: true },
 };
+
+// CSS var → hex lookup for contexts that need raw hex (Leaflet, Chart.js, canvas)
+const COLOR_HEX = {
+  'var(--cat-restaurant)':'#ff6b6b','var(--cat-hotel)':'#a78bfa','var(--cat-bar)':'#fb923c',
+  'var(--cat-club)':'#e879f9','var(--cat-monument)':'#fbbf24','var(--cat-unesco)':'#f59e0b',
+  'var(--cat-park)':'#4ade80','var(--cat-stadium)':'#60a5fa','var(--cat-event)':'#f472b6',
+  'var(--cat-location)':'#94a3b8','var(--cat-airport)':'#38bdf8','var(--cat-entertainment)':'#c084fc',
+  'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
+};
+const DEFAULT_HEX = '#94a3b8';
 
 const PRICE_LEVELS = [
   { value: 1, label: '€', desc: 'Budget' },
@@ -2153,22 +2192,32 @@ function initMap() {
     attributionControl: false,
   });
 
-  // Tile layers
-  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 });
-  const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 });
-  const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 });
-  const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 });
+  // Tile layers (stored globally for theme-based switching)
+  const _tileLayers = {
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }),
+    streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }),
+    topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 }),
+    light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }),
+  };
+  window._tileLayers = _tileLayers;
+  window._activeBaseLayer = _tileLayers.dark;
 
-  dark.addTo(map);
+  const savedTheme = localStorage.getItem('hm_theme');
+  const defaultLayer = savedTheme === 'parchment' ? _tileLayers.light : _tileLayers.dark;
+  defaultLayer.addTo(map);
+  window._activeBaseLayer = defaultLayer;
 
   L.control.layers({
-    '🌑 Dark': dark,
-    '🗺️ Streets': streets,
-    '🛰️ Satellite': satellite,
-    '⛰️ Topographic': topo,
-    '☀️ Light': light,
+    '🌑 Dark': _tileLayers.dark,
+    '🗺️ Streets': _tileLayers.streets,
+    '🛰️ Satellite': _tileLayers.satellite,
+    '⛰️ Topographic': _tileLayers.topo,
+    '☀️ Light': _tileLayers.light,
   }, null, { position: 'topright' }).addTo(map);
+
+  // Track manual layer changes
+  map.on('baselayerchange', e => { window._activeBaseLayer = e.layer; });
 
   markersLayer = L.markerClusterGroup({
     maxClusterRadius: 40,
@@ -2219,15 +2268,7 @@ function initMap() {
 function createMarkerIcon(loc) {
   const cat = CATEGORIES[loc.category] || CATEGORIES.location;
   const cssColor = cat.color;
-  // Resolve CSS var to hex for border
-  const colorMap = {
-    'var(--cat-restaurant)':'#ff6b6b','var(--cat-hotel)':'#a78bfa','var(--cat-bar)':'#fb923c',
-    'var(--cat-club)':'#e879f9','var(--cat-monument)':'#fbbf24','var(--cat-unesco)':'#f59e0b',
-    'var(--cat-park)':'#4ade80','var(--cat-stadium)':'#60a5fa','var(--cat-event)':'#f472b6',
-    'var(--cat-location)':'#94a3b8','var(--cat-airport)':'#38bdf8','var(--cat-entertainment)':'#c084fc',
-    'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
-  };
-  const hex = colorMap[cssColor] || '#94a3b8';
+  const hex = COLOR_HEX[cssColor] || DEFAULT_HEX;
   const cls = loc.needsApproval ? 'needs-approval' : loc.status;
   const bg = loc.status === 'been' ? hex + '22' : 'rgba(10,14,23,0.8)';
 
@@ -2251,13 +2292,72 @@ function esc(str) {
 }
 
 // ── Modal focus management ──
+let _lastFocusedElement = null;
+
 function focusModal(modalEl) {
+  _lastFocusedElement = document.activeElement;
   setTimeout(() => {
     const input = modalEl.querySelector('input:not([type=hidden]):not([readonly]):not([disabled]), textarea, select');
     if (input) input.focus();
     else { const btn = modalEl.querySelector('button'); if (btn) btn.focus(); }
   }, 100);
 }
+
+function restoreFocus() {
+  if (_lastFocusedElement && _lastFocusedElement.focus) {
+    _lastFocusedElement.focus();
+    _lastFocusedElement = null;
+  }
+}
+
+// ── Focus trap: keep Tab within open modal ──
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const openModal = document.querySelector('.modal-overlay.open');
+  if (!openModal) return;
+  const focusable = openModal.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), a[href]'
+  );
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey) {
+    if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+  } else {
+    if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+
+// ── Escape key: close topmost modal or context menu ──
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Context menu first
+  const cm = document.getElementById('context-menu');
+  if (cm && cm.classList.contains('open')) { cm.classList.remove('open'); return; }
+  // Confirm dialog
+  const confirm = document.querySelector('.confirm-overlay');
+  if (confirm) { confirm.remove(); return; }
+  // Modals (close topmost)
+  const modals = ['account-modal', 'trips-modal', 'people-modal', 'edit-modal'];
+  for (const id of modals) {
+    const m = document.getElementById(id);
+    if (m && m.classList.contains('open')) {
+      m.classList.remove('open');
+      restoreFocus();
+      return;
+    }
+  }
+});
+
+// ── Backdrop click: close modal when clicking overlay (outside .modal) ──
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) {
+      overlay.classList.remove('open');
+      restoreFocus();
+    }
+  });
+});
 
 // ── Loading state for buttons ──
 async function withLoading(btn, fn) {
@@ -2296,6 +2396,82 @@ function showConfirm(message, onConfirm, confirmLabel = 'Delete') {
   overlay.querySelector('.confirm-danger').onclick = () => { overlay.remove(); onConfirm(); };
   overlay.querySelector('.confirm-cancel').focus();
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── Prompt modal (replaces browser prompt()) ──
+function showPrompt(label, defaultValue = '', opts = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const type = opts.type || 'text';
+    const placeholder = opts.placeholder || '';
+    const confirmLabel = opts.confirmLabel || 'OK';
+    overlay.innerHTML = `<div class="confirm-box">
+      <p>${esc(label)}</p>
+      <input type="${type}" class="form-input prompt-input" value="${esc(defaultValue)}" placeholder="${esc(placeholder)}" style="margin-bottom:16px;">
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="btn btn-primary">${esc(confirmLabel)}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.prompt-input');
+    const cancel = () => { overlay.remove(); resolve(null); };
+    const confirm = () => { overlay.remove(); resolve(input.value); };
+    overlay.querySelector('.confirm-cancel').onclick = cancel;
+    overlay.querySelector('.btn-primary').onclick = confirm;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) cancel(); });
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
+}
+
+// Multi-field prompt for cases like trip dates or collection editing
+function showMultiPrompt(fields) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const fieldHtml = fields.map((f, i) => `
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">${esc(f.label)}</label>
+        <input type="${f.type || 'text'}" class="form-input mp-field" data-idx="${i}" value="${esc(f.value || '')}" placeholder="${esc(f.placeholder || '')}">
+      </div>
+    `).join('');
+    overlay.innerHTML = `<div class="confirm-box">
+      ${fieldHtml}
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="btn btn-primary">OK</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const inputs = overlay.querySelectorAll('.mp-field');
+    const cancel = () => { overlay.remove(); resolve(null); };
+    const confirm = () => {
+      const result = {};
+      inputs.forEach(inp => { result[fields[parseInt(inp.dataset.idx)].key] = inp.value; });
+      overlay.remove();
+      resolve(result);
+    };
+    overlay.querySelector('.confirm-cancel').onclick = cancel;
+    overlay.querySelector('.btn-primary').onclick = confirm;
+    inputs.forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      });
+    });
+    // Enter on last field confirms
+    if (inputs.length > 0) {
+      inputs[inputs.length - 1].addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+      });
+    }
+    overlay.addEventListener('click', e => { if (e.target === overlay) cancel(); });
+    setTimeout(() => { if (inputs[0]) { inputs[0].focus(); inputs[0].select(); } }, 50);
+  });
 }
 
 // Build a Google Maps URL from whatever identifiers we have
@@ -2475,14 +2651,14 @@ function clearCategoryFilter() {
 function populateFilterDropdowns() {
   const tripSel = document.getElementById('trip-filter');
   const tripOpts = '<option value="">All Trips</option>' +
-    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   tripSel.innerHTML = tripOpts;
 
   const allPeople = new Set();
   state.locations.forEach(l => (l.people || []).forEach(p => allPeople.add(p)));
   const peopleSel = document.getElementById('people-filter');
   peopleSel.innerHTML = '<option value="">Everyone</option>' +
-    [...allPeople].sort().map(p => `<option value="${p}">${p}</option>`).join('');
+    [...allPeople].sort().map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
 
   buildTagFilters();
 }
@@ -2572,21 +2748,21 @@ function initBulkView() {
     Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
   const tripAction = document.getElementById('bulk-trip');
   tripAction.innerHTML = '<option value="">Trip →</option><option value="_none">No trip</option>' +
-    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   const colAction = document.getElementById('bulk-collection');
   colAction.innerHTML = '<option value="">Collection →</option>' +
-    state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+    state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
   // Populate tag filter
   const allTags = {};
   state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0)+1; }));
   const tagFilter = document.getElementById('bulk-filter-tag');
   const sortedTags = Object.entries(allTags).sort((a,b) => b[1]-a[1]);
   tagFilter.innerHTML = '<option value="">All tags</option>' +
-    sortedTags.map(([t, n]) => `<option value="${t}">${t} (${n})</option>`).join('');
+    sortedTags.map(([t, n]) => `<option value="${esc(t)}">${esc(t)} (${n})</option>`).join('');
   // Tag action dropdown: remove specific tags
   const tagAction = document.getElementById('bulk-tag-action');
   tagAction.innerHTML = '<option value="">Tags →</option><option value="_clear">🗑️ Remove all tags</option>' +
-    sortedTags.map(([t]) => `<option value="_remove:${t}">❌ Remove "${t}"</option>`).join('');
+    sortedTags.map(([t]) => `<option value="_remove:${esc(t)}">❌ Remove "${esc(t)}"</option>`).join('');
   bulkSelected.clear();
   renderBulkList();
 }
@@ -2699,14 +2875,14 @@ function updateBulkCount() {
 }
 
 async function applyBulkEdit() {
-  if (bulkSelected.size === 0) { alert('Select locations first.'); return; }
+  if (bulkSelected.size === 0) { showToast('Select locations first.', 'warn'); return; }
   const category = document.getElementById('bulk-category').value;
   const status = document.getElementById('bulk-status').value;
   const trip = document.getElementById('bulk-trip').value;
   const tagAction = document.getElementById('bulk-tag-action').value;
   const tagAdd = document.getElementById('bulk-tag').value.trim();
   const colId = document.getElementById('bulk-collection').value;
-  if (!category && !status && !trip && !tagAction && !tagAdd && !colId) { alert('Choose at least one action.'); return; }
+  if (!category && !status && !trip && !tagAction && !tagAdd && !colId) { showToast('Choose at least one action.', 'warn'); return; }
 
   const updates = [];
   for (const locId of bulkSelected) {
@@ -2795,13 +2971,13 @@ async function mapSearch() {
       const cat = CATEGORIES[r.category] || CATEGORIES.location;
       const ratingBadge = r.googleRating ? `<span style="font-size:10px;color:var(--accent);">⭐${r.googleRating}</span>` : '';
       const priceBadge = r.priceLevel ? `<span style="font-size:10px;color:var(--text-muted);">${'€'.repeat(r.priceLevel)}</span>` : '';
-      return `<div style="display:flex;align-items:center;gap:6px;padding:6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
+      return `<div class="search-result-item" style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
         onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
-        <span onclick="flyToSearchResult(${i})" style="flex:1;min-width:0;">
-          <div style="font-weight:500;">${cat.emoji} ${esc(r.name)} ${ratingBadge} ${priceBadge}</div>
+        <button onclick="flyToSearchResult(${i})" style="flex:1;min-width:0;background:none;border:none;color:inherit;cursor:pointer;text-align:left;padding:0;font-family:inherit;">
+          <div style="font-weight:500;font-size:12px;">${cat.emoji} ${esc(r.name)} ${ratingBadge} ${priceBadge}</div>
           <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
-        </span>
-        <button class="add-small-btn" onclick="addSearchResultAsLocation(${i})" style="border-style:solid;padding:2px 6px;font-size:10px;flex-shrink:0;">+ Add</button>
+        </button>
+        <button class="add-small-btn" onclick="addSearchResultAsLocation(${i})" style="border-style:solid;padding:4px 8px;font-size:11px;flex-shrink:0;min-height:32px;">+ Add</button>
       </div>`;
     }).join('');
   } catch { resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--danger);">Search failed.</span>'; }
@@ -2841,11 +3017,24 @@ function toggleSidebar() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* VIEW SWITCHING                                                        */
 /* ═══════════════════════════════════════════════════════════════════════ */
-function switchView(viewId) {
+// Hash ↔ view ID mapping for deep linking
+const VIEW_HASHES = {
+  'map-view': 'map', 'stats-view': 'stats', 'chrono-view': 'chrono',
+  'trips-view': 'trips', 'collections-view': 'collections', 'planner-view': 'planner',
+  'regions-view': 'regions', 'bulk-view': 'bulk', 'import-view': 'import',
+};
+const HASH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_HASHES).map(([k, v]) => [v, k]));
+
+function switchView(viewId, skipHash) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById(viewId).classList.add('active');
   document.querySelector(`[data-view="${viewId}"]`).classList.add('active');
+
+  // Update URL hash (unless restoring from hash to avoid loop)
+  if (!skipHash && VIEW_HASHES[viewId]) {
+    history.replaceState(null, '', '#' + VIEW_HASHES[viewId]);
+  }
 
   const showSidebar = viewId === 'map-view';
   document.getElementById('sidebar').style.display = showSidebar ? '' : 'none';
@@ -2895,7 +3084,7 @@ function buildModalCategories() {
 function populateModalTrips() {
   const sel = document.getElementById('loc-trip');
   sel.innerHTML = '<option value="">No trip</option>' +
-    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
 }
 
 function openAddModal(lat, lng) {
@@ -2991,6 +3180,7 @@ function openEditModal(id) {
 
 function closeModal() {
   document.getElementById('edit-modal').classList.remove('open');
+  restoreFocus();
 }
 
 function selectStatus(status, btn) {
@@ -3002,17 +3192,44 @@ function selectStatus(status, btn) {
 function setRating(val) {
   state.modalRating = val;
   updateStars(val);
+  // Move tabindex to selected star
+  const stars = document.querySelectorAll('#my-rating .star');
+  stars.forEach(s => {
+    const v = parseInt(s.dataset.val);
+    s.setAttribute('tabindex', v === val ? '0' : '-1');
+    s.setAttribute('aria-checked', v === val ? 'true' : 'false');
+  });
 }
 function updateStars(val) {
   document.querySelectorAll('#my-rating .star').forEach(s => {
     s.classList.toggle('filled', parseInt(s.dataset.val) <= val);
   });
 }
+// Keyboard navigation for star rating (arrow keys + Enter/Space)
+document.addEventListener('keydown', e => {
+  const star = e.target.closest('#my-rating .star');
+  if (!star) return;
+  const val = parseInt(star.dataset.val);
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const next = Math.min(val + 1, 5);
+    setRating(next);
+    document.querySelector(`#my-rating .star[data-val="${next}"]`)?.focus();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    const prev = Math.max(val - 1, 1);
+    setRating(prev);
+    document.querySelector(`#my-rating .star[data-val="${prev}"]`)?.focus();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    setRating(val);
+  }
+});
 
 function renderPeopleTags() {
   const container = document.getElementById('loc-people-tags');
   container.innerHTML = state.modalPeople.map((p, i) =>
-    `<span class="people-tag">${p}<span class="remove-tag" onclick="removePerson(${i})">&times;</span></span>`
+    `<span class="people-tag">${esc(p)}<button class="remove-tag" onclick="removePerson(${i})" aria-label="Remove ${esc(p)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`
   ).join('');
 }
 function addPerson() {
@@ -3057,9 +3274,11 @@ function renderModalTags() {
     const span = document.createElement('span');
     span.className = 'people-tag';
     span.textContent = t;
-    const rm = document.createElement('span');
+    const rm = document.createElement('button');
     rm.className = 'remove-tag';
     rm.innerHTML = '&times;';
+    rm.setAttribute('aria-label', 'Remove ' + t);
+    rm.style.cssText = 'background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;';
     rm.onclick = () => removeTag(i);
     span.appendChild(rm);
     container.appendChild(span);
@@ -3115,7 +3334,7 @@ async function saveLocation() {
   const lat = parseFloat(document.getElementById('loc-lat').value);
   const lng = parseFloat(document.getElementById('loc-lng').value);
   if (!name || isNaN(lat) || isNaN(lng)) {
-    alert('Please fill in name, latitude and longitude.');
+    showToast('Please fill in name, latitude and longitude.', 'warn');
     return;
   }
 
@@ -3153,7 +3372,7 @@ async function saveLocation() {
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
-  } catch (err) { alert('Save failed: ' + err.message); }
+  } catch (err) { showToast('Save failed: ' + err.message, 'error'); }
 }
 
 function deleteLocation() {
@@ -3173,10 +3392,13 @@ function deleteLocation() {
 }
 
 async function promptNewTrip() {
-  const name = prompt('Trip name:');
-  if (!name) return;
-  const start = prompt('Start date (YYYY-MM-DD):');
-  const end = prompt('End date (YYYY-MM-DD):');
+  const result = await showMultiPrompt([
+    { key: 'name', label: 'Trip Name', placeholder: 'e.g. Portugal Summer 2025' },
+    { key: 'start', label: 'Start Date', type: 'date' },
+    { key: 'end', label: 'End Date', type: 'date' },
+  ]);
+  if (!result || !result.name) return;
+  const { name, start, end } = result;
   try {
     const trip = mapId(await api('POST', '/trips', {
       name, startDate: start || '', endDate: end || '',
@@ -3187,7 +3409,7 @@ async function promptNewTrip() {
     populateModalTrips();
     document.getElementById('loc-trip').value = trip.id;
     populateFilterDropdowns();
-  } catch (err) { alert('Failed to create trip: ' + err.message); }
+  } catch (err) { showToast('Failed to create trip: ' + err.message, 'error'); }
 }
 
 function addPinHere() {
@@ -3201,10 +3423,13 @@ function addPinHere() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 function openPeopleManager() {
   renderPeopleManager();
-  document.getElementById('people-modal').classList.add('open');
+  const m = document.getElementById('people-modal');
+  m.classList.add('open');
+  focusModal(m);
 }
 function closePeopleManager() {
   document.getElementById('people-modal').classList.remove('open');
+  restoreFocus();
 }
 function renderPeopleManager() {
   const allPeople = {};
@@ -3221,31 +3446,38 @@ function renderPeopleManager() {
     return;
   }
   empty.style.display = 'none';
-  container.innerHTML = sorted.map(([name, count]) =>
+  container.innerHTML = sorted.map(([name, count], idx) =>
     `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--bg-tertiary);">
-      <span style="flex:1;font-size:13px;">${name}</span>
+      <span style="flex:1;font-size:13px;">${esc(name)}</span>
       <span style="font-size:11px;color:var(--text-muted);">${count} place${count>1?'s':''}</span>
-      <button class="add-small-btn" onclick="renamePerson('${name.replace(/'/g,"\\'")}')" style="border-style:solid;padding:4px 8px;">rename</button>
-      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:11px;font-family:var(--font-body);" onclick="removePersonGlobal('${name.replace(/'/g,"\\'")}')">remove</button>
+      <button class="add-small-btn" data-person-idx="${idx}" onclick="renamePerson(this.dataset.personIdx)" style="border-style:solid;padding:4px 8px;">rename</button>
+      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:11px;font-family:var(--font-body);" data-person-idx="${idx}" onclick="removePersonGlobal(this.dataset.personIdx)">remove</button>
     </div>`
   ).join('');
+  // Store names for lookup by index
+  container._personNames = sorted.map(([name]) => name);
 }
-async function removePersonGlobal(name) {
-  if (!confirm('Remove "' + name + '" from all locations?')) return;
-  const updates = [];
-  state.locations.forEach(l => {
-    if (l.people && l.people.includes(name)) {
-      l.people = l.people.filter(p => p !== name);
-      updates.push(api('PUT', '/locations/' + l.id, { people: l.people }));
-    }
-  });
-  await Promise.all(updates);
-  renderPeopleManager();
-  populateFilterDropdowns();
-  renderMarkers();
+function removePersonGlobal(idx) {
+  const name = document.getElementById('people-manager-list')._personNames?.[idx];
+  if (!name) return;
+  showConfirm('Remove "' + name + '" from all locations?', async () => {
+    const updates = [];
+    state.locations.forEach(l => {
+      if (l.people && l.people.includes(name)) {
+        l.people = l.people.filter(p => p !== name);
+        updates.push(api('PUT', '/locations/' + l.id, { people: l.people }));
+      }
+    });
+    await Promise.all(updates);
+    renderPeopleManager();
+    populateFilterDropdowns();
+    renderMarkers();
+  }, 'Remove');
 }
-async function renamePerson(oldName) {
-  const newName = prompt('Rename "' + oldName + '" to:', oldName);
+async function renamePerson(idx) {
+  const oldName = document.getElementById('people-manager-list')._personNames?.[idx];
+  if (!oldName) return;
+  const newName = await showPrompt('Rename "' + oldName + '" to:', oldName);
   if (!newName || newName === oldName) return;
   const updates = [];
   state.locations.forEach(l => {
@@ -3265,10 +3497,13 @@ async function renamePerson(oldName) {
 /* ═══════════════════════════════════════════════════════════════════════ */
 function openTripManager() {
   renderTripManager();
-  document.getElementById('trips-modal').classList.add('open');
+  const m = document.getElementById('trips-modal');
+  m.classList.add('open');
+  focusModal(m);
 }
 function closeTripManager() {
   document.getElementById('trips-modal').classList.remove('open');
+  restoreFocus();
 }
 function renderTripManager() {
   const container = document.getElementById('trips-manager-list');
@@ -3285,8 +3520,8 @@ function renderTripManager() {
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);background:var(--bg-tertiary);flex-wrap:wrap;">
       <span style="width:12px;height:12px;border-radius:50%;background:${t.color || 'var(--accent)'};flex-shrink:0;"></span>
       <div style="flex:1;min-width:120px;">
-        <div style="font-size:13px;font-weight:500;">${t.name}</div>
-        <div style="font-size:11px;color:var(--text-muted);">${dates} · ${locCount} place${locCount!==1?'s':''}</div>
+        <div style="font-size:13px;font-weight:500;">${esc(t.name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);">${esc(dates)} · ${locCount} place${locCount!==1?'s':''}</div>
       </div>
       <button class="add-small-btn" onclick="renameTrip('${t.id}')" style="border-style:solid;padding:4px 8px;">rename</button>
       <button class="add-small-btn" onclick="editTripDates('${t.id}')" style="border-style:solid;padding:4px 8px;">dates</button>
@@ -3298,7 +3533,7 @@ function renderTripManager() {
 async function renameTrip(id) {
   const trip = stateIndex.tripById.get(id);
   if (!trip) return;
-  const newName = prompt('Rename trip:', trip.name);
+  const newName = await showPrompt('Rename trip:', trip.name);
   if (!newName || newName === trip.name) return;
   trip.name = newName;
   await api('PUT', '/trips/' + id, { name: newName });
@@ -3310,13 +3545,14 @@ async function renameTrip(id) {
 async function editTripDates(id) {
   const trip = stateIndex.tripById.get(id);
   if (!trip) return;
-  const start = prompt('Start date (YYYY-MM-DD):', trip.startDate || '');
-  if (start === null) return;
-  const end = prompt('End date (YYYY-MM-DD):', trip.endDate || '');
-  if (end === null) return;
-  trip.startDate = start;
-  trip.endDate = end;
-  await api('PUT', '/trips/' + id, { startDate: start, endDate: end });
+  const result = await showMultiPrompt([
+    { key: 'start', label: 'Start Date', type: 'date', value: trip.startDate || '' },
+    { key: 'end', label: 'End Date', type: 'date', value: trip.endDate || '' },
+  ]);
+  if (!result) return;
+  trip.startDate = result.start;
+  trip.endDate = result.end;
+  await api('PUT', '/trips/' + id, { startDate: result.start, endDate: result.end });
   renderTripManager();
 }
 
@@ -3386,8 +3622,8 @@ function renderApproval() {
       `<option value="${k}" ${k === (loc.suggestedCategory || 'location') ? 'selected' : ''}>${c.emoji} ${c.label}</option>`
     ).join('');
     return `<div class="approval-card" data-loc-idx="${idx}">
-      <h3>${loc.name}</h3>
-      <div class="addr">${loc.address || 'No address'}</div>
+      <h3>${esc(loc.name)}</h3>
+      <div class="addr">${esc(loc.address || 'No address')}</div>
       <div style="margin-bottom:12px;">
         <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Category</label>
         <select class="filter-select approval-cat-select" data-approval-idx="${idx}" style="width:100%;">
@@ -3426,7 +3662,7 @@ async function approveByIndex(idx) {
     renderMarkers();
   } catch (err) {
     console.error('Approve failed:', err);
-    alert('Failed to approve: ' + err.message);
+    showToast('Failed to approve: ' + err.message, 'error');
   } finally {
     _approving = false;
   }
@@ -3511,20 +3747,13 @@ function renderStats() {
   ].map(c => `<div class="stat-card"><div class="stat-value">${c.value}</div><div class="stat-label">${c.label}</div></div>`).join('');
 
   // Per category
-  const colorMap = {
-    'var(--cat-restaurant)':'#ff6b6b','var(--cat-hotel)':'#a78bfa','var(--cat-bar)':'#fb923c',
-    'var(--cat-club)':'#e879f9','var(--cat-monument)':'#fbbf24','var(--cat-unesco)':'#f59e0b',
-    'var(--cat-park)':'#4ade80','var(--cat-stadium)':'#60a5fa','var(--cat-event)':'#f472b6',
-    'var(--cat-location)':'#94a3b8','var(--cat-airport)':'#38bdf8','var(--cat-entertainment)':'#c084fc',
-    'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
-  };
   document.getElementById('category-stats').innerHTML = Object.entries(CATEGORIES).map(([key, cat]) => {
     const cs = s.byCat[key];
     if (!cs || (cs.been + cs.bucket === 0)) return '';
     const total = cs.been + cs.bucket;
     const pct = Math.round(cs.been / total * 100);
     const catAvg = cs.ratingCount ? (cs.ratingSum / cs.ratingCount).toFixed(1) : '—';
-    const hex = colorMap[cat.color] || '#94a3b8';
+    const hex = COLOR_HEX[cat.color] || DEFAULT_HEX;
     return `<div class="cat-stat-card">
       <span class="cat-stat-emoji">${cat.emoji}</span>
       <div class="cat-stat-info">
@@ -3544,7 +3773,7 @@ function renderStats() {
     const cat = CATEGORIES[l.category] || CATEGORIES.location;
     return `<div class="top-rated-item">
       <span class="tr-emoji">${cat.emoji}</span>
-      <span class="tr-name">${l.name}</span>
+      <span class="tr-name">${esc(l.name)}</span>
       <span class="tr-rating">★ ${l.myRating}</span>
     </div>`;
   }).join('') || '<p style="color:var(--text-muted);font-size:13px;">No ratings yet</p>';
@@ -3552,7 +3781,7 @@ function renderStats() {
   // People leaderboard
   const peopleRanked = Object.entries(s.peopleCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
   document.getElementById('people-leaderboard').innerHTML = peopleRanked.map(([name, count], i) =>
-    `<div class="people-row"><span class="rank">${i+1}</span><span class="name">${name}</span><span class="count">${count} places</span></div>`
+    `<div class="people-row"><span class="rank">${i+1}</span><span class="name">${esc(name)}</span><span class="count">${count} places</span></div>`
   ).join('') || '<p style="color:var(--text-muted);font-size:13px;">No travel companions recorded</p>';
 
   // Collections stats
@@ -3565,7 +3794,7 @@ function renderStats() {
       return `<div class="cat-stat-card">
         <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
         <div class="cat-stat-info">
-          <div class="cat-stat-name">${col.name}</div>
+          <div class="cat-stat-name">${esc(col.name)}</div>
           <div class="cat-stat-counts">${cs.visited} / ${total} · ${pct}%</div>
           <div class="cat-stat-bar"><div class="cat-stat-bar-fill" style="width:${pct}%;background:var(--accent);"></div></div>
         </div>
@@ -3669,15 +3898,15 @@ function renderChronology() {
     }
     const cat = CATEGORIES[entry.loc.category] || CATEGORIES.location;
     const trip = stateIndex.tripById.get(entry.loc.tripId);
-    const people = (entry.loc.people || []).join(', ');
+    const people = (entry.loc.people || []).map(p => esc(p)).join(', ');
     html += `<div class="timeline-item" onclick="openEditModal('${entry.loc.id}')">
       <div class="ti-top">
         <span class="ti-emoji">${cat.emoji}</span>
-        <span class="ti-name">${entry.loc.name}</span>
+        <span class="ti-name">${esc(entry.loc.name)}</span>
         <span class="ti-date">${formatDate(entry.date)}</span>
       </div>
       <div class="ti-bottom">
-        ${trip ? `<span class="ti-trip">🧳 ${trip.name}</span>` : ''}
+        ${trip ? `<span class="ti-trip">🧳 ${esc(trip.name)}</span>` : ''}
         ${people ? `<span class="ti-people">👥 ${people}</span>` : ''}
       </div>
     </div>`;
@@ -3703,7 +3932,7 @@ function populateChronoFilters() {
   const tripSel = document.getElementById('chrono-trip');
   const currentTrip = tripSel.value;
   tripSel.innerHTML = '<option value="">All Trips</option>' +
-    state.trips.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   tripSel.value = currentTrip;
 }
 
@@ -3730,7 +3959,7 @@ function populateTripSelector() {
   sel.innerHTML = '<option value="">— Select a trip —</option>' +
     state.trips.map(t => {
       const count = (stateIndex.locationsByTrip.get(t.id) || []).length;
-      return `<option value="${t.id}">${t.name} (${count})</option>`;
+      return `<option value="${t.id}">${esc(t.name)} (${count})</option>`;
     }).join('');
 }
 
@@ -3907,7 +4136,7 @@ function renderTripDetail(trip, tripLocs) {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <span style="width:14px;height:14px;border-radius:50%;background:${trip.color || 'var(--accent)'};flex-shrink:0;"></span>
       <div>
-        <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${trip.name}</h3>
+        <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${esc(trip.name)}</h3>
         <div style="font-size:12px;color:var(--text-muted);">${dates.map(d => formatDate(d)).join(' → ') || 'No dates set'}${duration ? ' · ' + duration : ''}</div>
       </div>
     </div>
@@ -3930,7 +4159,7 @@ function renderTripDetail(trip, tripLocs) {
   // People
   if (allPeople.size > 0) {
     html += `<div class="trip-people-section"><h4>Traveled With</h4><div class="people-tags">`;
-    allPeople.forEach(p => { html += `<span class="people-tag">${p}</span>`; });
+    allPeople.forEach(p => { html += `<span class="people-tag">${esc(p)}</span>`; });
     html += `</div></div>`;
   }
 
@@ -3947,7 +4176,7 @@ function renderTripDetail(trip, tripLocs) {
       <div class="tl-num">${i + 1}</div>
       <span style="font-size:16px;">${cat.emoji}</span>
       <div class="tl-info">
-        <div class="tl-name">${loc.name}</div>
+        <div class="tl-name">${esc(loc.name)}</div>
         <div class="tl-meta">${visitDate ? formatDate(visitDate) : 'No date'}${price}${rating}</div>
       </div>
       <div class="tl-move" onclick="event.stopPropagation()">
@@ -4009,7 +4238,7 @@ function renderCollections() {
       <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
       <div class="cat-stat-info" style="flex:1;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
-          <div class="cat-stat-name">${col.name}</div>
+          <div class="cat-stat-name">${esc(col.name)}</div>
           <div style="display:flex;gap:4px;">
             <button class="add-small-btn" onclick="event.stopPropagation();editCollection('${col.id}')" style="border-style:solid;padding:2px 6px;font-size:10px;">edit</button>
             <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:10px;font-family:var(--font-body);" onclick="event.stopPropagation();deleteCollection('${col.id}')">×</button>
@@ -4035,7 +4264,7 @@ function viewCollection(colId) {
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
       <span style="font-size:32px;">${col.emoji || '📋'}</span>
       <div>
-        <h2 style="font-family:var(--font-display);font-size:22px;margin:0;">${col.name}</h2>
+        <h2 style="font-family:var(--font-display);font-size:22px;margin:0;">${esc(col.name)}</h2>
         <p style="font-size:13px;color:var(--text-muted);">${col.description || ''}</p>
       </div>
     </div>
@@ -4089,7 +4318,7 @@ function viewCollection(colId) {
       return `<div class="cat-stat-card" style="cursor:pointer;" onclick="switchView('map-view');setTimeout(()=>openEditModal('${loc.id}'),300)">
         <span class="cat-stat-emoji">${cat.emoji}</span>
         <div class="cat-stat-info">
-          <div class="cat-stat-name">${statusIcon} ${loc.name}</div>
+          <div class="cat-stat-name">${statusIcon} ${esc(loc.name)}</div>
           <div class="cat-stat-counts">${cat.label}${rating} · ${loc.address || ''}</div>
         </div>
       </div>`;
@@ -4106,7 +4335,7 @@ function renderColAddItems(items) {
   return items.map(l => {
     const c = CATEGORIES[l.category] || CATEGORIES.location;
     return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'">
-      <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${l.name} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
+      <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${esc(l.name)} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
     </label>`;
   }).join('');
 }
@@ -4127,7 +4356,7 @@ function filterColAddList() {
 
 async function bulkAddToCollection(colId) {
   const checkboxes = document.querySelectorAll('.col-bulk-cb:checked');
-  if (checkboxes.length === 0) { alert('Select at least one location.'); return; }
+  if (checkboxes.length === 0) { showToast('Select at least one location.', 'warn'); return; }
   const updates = [];
   checkboxes.forEach(cb => {
     const loc = state.locations.find(l => l.id === cb.value);
@@ -4173,8 +4402,8 @@ async function searchForCollection(colId) {
         return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);margin-bottom:4px;">
           <span style="font-size:18px;">${cat.emoji}</span>
           <div style="flex:1;min-width:0;">
-            <div style="font-size:13px;font-weight:500;">${r.name}</div>
-            <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.address}</div>
+            <div style="font-size:13px;font-weight:500;">${esc(r.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
           </div>
           <button class="btn btn-primary" style="padding:5px 10px;font-size:11px;flex-shrink:0;"
             onclick="addSearchResultToCollection('${colId}', ${i})">+ Add</button>
@@ -4183,7 +4412,7 @@ async function searchForCollection(colId) {
     } catch { resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed.</span>'; }
   } else {
     // Multi search — batch geocode all
-    if (queries.length > 50) { alert('Max 50 places at a time.'); return; }
+    if (queries.length > 50) { showToast('Max 50 places at a time.', 'warn'); return; }
     resultsDiv.innerHTML = '';
     statusEl.textContent = `Geocoding 0/${queries.length}...`;
     const newLocs = [];
@@ -4238,11 +4467,11 @@ async function addSearchResultToCollection(colId, idx) {
     state.locations.push(loc);
     rebuildIndexes();
     viewCollection(colId);
-  } catch (err) { alert('Failed to add: ' + err.message); }
+  } catch (err) { showToast('Failed to add: ' + err.message, 'error'); }
 }
 
 async function openNewCollectionModal() {
-  const name = prompt('Collection name (e.g., "UNESCO World Heritage Sites"):');
+  const name = await showPrompt('Collection name:', '', { placeholder: 'e.g. UNESCO World Heritage Sites' });
   if (!name) return;
 
   try {
@@ -4250,21 +4479,24 @@ async function openNewCollectionModal() {
     state.collections.push(col);
     rebuildIndexes();
     renderCollections();
-  } catch (err) { alert('Failed to create collection: ' + err.message); }
+  } catch (err) { showToast('Failed to create collection: ' + err.message, 'error'); }
 }
 
 async function editCollection(id) {
   const col = stateIndex.collectionById.get(id);
   if (!col) return;
-  const name = prompt('Collection name:', col.name);
-  if (!name) return;
-  const emoji = prompt('Emoji:', col.emoji || '🏆') || '🏆';
-  const desc = prompt('Description:', col.description || '') || '';
-  const totalStr = prompt('Total items:', col.totalItems || '');
-  const totalItems = totalStr ? parseInt(totalStr) : null;
+  const result = await showMultiPrompt([
+    { key: 'name', label: 'Collection Name', value: col.name },
+    { key: 'emoji', label: 'Emoji', value: col.emoji || '🏆', placeholder: '🏆' },
+    { key: 'desc', label: 'Description', value: col.description || '' },
+    { key: 'total', label: 'Total Items (optional)', type: 'number', value: col.totalItems || '' },
+  ]);
+  if (!result || !result.name) return;
+  const { name, emoji, desc } = result;
+  const totalItems = result.total ? parseInt(result.total) : null;
 
-  col.name = name; col.emoji = emoji; col.description = desc; col.totalItems = totalItems;
-  await api('PUT', '/collections/' + id, { name, emoji, description: desc, totalItems });
+  col.name = name; col.emoji = emoji || '🏆'; col.description = desc || ''; col.totalItems = totalItems;
+  await api('PUT', '/collections/' + id, { name, emoji: emoji || '🏆', description: desc || '', totalItems });
   renderCollections();
 }
 
@@ -4294,17 +4526,17 @@ function renderModalCollections() {
   container.innerHTML = locCols.map((colId, i) => {
     const col = stateIndex.collectionById.get(colId);
     if (!col) return '';
-    return `<span class="people-tag">${col.emoji || '📋'} ${col.name}<span class="remove-tag" onclick="removeCollectionFromLoc(${i})">&times;</span></span>`;
+    return `<span class="people-tag">${col.emoji || '📋'} ${esc(col.name)}<button class="remove-tag" onclick="removeCollectionFromLoc(${i})" aria-label="Remove ${esc(col.name)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`;
   }).join('');
 
   const sel = document.getElementById('loc-collection-select');
   sel.innerHTML = '<option value="">Add to collection...</option>' +
     state.collections.filter(c => !locCols.includes(c.id))
-      .map(c => `<option value="${c.id}">${c.emoji || '📋'} ${c.name}</option>`).join('');
+      .map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
 }
 
 async function createCollectionFromModal() {
-  const name = prompt('Collection name:');
+  const name = await showPrompt('Collection name:', '', { placeholder: 'e.g. Michelin Star Restaurants' });
   if (!name) return;
   try {
     const col = mapId(await api('POST', '/collections', { name, emoji: '🏆', description: '', totalItems: null }));
@@ -4312,7 +4544,7 @@ async function createCollectionFromModal() {
     rebuildIndexes();
     state.modalCollections.push(col.id);
     renderModalCollections();
-  } catch (err) { alert('Failed: ' + err.message); }
+  } catch (err) { showToast('Failed: ' + err.message, 'error'); }
 }
 
 function addCollectionToLoc() {
@@ -4466,13 +4698,13 @@ async function generateGuide() {
     // Discover mode: search Nominatim for POIs near the region
     locs = await discoverPlaces(region, maxTotal);
     if (!locs || locs.length === 0) {
-      alert('No places found for this region. Try a different search term.');
+      showToast('No places found for this region. Try a different search term.', 'warn');
       return;
     }
   } else {
     locs = getGuideLocations();
     if (locs.length === 0) {
-      alert('No locations match your criteria. Try a different region or lower thresholds.');
+      showToast('No locations match your criteria. Try a different region or lower thresholds.', 'warn');
       return;
     }
   }
@@ -4755,7 +4987,7 @@ function renderGuideOutput(title, days) {
         <div class="gs-num">${i + 1}</div>
         <span class="gs-emoji">${cat.emoji}</span>
         <div class="gs-info">
-          <div class="gs-name">${status} ${loc.name} ${driveTag}</div>
+          <div class="gs-name">${status} ${esc(loc.name)} ${driveTag}</div>
           <div class="gs-meta">${cat.label}${price}${tags ? ' · ' + tags : ''} · ${loc.address || ''}</div>
         </div>
         <div class="gs-ratings">
@@ -4809,7 +5041,7 @@ function renderPlannerMap(daysList) {
           iconSize: [38, 38], iconAnchor: [19, 19],
         })
       });
-      marker.bindTooltip(`<strong>Day ${dayIdx+1}</strong>: ${loc.name}`, { direction: 'top' });
+      marker.bindTooltip(`<strong>Day ${dayIdx+1}</strong>: ${esc(loc.name)}`, { direction: 'top' });
       marker.addTo(_plannerMap);
       bounds.extend([loc.lat, loc.lng]);
     });
@@ -4866,7 +5098,7 @@ function exportGuideKML() {
     kml += `<Folder><name>Day ${i + 1}</name>\n`;
     dayLocs.forEach(loc => {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
-      kml += `<Placemark><name>${loc.name}</name><description>${cat.label} ${loc.address || ''}</description>`;
+      kml += `<Placemark><name>${esc(loc.name)}</name><description>${esc(cat.label)} ${esc(loc.address || '')}</description>`;
       kml += `<Point><coordinates>${loc.lng},${loc.lat},0</coordinates></Point></Placemark>\n`;
     });
     kml += `</Folder>\n`;
@@ -5067,7 +5299,7 @@ function showRegionLocations(idx, regionName, country) {
     const rating = l.myRating ? ` · ★${l.myRating}` : '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">
       <span>${cat.emoji}</span>
-      <span style="flex:1;">${l.name}</span>
+      <span style="flex:1;">${esc(l.name)}</span>
       <span style="color:var(--text-muted);">${cat.label}${rating}</span>
     </div>`;
   }).join('');
@@ -5096,7 +5328,9 @@ function interpolateColor(c1, c2, t) {
 /* ACCOUNT & BACKUPS                                                     */
 /* ═══════════════════════════════════════════════════════════════════════ */
 async function openAccountModal() {
-  document.getElementById('account-modal').classList.add('open');
+  const _am = document.getElementById('account-modal');
+  _am.classList.add('open');
+  focusModal(_am);
   document.getElementById('account-username').textContent = document.getElementById('display-username').textContent;
   document.getElementById('account-stats').textContent =
     `${state.locations.length} locations · ${state.trips.length} trips · ${state.collections.length} collections`;
@@ -5260,7 +5494,7 @@ async function bulkGoogleSync() {
 
 async function syncSingleLocation(locId) {
   const enabled = await checkPlacesEnabled();
-  if (!enabled) { alert('Google Places API not configured. Add GOOGLE_PLACES_KEY in Render env vars.'); return; }
+  if (!enabled) { showToast('Google Places API not configured. Add API key in Account settings.', 'warn'); return; }
   const loc = state.locations.find(l => (l.id || l._id) === locId);
   if (!loc) return;
   try {
@@ -5278,35 +5512,37 @@ async function syncSingleLocation(locId) {
       map.closePopup();
       renderMarkers();
     } else {
-      alert('Place not found on Google Maps.');
+      showToast('Place not found on Google Maps.', 'warn');
     }
-  } catch (err) { alert('Sync failed: ' + err.message); }
+  } catch (err) { showToast('Sync failed: ' + err.message, 'error'); }
 }
 
 async function savePlacesKey() {
   const input = document.getElementById('places-key-input');
   const key = input.value.trim();
-  if (!key || key.startsWith('••')) { alert('Enter a valid API key.'); return; }
+  if (!key || key.startsWith('••')) { showToast('Enter a valid API key.', 'warn'); return; }
   try {
     await api('PUT', '/settings', { googlePlacesKey: key });
     _placesEnabled = null; // reset cache
     showToast('API key saved. Google Places search is now active.');
     openAccountModal(); // refresh
-  } catch (err) { alert('Failed: ' + err.message); }
+  } catch (err) { showToast('Failed: ' + err.message, 'error'); }
 }
 
-async function removePlacesKey() {
-  if (!confirm('Remove your Google Places API key?')) return;
-  try {
-    await api('PUT', '/settings', { googlePlacesKey: null });
-    _placesEnabled = null;
-    showToast('API key removed. Search will use OpenStreetMap.');
-    openAccountModal();
-  } catch (err) { alert('Failed: ' + err.message); }
+function removePlacesKey() {
+  showConfirm('Remove your Google Places API key?', async () => {
+    try {
+      await api('PUT', '/settings', { googlePlacesKey: null });
+      _placesEnabled = null;
+      showToast('API key removed. Search will use OpenStreetMap.');
+      openAccountModal();
+    } catch (err) { showToast('Failed: ' + err.message, 'error'); }
+  }, 'Remove');
 }
 
 function closeAccountModal() {
   document.getElementById('account-modal').classList.remove('open');
+  restoreFocus();
 }
 
 function downloadLatestBackup() {
@@ -5317,26 +5553,26 @@ function downloadBackup(filename) {
   window.open('/api/admin/backups/' + filename, '_blank');
 }
 
-async function restoreBackup(filename) {
-  if (!confirm('Restore this backup? This will ADD all locations from the backup. Existing data is not deleted.')) return;
-  try {
-    const res = await fetch('/api/admin/backups/' + filename, { headers: apiHeaders() });
-    const data = await res.json();
-    // Use the same import flow — set as pending and run confirmImport
-    state.pendingImport = (data.locations || []).map(item => ({
-      ...item,
-      _restoreTripId: item.tripId,
-      _restoreCollections: item.collections || [],
-      _isFullRestore: true,
-    }));
-    state.pendingRestoreTrips = data.trips || [];
-    state.pendingRestoreCollections = data.collections || [];
-    closeAccountModal();
-    switchView('import-view');
-    showImportPreview(state.pendingImport);
-  } catch (err) {
-    alert('Restore failed: ' + err.message);
-  }
+function restoreBackup(filename) {
+  showConfirm('Restore this backup? This will ADD all locations from the backup. Existing data is not deleted.', async () => {
+    try {
+      const res = await fetch('/api/admin/backups/' + filename, { headers: apiHeaders() });
+      const data = await res.json();
+      state.pendingImport = (data.locations || []).map(item => ({
+        ...item,
+        _restoreTripId: item.tripId,
+        _restoreCollections: item.collections || [],
+        _isFullRestore: true,
+      }));
+      state.pendingRestoreTrips = data.trips || [];
+      state.pendingRestoreCollections = data.collections || [];
+      closeAccountModal();
+      switchView('import-view');
+      showImportPreview(state.pendingImport);
+    } catch (err) {
+      showToast('Restore failed: ' + err.message, 'error');
+    }
+  }, 'Restore');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -5362,7 +5598,7 @@ async function handleFiles(files) {
     const ext = f.name.split('.').pop().toLowerCase();
     return ['csv','json','geojson','kml','kmz'].includes(ext);
   });
-  if (fileList.length === 0) { alert('No supported files found. Drop CSV, JSON, KML, or GeoJSON files.'); return; }
+  if (fileList.length === 0) { showToast('No supported files found. Drop CSV, JSON, KML, or GeoJSON files.', 'warn'); return; }
 
   const allParsed = [];
   for (const file of fileList) {
@@ -5397,7 +5633,7 @@ async function handleFiles(files) {
     }
   }
 
-  if (allParsed.length === 0) { alert('No locations found in the imported files.'); return; }
+  if (allParsed.length === 0) { showToast('No locations found in the imported files.', 'warn'); return; }
   console.log(`Imported ${allParsed.length} locations from ${fileList.length} file(s)`);
   state.pendingImport = allParsed;
   showImportPreview(allParsed);
@@ -6045,11 +6281,11 @@ function showImportPreview(items) {
     const visits = (item.visits || []).length;
     const isDup = !!item._duplicate;
     const rowStyle = isDup ? 'background:rgba(251,191,36,0.08);' : '';
-    const dupLabel = isDup ? `<span style="color:var(--accent);font-size:10px;" title="Matches: ${(item._duplicate.name||'').replace(/"/g,'&quot;')}">⚠️dup</span>` : '';
+    const dupLabel = isDup ? `<span style="color:var(--accent);font-size:10px;" title="Matches: ${esc(item._duplicate.name||'')}">⚠️dup</span>` : '';
     return `<tr style="${rowStyle}">
       <td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
         <input type="checkbox" class="import-row-cb" data-idx="${idx}" checked ${isDup ? '' : ''}>
-        ${item.name} ${dupLabel}
+        ${esc(item.name)} ${dupLabel}
       </label></td>
       <td>${cat.emoji} ${cat.label}</td>
       <td>${item.lat?.toFixed(4) || '?'}</td>
@@ -6107,7 +6343,7 @@ async function confirmImport() {
   state.pendingImport.forEach(item => delete item._duplicate);
 
   const count = state.pendingImport.length;
-  if (count === 0) { alert('No locations selected.'); return; }
+  if (count === 0) { showToast('No locations selected.', 'warn'); return; }
   const isFullRestore = state.pendingImport[0]?._isFullRestore;
   const autoApprove = document.getElementById('import-auto-approve')?.checked || false;
 
@@ -6188,7 +6424,7 @@ async function confirmImport() {
         syncImportedLocations(toSync);
       }
     }
-  } catch (err) { alert('Import failed: ' + err.message); }
+  } catch (err) { showToast('Import failed: ' + err.message, 'error'); }
 }
 
 async function simulateGoogleSync() {
@@ -6217,7 +6453,7 @@ async function simulateGoogleSync() {
     updateApprovalBadge();
     renderApproval();
     showToast('Synced 3 new locations — review in approval queue');
-  } catch (err) { alert('Sync failed: ' + err.message); }
+  } catch (err) { showToast('Sync failed: ' + err.message, 'error'); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -6305,6 +6541,16 @@ function applyTheme(name) {
   document.getElementById('theme-toggle').textContent = theme.icon;
   currentTheme = name;
   localStorage.setItem('hm_theme', name);
+
+  // Switch map tile layer to match theme
+  if (map && window._tileLayers) {
+    const target = name === 'parchment' ? window._tileLayers.light : window._tileLayers.dark;
+    if (window._activeBaseLayer !== target) {
+      map.removeLayer(window._activeBaseLayer);
+      target.addTo(map);
+      window._activeBaseLayer = target;
+    }
+  }
 }
 
 function cycleTheme() {
@@ -6339,6 +6585,16 @@ async function startApp(username) {
     document.getElementById('sidebar').classList.add('collapsed');
     document.getElementById('sidebar-toggle').textContent = '▶';
   }
+
+  // Restore view from URL hash
+  const hashView = HASH_TO_VIEW[location.hash.slice(1)];
+  if (hashView) switchView(hashView, true);
+
+  // Listen for back/forward navigation
+  window.addEventListener('hashchange', () => {
+    const view = HASH_TO_VIEW[location.hash.slice(1)];
+    if (view) switchView(view, true);
+  });
 }
 
 // Parallax mouse effect on login screen
