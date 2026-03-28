@@ -379,6 +379,32 @@ describe('Import parsers', () => {
     // Must cap at 500 to prevent massive imports
     expect(indexHtml).toContain('.slice(0, 500)');
   });
+
+  test('extractPlaceId exists and handles known Google Maps URL formats', () => {
+    expect(indexHtml).toContain('function extractPlaceId');
+    // Supports place_id=... and place_id:... formats
+    expect(indexHtml).toContain('place_id[=:]');
+    // Supports ftid format
+    expect(indexHtml).toContain('ftid=');
+  });
+
+  test('parseGoogleSavedPlaces extracts Place ID from google_maps_url', () => {
+    expect(indexHtml).toContain('extractPlaceId(googleUrl)');
+    expect(indexHtml).toContain('result._googlePlaceId = placeId');
+  });
+
+  test('getGoogleMapsUrl builds URL from available identifiers', () => {
+    expect(indexHtml).toContain('function getGoogleMapsUrl');
+    // Prefers _googleUrl, falls back to _googlePlaceId, then lat/lng
+    expect(indexHtml).toContain('loc._googleUrl');
+    expect(indexHtml).toContain('loc._googlePlaceId');
+    expect(indexHtml).toContain('api=1&query=');
+  });
+
+  test('Google Maps link shown in popup and edit modal', () => {
+    expect(indexHtml).toContain('loc-google-maps-link');
+    expect(indexHtml).toContain('Open in Google Maps');
+  });
 });
 
 // ─── Frontend invariants (documented, not runtime-testable without e2e) ──

@@ -16,5 +16,6 @@ users.ensureIndex({ fieldName: 'googleId', sparse: true });
 locations.ensureIndex({ fieldName: 'userId' });
 trips.ensureIndex({ fieldName: 'userId' });
 collections.ensureIndex({ fieldName: 'userId' });
+auditLog.ensureIndex({ fieldName: 'timestamp' });
 
 module.exports = { users, locations, trips, collections, auditLog };

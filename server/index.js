@@ -11,9 +11,26 @@ const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase();
+
+// ── Structured logger ────────────────────────────────────
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const _logThreshold = LOG_LEVELS[LOG_LEVEL] ?? 1;
+
+function log(level, event, data = {}) {
+  if ((LOG_LEVELS[level] ?? 1) < _logThreshold) return;
+  const entry = { ts: new Date().toISOString(), level, event, ...data };
+  // Mask sensitive fields
+  if (entry.key) entry.key = '••••' + String(entry.key).slice(-4);
+  if (entry.password) entry.password = '[redacted]';
+  const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  out(JSON.stringify(entry));
+}
+
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
-const JWT_SECRET = process.env.JWT_SECRET || 'history-map-dev-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'history-map-dev-secret-change-me');
+if (!JWT_SECRET) { console.error('FATAL: JWT_SECRET env var required in production'); process.exit(1); }
 const GOOGLE_PLACES_KEY = process.env.GOOGLE_PLACES_KEY || '';
 // Comma-separated list of allowed emails. Empty = anyone can register/sign in.
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
@@ -29,6 +46,8 @@ function audit(event, details, req) {
     timestamp: new Date().toISOString(),
   };
   db.auditLog.insert(entry).catch(() => {});
+  const level = event.includes('fail') || event.includes('block') ? 'warn' : 'info';
+  log(level, 'audit_' + event, { ...details, ip: entry.ip });
 }
 
 // Middleware
@@ -38,17 +57,41 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Required for Google Sign-In
 }));
-app.use(cors());
+app.use(cors(process.env.ALLOWED_ORIGINS ? { origin: process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) } : undefined));
 app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 15 }));
+app.use('/api/admin', rateLimit({ windowMs: 60 * 60 * 1000, max: 30 }));
 app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 200 }));
+
+// Request logging
+app.use('/api', (req, res, next) => {
+  const start = Date.now();
+  const orig = res.json.bind(res);
+  res.json = function (body) {
+    const ms = Date.now() - start;
+    const userId = req.user?.id;
+    log('info', 'http_request', {
+      method: req.method, path: req.path, status: res.statusCode,
+      ms, userId, ip: req.headers['x-forwarded-for'] || req.ip,
+    });
+    return orig(body);
+  };
+  next();
+});
 
 // Static files
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Auth middleware ──────────────────────────────────────
+function requireAdmin(req, res, next) {
+  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  next();
+}
+
 function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'No token' });
@@ -147,17 +190,14 @@ app.post('/api/auth/google', async (req, res) => {
     audit('google_login_success', { email: user.username }, req);
     res.json({ token, username: user.username, picture: user.picture });
   } catch (err) {
-    console.error('Google auth error:', err.message);
+    log('error', 'google_auth_error', { error: err.message });
     audit('google_login_failed', { reason: err.message }, req);
     res.status(401).json({ error: 'Google authentication failed' });
   }
 });
 
 // ── Merge accounts (admin only) ───────────────────────────
-app.post('/api/admin/merge-accounts', auth, async (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
   try {
     const { fromUsername, toUsername } = req.body;
     if (!fromUsername || !toUsername) return res.status(400).json({ error: 'fromUsername and toUsername required' });
@@ -191,10 +231,7 @@ app.post('/api/admin/merge-accounts', auth, async (req, res) => {
 });
 
 // ── Reset password (admin only) ───────────────────────────
-app.post('/api/admin/reset-password', auth, async (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+app.post('/api/admin/reset-password', auth, requireAdmin, async (req, res) => {
   try {
     const { username, newPassword } = req.body;
     if (!username || !newPassword) return res.status(400).json({ error: 'username and newPassword required' });
@@ -210,20 +247,14 @@ app.post('/api/admin/reset-password', auth, async (req, res) => {
 });
 
 // ── List users (admin only) ──────────────────────────────
-app.get('/api/admin/users', auth, async (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+app.get('/api/admin/users', auth, requireAdmin, async (req, res) => {
   const users = await db.users.find({});
   res.json(users.map(u => ({ _id: u._id, username: u.username, googleId: u.googleId || null, createdAt: u.createdAt })));
 });
 
 // ── Audit log (admin only) ────────────────────────────────
-app.get('/api/audit', auth, async (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
-  const limit = parseInt(req.query.limit) || 100;
+app.get('/api/audit', auth, requireAdmin, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, 10000);
   const logs = await db.auditLog.find({}).sort({ timestamp: -1 }).limit(limit);
   res.json(logs);
 });
@@ -234,10 +265,21 @@ app.get('/api/locations', auth, async (req, res) => {
   res.json(locs);
 });
 
+function validateLocation(body) {
+  const { name, lat, lng } = body;
+  if (!name || typeof name !== 'string') return 'Name required';
+  if (typeof lat !== 'number' || isNaN(lat) || lat < -90 || lat > 90) return 'Invalid latitude';
+  if (typeof lng !== 'number' || isNaN(lng) || lng < -180 || lng > 180) return 'Invalid longitude';
+  return null;
+}
+
 app.post('/api/locations', auth, async (req, res) => {
+  const err = validateLocation(req.body);
+  if (err) return res.status(400).json({ error: err });
   const loc = { ...req.body, userId: req.user.id, updatedAt: new Date().toISOString() };
   delete loc._id; // let nedb assign
   const saved = await db.locations.insert(loc);
+  log('info', 'db_insert', { table: 'locations', id: saved._id, name: saved.name, userId: req.user.id });
   res.json(saved);
 });
 
@@ -251,12 +293,14 @@ app.put('/api/locations/:id', auth, async (req, res) => {
   );
   if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.locations.findOne({ _id: req.params.id });
+  log('info', 'db_update', { table: 'locations', id: req.params.id, fields: Object.keys(updates), userId: req.user.id });
   res.json(updated);
 });
 
 app.delete('/api/locations/:id', auth, async (req, res) => {
   const count = await db.locations.remove({ _id: req.params.id, userId: req.user.id });
   if (count === 0) return res.status(404).json({ error: 'Not found' });
+  log('info', 'db_remove', { table: 'locations', id: req.params.id, userId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -264,9 +308,12 @@ app.delete('/api/locations/:id', auth, async (req, res) => {
 app.post('/api/locations/bulk', auth, async (req, res) => {
   const { locations: locs } = req.body;
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
-  const toInsert = locs.map(l => ({ ...l, userId: req.user.id, updatedAt: new Date().toISOString() }));
+  const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
+  if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
+  const toInsert = valid.map(l => ({ ...l, userId: req.user.id, updatedAt: new Date().toISOString() }));
   toInsert.forEach(l => delete l._id);
   const saved = await db.locations.insert(toInsert);
+  log('info', 'db_bulk_insert', { table: 'locations', count: saved.length, skipped: locs.length - valid.length, userId: req.user.id });
   res.json(saved);
 });
 
@@ -280,6 +327,7 @@ app.post('/api/trips', auth, async (req, res) => {
   const trip = { ...req.body, userId: req.user.id };
   delete trip._id;
   const saved = await db.trips.insert(trip);
+  log('info', 'db_insert', { table: 'trips', id: saved._id, name: saved.name, userId: req.user.id });
   res.json(saved);
 });
 
@@ -287,13 +335,17 @@ app.put('/api/trips/:id', auth, async (req, res) => {
   const updates = { ...req.body };
   delete updates._id;
   delete updates.userId;
-  await db.trips.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  const count = await db.trips.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.trips.findOne({ _id: req.params.id });
+  log('info', 'db_update', { table: 'trips', id: req.params.id, fields: Object.keys(updates), userId: req.user.id });
   res.json(updated);
 });
 
 app.delete('/api/trips/:id', auth, async (req, res) => {
-  await db.trips.remove({ _id: req.params.id, userId: req.user.id });
+  const count = await db.trips.remove({ _id: req.params.id, userId: req.user.id });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
+  log('info', 'db_remove', { table: 'trips', id: req.params.id, userId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -308,9 +360,10 @@ app.post('/api/collections', auth, async (req, res) => {
     const col = { ...req.body, userId: req.user.id };
     delete col._id;
     const saved = await db.collections.insert(col);
+    log('info', 'db_insert', { table: 'collections', id: saved._id, name: saved.name, userId: req.user.id });
     res.json(saved);
   } catch (err) {
-    console.error('Create collection error:', err);
+    log('error', 'db_insert_error', { table: 'collections', error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Failed to create collection: ' + err.message });
   }
 });
@@ -319,13 +372,17 @@ app.put('/api/collections/:id', auth, async (req, res) => {
   const updates = { ...req.body };
   delete updates._id;
   delete updates.userId;
-  await db.collections.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  const count = await db.collections.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.collections.findOne({ _id: req.params.id });
+  log('info', 'db_update', { table: 'collections', id: req.params.id, fields: Object.keys(updates), userId: req.user.id });
   res.json(updated);
 });
 
 app.delete('/api/collections/:id', auth, async (req, res) => {
-  await db.collections.remove({ _id: req.params.id, userId: req.user.id });
+  const count = await db.collections.remove({ _id: req.params.id, userId: req.user.id });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
+  log('info', 'db_remove', { table: 'collections', id: req.params.id, userId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -336,6 +393,7 @@ app.post('/api/collections/bulk', auth, async (req, res) => {
   const toInsert = cols.map(c => ({ ...c, userId: req.user.id }));
   toInsert.forEach(c => delete c._id);
   const saved = await db.collections.insert(toInsert);
+  log('info', 'db_bulk_insert', { table: 'collections', count: saved.length, userId: req.user.id });
   res.json(saved);
 });
 
@@ -359,20 +417,20 @@ app.get('/api/admin1-boundaries', async (req, res) => {
       }
     }
 
-    console.log('Fetching admin-1 boundaries from Natural Earth...');
+    log('info', 'admin1_fetch_start');
     let geojson = null;
     for (const url of NE_ADMIN1_URLS) {
       try {
-        console.log('Trying:', url.substring(0, 60) + '...');
+        log('debug', 'admin1_fetch_try', { url: url.substring(0, 80) });
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 60000);
         const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeout);
         if (!response.ok) continue;
         geojson = await response.json();
-        console.log(`Got ${geojson.features?.length || 0} features`);
+        log('info', 'admin1_fetch_ok', { features: geojson.features?.length || 0 });
         break;
-      } catch (e) { console.warn('URL failed:', e.message); }
+      } catch (e) { log('warn', 'admin1_fetch_fail', { error: e.message }); }
     }
     if (!geojson) throw new Error('All sources failed');
 
@@ -392,10 +450,10 @@ app.get('/api/admin1-boundaries', async (req, res) => {
     };
 
     fs.writeFileSync(ADMIN1_CACHE, JSON.stringify(simplified));
-    console.log(`Cached ${simplified.features.length} admin-1 regions`);
+    log('info', 'admin1_cached', { regions: simplified.features.length });
     res.json(simplified);
   } catch (err) {
-    console.error('Admin-1 fetch error:', err.message);
+    log('error', 'admin1_fetch_error', { error: err.message });
     // Try serving stale cache
     if (fs.existsSync(ADMIN1_CACHE)) {
       res.setHeader('Content-Type', 'application/json');
@@ -465,9 +523,12 @@ app.get('/api/places/search', auth, async (req, res) => {
     if (!q) return res.status(400).json({ error: 'Query required' });
     let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${placesKey}`;
     if (lat && lng) url += `&location=${lat},${lng}&radius=50000`;
+    const _t0 = Date.now();
     const response = await fetch(url);
     const data = await response.json();
+    log('info', 'places_api_call', { endpoint: 'textsearch', query: q, status: data.status, results: (data.results || []).length, ms: Date.now() - _t0, userId: req.user.id });
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      log('warn', 'places_api_error', { endpoint: 'textsearch', status: data.status, error: data.error_message, userId: req.user.id });
       return res.status(502).json({ error: 'Places API: ' + data.status });
     }
     res.json((data.results || []).slice(0, 10).map(p => ({
@@ -494,8 +555,10 @@ app.post('/api/places/sync', auth, async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Name required' });
     let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${placesKey}`;
     if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
+    const _t0 = Date.now();
     const response = await fetch(url);
     const data = await response.json();
+    log('info', 'places_api_call', { endpoint: 'findplace', input: name, status: data.status, found: !!(data.candidates?.length), ms: Date.now() - _t0, userId: req.user.id });
     if (data.status !== 'OK' || !data.candidates?.length) {
       return res.json({ found: false });
     }
@@ -524,13 +587,19 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
   try {
     const { locations } = req.body;
     if (!Array.isArray(locations)) return res.status(400).json({ error: 'Array required' });
+    const batch = locations.slice(0, 50); // Cap at 50 per request
+    const batchStart = Date.now();
+    log('info', 'bulk_sync_start', { count: batch.length, userId: req.user.id });
     const results = [];
-    for (const loc of locations.slice(0, 50)) { // Cap at 50 per request
+    let found = 0, notFound = 0, errors = 0;
+    for (const loc of batch) {
       try {
         let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(loc.name)}&inputtype=textquery&fields=rating,price_level,formatted_address,place_id,user_ratings_total&key=${placesKey}`;
         if (loc.lat && loc.lng) url += `&locationbias=point:${loc.lat},${loc.lng}`;
+        const _t0 = Date.now();
         const response = await fetch(url);
         const data = await response.json();
+        const callMs = Date.now() - _t0;
         if (data.status === 'OK' && data.candidates?.length) {
           const p = data.candidates[0];
           const updates = { _googleSyncedAt: new Date().toISOString() };
@@ -540,13 +609,21 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
           if (p.place_id) updates._googlePlaceId = p.place_id;
           await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: updates });
           results.push({ id: loc.id, ...updates, found: true });
+          found++;
+          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: true, rating: p.rating, ms: callMs });
         } else {
-          // Mark as synced (not found) so we don't retry
           await db.locations.update({ _id: loc.id, userId: req.user.id }, { $set: { _googleSyncedAt: new Date().toISOString() } });
           results.push({ id: loc.id, found: false });
+          notFound++;
+          log('debug', 'bulk_sync_item', { locId: loc.id, name: loc.name, found: false, status: data.status, ms: callMs });
         }
-      } catch { results.push({ id: loc.id, found: false }); }
+      } catch (err) {
+        results.push({ id: loc.id, found: false });
+        errors++;
+        log('warn', 'bulk_sync_item_error', { locId: loc.id, name: loc.name, error: err.message });
+      }
     }
+    log('info', 'bulk_sync_done', { count: batch.length, found, notFound, errors, ms: Date.now() - batchStart, userId: req.user.id });
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -589,7 +666,7 @@ async function runBackup() {
       };
 
       fs.writeFileSync(backupFile, JSON.stringify(backup));
-      console.log(`Backup: ${username} — ${locations.length} locations, ${trips.length} trips, ${collections.length} collections`);
+      log('info', 'backup_created', { username, locations: locations.length, trips: trips.length, collections: collections.length });
 
       // Prune old backups for this user
       const userBackups = fs.readdirSync(BACKUP_DIR)
@@ -599,16 +676,17 @@ async function runBackup() {
         fs.unlinkSync(path.join(BACKUP_DIR, old));
       }
     }
+    // Prune audit log entries older than 90 days
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const pruned = await db.auditLog.remove({ timestamp: { $lt: cutoff } }, { multi: true });
+    if (pruned > 0) log('info', 'audit_log_pruned', { removed: pruned, olderThan: cutoff });
   } catch (err) {
-    console.error('Backup failed:', err.message);
+    log('error', 'backup_failed', { error: err.message });
   }
 }
 
 // Admin endpoint to list/download backups
-app.get('/api/admin/backups', auth, async (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+app.get('/api/admin/backups', auth, requireAdmin, async (req, res) => {
   if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
   const files = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
   res.json(files.map(f => ({
@@ -618,10 +696,7 @@ app.get('/api/admin/backups', auth, async (req, res) => {
   })));
 });
 
-app.get('/api/admin/backups/:filename', auth, (req, res) => {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: 'Admin only' });
-  }
+app.get('/api/admin/backups/:filename', auth, requireAdmin, (req, res) => {
   // Prevent path traversal: resolve to absolute and verify it's inside BACKUP_DIR
   const filePath = path.resolve(path.join(BACKUP_DIR, path.basename(req.params.filename)));
   const normalizedDir = path.resolve(BACKUP_DIR);
@@ -633,7 +708,7 @@ app.get('/api/admin/backups/:filename', auth, (req, res) => {
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`Oikumene server running on port ${PORT}`);
+    log('info', 'server_start', { port: PORT });
     // Run backup on startup, then every 24h
     runBackup();
     setInterval(runBackup, 24 * 60 * 60 * 1000);
