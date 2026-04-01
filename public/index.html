@@ -14,6 +14,7 @@
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ═══════════════════════════════════════════════════════════ */
@@ -189,9 +190,9 @@ body {
 /* Custom marker */
 .marker-icon {
   display: flex; align-items: center; justify-content: center;
-  font-size: 20px; border-radius: 50%;
-  width: 38px !important; height: 38px !important;
-  margin-left: -19px !important; margin-top: -19px !important;
+  font-size: 17px; border-radius: 50%;
+  width: 34px !important; height: 34px !important;
+  margin-left: -17px !important; margin-top: -17px !important;
   box-shadow: 0 3px 12px rgba(0,0,0,0.4);
   transition: transform 0.15s;
   position: relative;
@@ -236,8 +237,9 @@ body {
 .popup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .popup-tag {
-  font-size: 10px; padding: 2px 8px; border-radius: 10px;
+  font-size: 9px; padding: 1px 6px; border-radius: 8px;
   background: var(--accent-dim); color: var(--accent); font-weight: 500;
+  line-height: 1.4;
 }
 .popup-btn {
   width: 100%; padding: 8px; border: 1px solid var(--border);
@@ -615,7 +617,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   border-radius: var(--radius-lg); padding: 16px;
   display: flex; align-items: center; gap: 12px;
 }
-.cat-stat-emoji { font-size: 28px; }
+.cat-stat-emoji { font-size: 24px; }
 .cat-stat-info { flex: 1; }
 .cat-stat-info .cat-stat-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
 .cat-stat-info .cat-stat-counts { font-size: 11px; color: var(--text-muted); }
@@ -634,6 +636,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .people-row .rank { font-family: var(--font-display); font-size: 16px; color: var(--accent); width: 24px; }
 .people-row .name { flex: 1; font-size: 13px; }
 .people-row .count { font-size: 12px; color: var(--text-muted); }
+
+.achievement-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px; text-align: center;
+  position: relative; overflow: hidden;
+}
+.achievement-card.unlocked { border-color: var(--accent); }
+.achievement-card.locked { opacity: 0.45; }
+.achievement-emoji { font-size: 28px; margin-bottom: 4px; }
+.achievement-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.achievement-desc { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
+.achievement-progress { font-size: 10px; color: var(--accent); font-weight: 600; margin-top: 4px; }
 
 .top-rated-list { display: flex; flex-direction: column; gap: 6px; }
 .top-rated-item {
@@ -1367,14 +1381,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <canvas id="chart-activity"></canvas>
       </div>
       <div class="stats-panel">
-        <h3>Best in Category</h3>
-        <div id="top-rated-list" class="top-rated-list"></div>
+        <h3>🏨 Nights by Place</h3>
+        <div id="nights-list" class="top-rated-list"></div>
       </div>
       <div class="stats-panel">
         <h3>Most Traveled With</h3>
         <div id="people-leaderboard" class="people-leaderboard"></div>
       </div>
     </div>
+
+    <h3 style="font-family:var(--font-display);margin-bottom:16px;">🏆 Achievements</h3>
+    <div class="category-stats-grid stagger" id="achievements-grid"></div>
 
     <div id="stats-collections-section" style="display:none;">
       <h3 style="font-family:var(--font-display);margin-bottom:16px;">Collections Progress</h3>
@@ -1402,6 +1419,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
         <select class="filter-select" id="trip-selector" onchange="selectTrip(this.value)" style="flex:1;max-width:300px;"></select>
         <button class="btn btn-secondary" onclick="promptNewTrip().then(()=>{populateTripSelector();})" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
+        <button class="btn btn-secondary" onclick="importTripFromTimeline()" style="font-size:12px;padding:6px 12px;">📂 Import from Timeline</button>
+        <input type="file" id="trip-timeline-input" accept=".json" style="display:none">
       </div>
       <div id="trip-map" style="flex:1;"></div>
     </div>
@@ -1557,10 +1576,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <select class="filter-select" id="bulk-filter-cat" onchange="renderBulkList()" style="width:160px;font-size:12px;">
         <option value="">All categories</option>
       </select>
-      <select class="filter-select" id="bulk-filter-status" onchange="renderBulkList()" style="width:120px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-status" onchange="renderBulkList()" style="width:150px;font-size:12px;">
         <option value="">All status</option>
         <option value="been">✅ Been</option>
         <option value="bucket">⭐ Bucket</option>
+        <option value="uncategorized">❓ Uncategorized</option>
+        <option value="pending">⏳ Pending approval</option>
       </select>
       <select class="filter-select" id="bulk-filter-tag" onchange="renderBulkList()" style="width:140px;font-size:12px;">
         <option value="">All tags</option>
@@ -1615,13 +1636,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
               <tbody id="import-tbody"></tbody>
             </table>
           </div>
-          <div class="import-actions" style="flex-wrap:wrap;">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:auto;">
+          <div class="import-actions" style="flex-wrap:wrap;gap:8px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;">
               <input type="checkbox" id="import-auto-approve"> Auto-approve categories
             </label>
-            <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-right:8px;" title="After import, look up each location on Google Places to fetch ratings and price levels. Uses your API key quota.">
-              <input type="checkbox" id="import-google-sync"> 🔄 Auto-sync with Google Places
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;" title="After import, reverse-geocode uncategorized locations via OpenStreetMap to infer categories and addresses. Rate limited (~1/sec), max 50 locations.">
+              <input type="checkbox" id="import-osm-enrich"> 🗺️ Enrich via OSM
             </label>
+            <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;" title="After import, look up each location on Google Places to fetch ratings and price levels. Uses your Google API key quota.">
+              <input type="checkbox" id="import-google-sync"> 📍 Enrich via Google Places
+            </label>
+            <span style="flex:1;"></span>
             <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
             <button class="btn btn-primary" onclick="withLoading(this, confirmImport)">Import All</button>
           </div>
@@ -1677,6 +1702,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" style="position:relative;">
+        <label>🔍 Search Place</label>
+        <input type="text" class="form-input" id="loc-search" placeholder="Search by name, address, or city..." autocomplete="off">
+        <div id="loc-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:10;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);max-height:200px;overflow-y:auto;box-shadow:var(--shadow-lg);"></div>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Name</label>
@@ -1751,7 +1781,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="form-group">
           <label>Google Maps Rating</label>
           <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="4.5" readonly style="opacity:0.6">
-          <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;margin-top:4px;color:var(--accent);text-decoration:none;">📍 Open in Google Maps</a>
+          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+            <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;">📍 Google Maps</a>
+            <button type="button" id="loc-google-sync-btn" class="add-small-btn" onclick="syncFromEditModal()" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync Google</button>
+          </div>
         </div>
         <div class="form-group">
           <label>My Rating</label>
@@ -2275,9 +2308,9 @@ function createMarkerIcon(loc) {
   return L.divIcon({
     className: '',
     html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};">${cat.emoji}</div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
-    popupAnchor: [0, -22],
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -20],
   });
 }
 
@@ -2482,6 +2515,34 @@ function getGoogleMapsUrl(loc) {
   return '';
 }
 
+async function toggleStatusFromPopup(locId) {
+  const loc = state.locations.find(l => l.id === locId);
+  if (!loc) return;
+  const newStatus = loc.status === 'been' ? 'bucket' : 'been';
+  try {
+    await api('PUT', '/locations/' + locId, { status: newStatus });
+    loc.status = newStatus;
+    map.closePopup();
+    renderMarkers();
+  } catch (err) { showToast('Update failed: ' + err.message, 'error'); }
+}
+
+async function deleteFromPopup(locId) {
+  const loc = state.locations.find(l => l.id === locId);
+  if (!loc) return;
+  const confirmed = await showConfirm(`Delete "${loc.name}"?`);
+  if (!confirmed) return;
+  try {
+    await api('DELETE', '/locations/' + locId);
+    state.locations = state.locations.filter(l => l.id !== locId);
+    rebuildIndexes();
+    map.closePopup();
+    renderMarkers();
+    populateFilterDropdowns();
+    showToast('Location deleted');
+  } catch (err) { showToast('Delete failed: ' + err.message, 'error'); }
+}
+
 function createPopupContent(loc) {
   const cat = CATEGORIES[loc.category] || CATEGORIES.location;
   const trip = stateIndex.tripById.get(loc.tripId);
@@ -2495,9 +2556,11 @@ function createPopupContent(loc) {
   const gmapsUrl = getGoogleMapsUrl(loc);
   const gmapsLink = gmapsUrl ? `<a href="${esc(gmapsUrl)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:12px;">📍 Open in Google Maps</a>` : '';
 
-  return `<div class="popup-inner">
+  const isBeen = loc.status === 'been';
+  return `<div class="popup-inner" style="position:relative;">
+    <button onclick="deleteFromPopup('${esc(loc.id)}')" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
     <h3>${cat.emoji} ${esc(loc.name)}</h3>
-    <div class="popup-cat">${cat.label}${priceStr} · ${loc.status === 'been' ? '✅ Been' : '⭐ Bucket List'}</div>
+    <div class="popup-cat">${cat.label}${priceStr}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
       <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
@@ -2508,8 +2571,10 @@ function createPopupContent(loc) {
     ${trip ? `<div class="popup-meta">🧳 ${esc(trip.name)}</div>` : ''}
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
-    <button class="popup-btn" onclick="openEditModal('${esc(loc.id)}')">✏️ Edit Details</button>
-    ${!loc._googleSyncedAt ? `<button class="popup-btn" onclick="syncSingleLocation('${esc(loc.id)}')" style="margin-top:4px;">🔄 Sync with Google</button>` : ''}
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <button class="popup-btn" onclick="toggleStatusFromPopup('${esc(loc.id)}')" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
+      <button class="popup-btn" onclick="openEditModal('${esc(loc.id)}')" style="flex:1;">✏️ Edit</button>
+    </div>
   </div>`;
 }
 
@@ -2639,6 +2704,17 @@ function clearStatusFilter() {
 function selectAllCategories() {
   Object.keys(CATEGORIES).forEach(k => state.filters.categories.add(k));
   document.querySelectorAll('#category-filters .filter-chip').forEach(c => c.classList.add('active'));
+  applyFilters();
+}
+
+function viewCategoryOnMap(category) {
+  // Clear all category filters, then enable only the clicked one
+  state.filters.categories.clear();
+  state.filters.categories.add(category);
+  document.querySelectorAll('#category-filters .filter-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.cat === category);
+  });
+  switchView('map-view');
   applyFilters();
 }
 
@@ -2774,7 +2850,9 @@ function getBulkFiltered() {
   const name = (document.getElementById('bulk-filter-name')?.value || '').toLowerCase();
   return state.locations.filter(l => {
     if (cat && l.category !== cat) return false;
-    if (status && l.status !== status) return false;
+    if (status === 'uncategorized') { if (l.category !== 'location') return false; }
+    else if (status === 'pending') { if (!l.needsApproval) return false; }
+    else if (status && l.status !== status) return false;
     if (tag && !(l.tags || []).includes(tag)) return false;
     if (name && !(l.name || '').toLowerCase().includes(name)) return false;
     return true;
@@ -2792,6 +2870,17 @@ let _bulkVScrollState = null;
 const BULK_ITEM_H = 37;
 const BULK_OVERSCAN = 10;
 
+function _bulkItemTooltip(loc) {
+  const parts = [];
+  if (loc.address) parts.push(loc.address);
+  if (loc.myRating) parts.push('★ ' + loc.myRating + '/5');
+  if (loc.googleRating) parts.push('⭐ ' + loc.googleRating);
+  if ((loc.visits||[]).length) parts.push(loc.visits.length + ' visit(s)');
+  if ((loc.tags||[]).length) parts.push('Tags: ' + loc.tags.join(', '));
+  if ((loc.people||[]).length) parts.push('With: ' + loc.people.join(', '));
+  return parts.join(' · ') || loc.name;
+}
+
 function _renderBulkItem(loc) {
   const c = CATEGORIES[loc.category] || CATEGORIES.location;
   const locId = loc.id || loc._id;
@@ -2799,16 +2888,19 @@ function _renderBulkItem(loc) {
   const statusIcon = loc.status === 'been' ? '✅' : '⭐';
   const rating = loc.myRating ? `★${loc.myRating}` : '';
   const trip = stateIndex.tripById.get(loc.tripId);
-  return `<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;"
-    onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
-    <input type="checkbox" class="bulk-cb" value="${locId}" ${checked} onchange="toggleBulkCb(this)">
+  const tooltip = esc(_bulkItemTooltip(loc));
+  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;cursor:pointer;"
+    title="${tooltip}"
+    onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''"
+    onclick="if(event.target.type!=='checkbox')openEditModal('${locId}')">
+    <input type="checkbox" class="bulk-cb" value="${locId}" ${checked} onchange="toggleBulkCb(this)" onclick="event.stopPropagation()">
     <span style="font-size:16px;">${c.emoji}</span>
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${statusIcon} ${esc(loc.name)}</span>
     <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${c.label}</span>
     ${(loc.tags||[]).length ? `<span style="font-size:10px;color:var(--text-muted);">${(loc.tags||[]).slice(0,2).map(esc).join(', ')}</span>` : ''}
     ${rating ? `<span style="font-size:11px;color:var(--accent);">${rating}</span>` : ''}
     ${trip ? `<span style="font-size:10px;color:var(--text-muted);background:var(--bg-tertiary);padding:1px 6px;border-radius:8px;">${esc(trip.name)}</span>` : ''}
-  </label>`;
+  </div>`;
 }
 
 function _bulkVScrollPaint() {
@@ -3100,12 +3192,15 @@ function openAddModal(lat, lng) {
 
   document.getElementById('modal-title').textContent = 'Add Location';
   document.getElementById('delete-loc-btn').style.display = 'none';
+  document.getElementById('loc-search').value = '';
+  document.getElementById('loc-search-results').style.display = 'none';
   document.getElementById('loc-name').value = '';
   document.getElementById('loc-address').value = '';
   document.getElementById('loc-lat').value = lat || '';
   document.getElementById('loc-lng').value = lng || '';
   document.getElementById('loc-google-rating').value = '';
   document.getElementById('loc-google-maps-link').style.display = 'none';
+  document.getElementById('loc-google-sync-btn').style.display = 'none';
   document.getElementById('loc-notes').value = '';
   document.getElementById('loc-trip').value = '';
 
@@ -3152,6 +3247,10 @@ function openEditModal(id) {
   const gmapsUrl = getGoogleMapsUrl(loc);
   if (gmapsUrl) { gmapsLink.href = gmapsUrl; gmapsLink.style.display = ''; }
   else { gmapsLink.style.display = 'none'; }
+  // Show sync button (async - check if Places API configured)
+  const syncBtn = document.getElementById('loc-google-sync-btn');
+  syncBtn.style.display = 'none';
+  checkPlacesEnabled().then(ok => { if (ok) syncBtn.style.display = ''; });
   document.getElementById('loc-notes').value = loc.notes || '';
 
   populateModalTrips();
@@ -3180,7 +3279,83 @@ function openEditModal(id) {
 
 function closeModal() {
   document.getElementById('edit-modal').classList.remove('open');
+  document.getElementById('loc-search-results').style.display = 'none';
   restoreFocus();
+}
+
+// ── Location search (Nominatim) ──────────────────────────
+let _locSearchTimer = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('loc-search');
+  const resultsDiv = document.getElementById('loc-search-results');
+  if (!searchInput) return;
+
+  searchInput.addEventListener('input', () => {
+    if (_locSearchTimer) clearTimeout(_locSearchTimer);
+    const q = searchInput.value.trim();
+    if (q.length < 3) { resultsDiv.style.display = 'none'; return; }
+    _locSearchTimer = setTimeout(() => searchLocation(q), 400);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { resultsDiv.style.display = 'none'; }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+      resultsDiv.style.display = 'none';
+    }
+  });
+});
+
+async function searchLocation(query) {
+  const resultsDiv = document.getElementById('loc-search-results');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+    const data = await res.json();
+    if (!data.length) {
+      resultsDiv.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--text-muted);">No results found</div>';
+      resultsDiv.style.display = 'block';
+      return;
+    }
+    resultsDiv.innerHTML = data.map((r, i) => {
+      const cat = osmToCategory(r.class, r.type) || inferCategory(r.display_name);
+      const catInfo = CATEGORIES[cat] || CATEGORIES.location;
+      return `<button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;text-align:left;color:var(--text-primary);font-size:12px;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='none'" onclick="pickSearchResult(${i})">
+        <span style="font-size:16px;">${catInfo.emoji}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.name || r.display_name.split(',')[0])}</div>
+          <div style="color:var(--text-muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.display_name)}</div>
+        </div>
+      </button>`;
+    }).join('');
+    resultsDiv.style.display = 'block';
+    resultsDiv._data = data;
+  } catch (err) {
+    resultsDiv.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--text-muted);">Search failed</div>';
+    resultsDiv.style.display = 'block';
+  }
+}
+
+function pickSearchResult(idx) {
+  const resultsDiv = document.getElementById('loc-search-results');
+  const r = resultsDiv._data?.[idx];
+  if (!r) return;
+  const name = r.name || r.display_name.split(',')[0].trim();
+  document.getElementById('loc-name').value = name;
+  document.getElementById('loc-address').value = r.display_name || '';
+  document.getElementById('loc-lat').value = r.lat;
+  document.getElementById('loc-lng').value = r.lon;
+  document.getElementById('loc-search').value = name;
+  resultsDiv.style.display = 'none';
+  // Auto-select category
+  const cat = osmToCategory(r.class, r.type) || inferCategory(r.display_name);
+  if (cat && cat !== 'location') {
+    state.modalCategory = cat;
+    document.querySelectorAll('.category-option').forEach(o => {
+      o.classList.toggle('selected', o.dataset.category === cat);
+    });
+  }
 }
 
 function selectStatus(status, btn) {
@@ -3389,6 +3564,79 @@ function deleteLocation() {
       showToast('Location deleted');
     } catch (err) { showToast('Delete failed: ' + err.message, 'error'); }
   });
+}
+
+function importTripFromTimeline() {
+  const input = document.getElementById('trip-timeline-input');
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';
+    try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+      const data = JSON.parse(content);
+
+      // Detect Google Timeline format and parse
+      let locations = [];
+      if (data.timelineObjects) locations = parseGoogleTimelineOld(data);
+      else if (Array.isArray(data) && data[0]?.placeVisit) locations = parseGoogleTimelineOld({ timelineObjects: data });
+      else if (Array.isArray(data) && data[0]?.visit) locations = parseGoogleTimelineNew(data);
+      else if (Array.isArray(data) && data[0]?.startTime && data[0]?.endTime) locations = parseGoogleTimelineNew(data);
+      else if (data.semanticSegments || data.rawSignals) locations = parseGoogleTimelineSegments(data);
+      else { showToast('File does not appear to be a Google Timeline export.', 'warn'); return; }
+
+      if (locations.length === 0) { showToast('No locations found in the timeline file.', 'warn'); return; }
+
+      // Derive trip dates from visits
+      const allDates = locations.flatMap(l => (l.visits || []).map(v => v.date)).filter(Boolean).sort();
+      const startDate = allDates[0] || '';
+      const endDate = allDates[allDates.length - 1] || '';
+      const defaultName = file.name.replace(/\.json$/i, '').replace(/[_-]/g, ' ');
+
+      // Prompt user for trip name/dates
+      const result = await showMultiPrompt([
+        { key: 'name', label: 'Trip Name', placeholder: 'e.g. Vienna July 2025', value: defaultName },
+        { key: 'start', label: 'Start Date', type: 'date', value: startDate },
+        { key: 'end', label: 'End Date', type: 'date', value: endDate },
+      ]);
+      if (!result || !result.name) return;
+
+      // Create trip
+      const trip = mapId(await api('POST', '/trips', {
+        name: result.name, startDate: result.start || '', endDate: result.end || '',
+        color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),
+      }));
+      state.trips.push(trip);
+
+      // Import locations with tripId and status 'been'
+      const toImport = locations.map(l => ({
+        name: l.name, lat: l.lat, lng: l.lng,
+        category: l.category || 'location', address: l.address || '',
+        status: 'been', tripId: trip.id,
+        visits: l.visits || [], notes: l.notes || '',
+        tags: [], needsApproval: true, suggestedCategory: l.category !== 'location' ? l.category : null,
+        createdAt: (l.visits?.[0]?.date) || new Date().toISOString().split('T')[0],
+      }));
+      const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
+      state.locations.push(...saved);
+      rebuildIndexes();
+      populateFilterDropdowns();
+      populateTripSelector();
+      updateApprovalBadge();
+      renderApproval();
+
+      // Select the new trip
+      document.getElementById('trip-selector').value = trip.id;
+      selectTrip(trip.id);
+      showToast(`Imported ${saved.length} locations into "${esc(result.name)}" — review in approval queue`);
+    } catch (err) { showToast('Import failed: ' + err.message, 'error'); }
+  };
+  input.click();
 }
 
 async function promptNewTrip() {
@@ -3698,7 +3946,7 @@ function computeStats() {
     been: 0, bucket: 0, countries: new Set(), people: new Set(),
     ratingSum: 0, ratingCount: 0, peopleCounts: {},
     byCat: {}, ratedByCategory: {}, beenLocs: [],
-    byCol: {},
+    byCol: {}, nightsByPlace: {},
   };
   for (const l of state.locations) {
     if (l.needsApproval) continue;
@@ -3723,6 +3971,11 @@ function computeStats() {
       if (!s.ratedByCategory[cat]) s.ratedByCategory[cat] = [];
       s.ratedByCategory[cat].push(l);
     }
+    // Count nights by region (hotel visits)
+    if (isBeen && l.category === 'hotel' && country) {
+      const nights = Math.max((l.visits || []).length, 1);
+      s.nightsByPlace[country] = (s.nightsByPlace[country] || 0) + nights;
+    }
     for (const colId of (l.collections || [])) {
       if (!s.byCol[colId]) s.byCol[colId] = { visited: 0, total: 0 };
       s.byCol[colId].total++;
@@ -3737,10 +3990,12 @@ function renderStats() {
 
   // Top cards
   const avgRating = s.ratingCount ? (s.ratingSum / s.ratingCount).toFixed(1) : '—';
+  const conversionRate = (s.been + s.bucket) > 0 ? Math.round(s.been / (s.been + s.bucket) * 100) : 0;
   document.getElementById('stats-top-cards').innerHTML = [
     { value: s.been, label: 'Places Visited' },
     { value: s.bucket, label: 'Bucket List' },
-    { value: s.countries.size, label: 'Countries' },
+    { value: conversionRate + '%', label: 'Wishlist Done' },
+    { value: s.countries.size, label: 'Regions' },
     { value: state.trips.length, label: 'Trips' },
     { value: avgRating, label: 'Avg Rating' },
     { value: s.people.size, label: 'Travel Buddies' },
@@ -3754,7 +4009,7 @@ function renderStats() {
     const pct = Math.round(cs.been / total * 100);
     const catAvg = cs.ratingCount ? (cs.ratingSum / cs.ratingCount).toFixed(1) : '—';
     const hex = COLOR_HEX[cat.color] || DEFAULT_HEX;
-    return `<div class="cat-stat-card">
+    return `<div class="cat-stat-card" style="cursor:pointer;" onclick="viewCategoryOnMap('${key}')" title="Click to view ${cat.label} on the map">
       <span class="cat-stat-emoji">${cat.emoji}</span>
       <div class="cat-stat-info">
         <div class="cat-stat-name">${cat.label}</div>
@@ -3764,19 +4019,15 @@ function renderStats() {
     </div>`;
   }).join('');
 
-  // Top rated — best per category
-  const topPerCat = Object.entries(s.ratedByCategory).map(([, locs]) => {
-    locs.sort((a,b) => b.myRating - a.myRating || (b.googleRating||0) - (a.googleRating||0));
-    return locs[0];
-  }).sort((a,b) => b.myRating - a.myRating);
-  document.getElementById('top-rated-list').innerHTML = topPerCat.map(l => {
-    const cat = CATEGORIES[l.category] || CATEGORIES.location;
-    return `<div class="top-rated-item">
-      <span class="tr-emoji">${cat.emoji}</span>
-      <span class="tr-name">${esc(l.name)}</span>
-      <span class="tr-rating">★ ${l.myRating}</span>
-    </div>`;
-  }).join('') || '<p style="color:var(--text-muted);font-size:13px;">No ratings yet</p>';
+  // Nights by Place — hotel visits aggregated by region
+  const nightsRanked = Object.entries(s.nightsByPlace).sort((a,b) => b[1] - a[1]).slice(0, 10);
+  document.getElementById('nights-list').innerHTML = nightsRanked.map(([place, nights]) =>
+    `<div class="top-rated-item">
+      <span class="tr-emoji">🌙</span>
+      <span class="tr-name">${esc(place)}</span>
+      <span class="tr-rating">${nights} night${nights !== 1 ? 's' : ''}</span>
+    </div>`
+  ).join('') || '<p style="color:var(--text-muted);font-size:13px;">No hotel stays recorded</p>';
 
   // People leaderboard
   const peopleRanked = Object.entries(s.peopleCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
@@ -3803,6 +4054,36 @@ function renderStats() {
   } else {
     document.getElementById('stats-collections-section').style.display = 'none';
   }
+
+  // Achievements
+  const categoriesExplored = Object.keys(s.byCat).filter(k => s.byCat[k].been > 0).length;
+  const achievements = [
+    { emoji: '📍', name: 'First Pin', desc: 'Add your first place', threshold: 1, current: s.been },
+    { emoji: '🗺️', name: 'Explorer', desc: 'Visit 10 places', threshold: 10, current: s.been },
+    { emoji: '🌍', name: 'Globetrotter', desc: 'Visit 50 places', threshold: 50, current: s.been },
+    { emoji: '🏛️', name: 'World Traveler', desc: 'Visit 100 places', threshold: 100, current: s.been },
+    { emoji: '🗾', name: 'Regional Expert', desc: 'Visit 5 regions', threshold: 5, current: s.countries.size },
+    { emoji: '🌐', name: 'Continental', desc: 'Visit 15 regions', threshold: 15, current: s.countries.size },
+    { emoji: '🧳', name: 'Trip Planner', desc: 'Create 3 trips', threshold: 3, current: state.trips.length },
+    { emoji: '🎯', name: 'Category Collector', desc: 'Explore 5 categories', threshold: 5, current: categoriesExplored },
+    { emoji: '🏅', name: 'All-Rounder', desc: 'Explore all categories', threshold: Object.keys(CATEGORIES).length, current: categoriesExplored },
+    { emoji: '⭐', name: 'Critic', desc: 'Rate 10 places', threshold: 10, current: s.ratingCount },
+    { emoji: '🌟', name: 'Connoisseur', desc: 'Rate 25 places', threshold: 25, current: s.ratingCount },
+    { emoji: '👥', name: 'Social Butterfly', desc: 'Travel with 5 people', threshold: 5, current: s.people.size },
+    { emoji: '✅', name: 'Bucket Buster', desc: '50% wishlist done', threshold: 50, current: conversionRate },
+    { emoji: '🏆', name: 'Completionist', desc: '90% wishlist done', threshold: 90, current: conversionRate },
+    { emoji: '🌙', name: 'Night Owl', desc: 'Sleep in 10 places', threshold: 10, current: Object.keys(s.nightsByPlace).length },
+  ];
+  document.getElementById('achievements-grid').innerHTML = achievements.map(a => {
+    const unlocked = a.current >= a.threshold;
+    const pct = Math.min(100, Math.round(a.current / a.threshold * 100));
+    return `<div class="achievement-card ${unlocked ? 'unlocked' : 'locked'}">
+      <div class="achievement-emoji">${a.emoji}</div>
+      <div class="achievement-name">${a.name}</div>
+      <div class="achievement-desc">${a.desc}</div>
+      ${unlocked ? '' : `<div class="achievement-progress">${a.current}/${a.threshold} (${pct}%)</div>`}
+    </div>`;
+  }).join('');
 
   // Charts
   renderCharts(s.beenLocs);
@@ -3996,7 +4277,7 @@ function selectTrip(tripId) {
           <div class="marker-icon been" style="border-color:${trip.color || 'var(--accent)'};background:${(trip.color || '#ffc144') + '22'};">${cat.emoji}</div>
           <div style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:var(--bg-primary);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">${i + 1}</div>
         </div>`,
-        iconSize: [38, 38], iconAnchor: [19, 19],
+        iconSize: [34, 34], iconAnchor: [17, 17],
       })
     });
     marker.bindPopup(createPopupContent(loc), { maxWidth: 320 });
@@ -4135,10 +4416,11 @@ function renderTripDetail(trip, tripLocs) {
   let html = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
       <span style="width:14px;height:14px;border-radius:50%;background:${trip.color || 'var(--accent)'};flex-shrink:0;"></span>
-      <div>
+      <div style="flex:1;">
         <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${esc(trip.name)}</h3>
         <div style="font-size:12px;color:var(--text-muted);">${dates.map(d => formatDate(d)).join(' → ') || 'No dates set'}${duration ? ' · ' + duration : ''}</div>
       </div>
+      <button class="btn btn-danger" onclick="deleteTrip('${trip.id}')" style="font-size:11px;padding:4px 10px;" title="Delete trip">🗑️</button>
     </div>
 
     <div class="trip-stats-grid">
@@ -4188,6 +4470,25 @@ function renderTripDetail(trip, tripLocs) {
   html += `</div>`;
 
   document.getElementById('trip-detail').innerHTML = html;
+}
+
+async function deleteTrip(tripId) {
+  const trip = state.trips.find(t => t.id === tripId);
+  if (!trip) return;
+  const confirmed = await showConfirm(`Delete trip "${trip.name}"? Locations won't be deleted, just unlinked from this trip.`);
+  if (!confirmed) return;
+  try {
+    await api('DELETE', '/trips/' + tripId);
+    // Unlink locations from this trip in state
+    state.locations.forEach(l => { if (l.tripId === tripId) l.tripId = null; });
+    state.trips = state.trips.filter(t => t.id !== tripId);
+    rebuildIndexes();
+    populateTripSelector();
+    populateFilterDropdowns();
+    document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+    if (tripPathLayer) tripPathLayer.clearLayers();
+    showToast('Trip deleted');
+  } catch (err) { showToast('Failed to delete trip: ' + err.message, 'error'); }
 }
 
 async function moveTripLoc(locId, direction) {
@@ -5038,7 +5339,7 @@ function renderPlannerMap(daysList) {
             <div class="marker-icon been" style="border-color:${color};background:${color}22;">${cat.emoji}</div>
             <div style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:${color};color:#000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">${i+1}</div>
           </div>`,
-          iconSize: [38, 38], iconAnchor: [19, 19],
+          iconSize: [34, 34], iconAnchor: [17, 17],
         })
       });
       marker.bindTooltip(`<strong>Day ${dayIdx+1}</strong>: ${esc(loc.name)}`, { direction: 'top' });
@@ -5382,11 +5683,11 @@ async function openAccountModal() {
     }
   } catch { placesDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
 
-  // Load backup list
+  // Load backup list (user-level endpoint, works for all users)
   const backupsDiv = document.getElementById('account-backups');
   backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Loading backups...</span>';
   try {
-    const backups = await api('GET', '/admin/backups');
+    const backups = await api('GET', '/my-backups');
     if (backups.length === 0) {
       backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No backups yet. First backup runs within 24h of server start.</span>';
     } else {
@@ -5394,14 +5695,13 @@ async function openAccountModal() {
         const sizeKB = (b.size / 1024).toFixed(1);
         return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
           <span style="flex:1;">${b.date} <span style="color:var(--text-muted);">(${sizeKB}KB)</span></span>
-          <button class="add-small-btn" onclick="downloadBackup('${b.name}')" style="border-style:solid;padding:3px 8px;font-size:11px;">Download</button>
-          <button class="add-small-btn" onclick="restoreBackup('${b.name}')" style="border-style:solid;padding:3px 8px;font-size:11px;color:var(--accent);">Restore</button>
+          <button class="add-small-btn" onclick="downloadUserBackup('${esc(b.name)}')" style="border-style:solid;padding:3px 8px;font-size:11px;">Download</button>
+          <button class="add-small-btn" onclick="restoreBackup('${esc(b.name)}')" style="border-style:solid;padding:3px 8px;font-size:11px;color:var(--accent);">Restore</button>
         </div>`;
       }).join('');
     }
   } catch {
-    // Non-admin: just show download latest
-    backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Backups are created daily automatically.</span>';
+    backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not load backups.</span>';
   }
 }
 
@@ -5492,6 +5792,20 @@ async function bulkGoogleSync() {
   openAccountModal();
 }
 
+async function syncFromEditModal() {
+  if (!state.editingId) return;
+  const btn = document.getElementById('loc-google-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
+  await syncSingleLocation(state.editingId);
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync Google'; }
+  // Refresh modal fields
+  const loc = state.locations.find(l => l.id === state.editingId);
+  if (loc) {
+    document.getElementById('loc-google-rating').value = loc.googleRating || '';
+    document.getElementById('loc-address').value = loc.address || document.getElementById('loc-address').value;
+  }
+}
+
 async function syncSingleLocation(locId) {
   const enabled = await checkPlacesEnabled();
   if (!enabled) { showToast('Google Places API not configured. Add API key in Account settings.', 'warn'); return; }
@@ -5509,8 +5823,8 @@ async function syncSingleLocation(locId) {
         address: loc.address, _googleSyncedAt: loc._googleSyncedAt,
         _googlePlaceId: result.placeId || null,
       });
-      map.closePopup();
       renderMarkers();
+      showToast('Synced with Google Places');
     } else {
       showToast('Place not found on Google Maps.', 'warn');
     }
@@ -5545,12 +5859,49 @@ function closeAccountModal() {
   restoreFocus();
 }
 
-function downloadLatestBackup() {
-  window.open('/api/my-backup', '_blank');
+async function downloadLatestBackup() {
+  try {
+    const res = await fetch('/api/my-backup', { headers: { 'Authorization': 'Bearer ' + authToken } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Download failed' }));
+      showToast(err.error || 'No backup available', 'warn');
+      return;
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || '';
+    const filename = cd.match(/filename="?([^"]+)"?/)?.[1] || 'backup.json';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { showToast('Download failed: ' + err.message, 'error'); }
 }
 
-function downloadBackup(filename) {
-  window.open('/api/admin/backups/' + filename, '_blank');
+async function downloadUserBackup(filename) {
+  try {
+    const res = await fetch('/api/my-backup/' + encodeURIComponent(filename), { headers: { 'Authorization': 'Bearer ' + authToken } });
+    if (!res.ok) { showToast('Download failed', 'error'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { showToast('Download failed: ' + err.message, 'error'); }
+}
+
+async function downloadBackup(filename) {
+  try {
+    const res = await fetch('/api/admin/backups/' + encodeURIComponent(filename), { headers: { 'Authorization': 'Bearer ' + authToken } });
+    if (!res.ok) { showToast('Download failed', 'error'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { showToast('Download failed: ' + err.message, 'error'); }
 }
 
 function restoreBackup(filename) {
@@ -5604,18 +5955,33 @@ async function handleFiles(files) {
   for (const file of fileList) {
     const ext = file.name.split('.').pop().toLowerCase();
     try {
-      const content = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsText(file);
-      });
+      let content;
+      if (ext === 'kmz') {
+        // KMZ is a ZIP containing a .kml file
+        const arrayBuf = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsArrayBuffer(file);
+        });
+        const zip = await JSZip.loadAsync(arrayBuf);
+        const kmlFile = Object.keys(zip.files).find(n => n.endsWith('.kml'));
+        if (!kmlFile) { console.warn(`No .kml found inside ${file.name}`); continue; }
+        content = await zip.files[kmlFile].async('string');
+      } else {
+        content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+      }
 
       let parsed = [];
       if (ext === 'json') parsed = parseJSON(content);
       else if (ext === 'csv') parsed = parseCSV(content);
       else if (ext === 'geojson') parsed = parseGeoJSON(content);
-      else if (ext === 'kml') parsed = parseKML(content);
+      else if (ext === 'kml' || ext === 'kmz') parsed = parseKML(content);
 
       // Handle async parsers (geocoding CSV)
       if (parsed instanceof Promise) parsed = await parsed;
@@ -5664,7 +6030,7 @@ function parseJSON(content) {
       _restoreTripId: item.tripId,
       _restoreCollections: item.collections || [],
       _isFullRestore: true,
-    })).filter(l => l.lat && l.lng);
+    })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
   }
 
   // 2. Google Takeout Saved Places (GeoJSON with google_maps_url)
@@ -5709,7 +6075,14 @@ function parseJSON(content) {
 
   // 6. Generic GeoJSON
   if (data.type === 'FeatureCollection' && data.features) {
-    return parseGeoJSON(content);
+    return data.features.map(f => ({
+      name: f.properties?.name || 'Unknown',
+      lat: f.geometry?.coordinates?.[1] || 0,
+      lng: f.geometry?.coordinates?.[0] || 0,
+      category: inferCategory(f.properties?.name || f.properties?.category || ''),
+      address: f.properties?.address || '',
+      status: 'been',
+    })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
   }
 
   // 7. Generic JSON array or object
@@ -5721,7 +6094,7 @@ function parseJSON(content) {
     category: inferCategory(item.name || item.category || ''),
     address: item.address || item.properties?.address || '',
     status: 'been',
-  })).filter(l => l.lat && l.lng);
+  })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 // Extract Google Place ID from a Google Maps URL
@@ -5756,7 +6129,7 @@ function parseGoogleSavedPlaces(data) {
     };
     if (placeId) result._googlePlaceId = placeId;
     return result;
-  }).filter(l => l.lat && l.lng);
+  }).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 // ── Google Timeline: Old format (timelineObjects) ───────
@@ -5943,25 +6316,32 @@ function parseCSV(content) {
   if (needsGeocode.length > 0) {
     return geocodeCSVResults(results);
   }
-  return results.filter(l => l.lat && l.lng);
+  return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
+let _geocodeCancelled = false;
 async function geocodeCSVResults(results) {
-  // Show the preview area with a progress indicator
+  _geocodeCancelled = false;
   const preview = document.getElementById('import-preview');
   if (preview) {
     preview.classList.add('active');
-    preview.querySelector('h4').textContent = 'Geocoding places from Google Takeout...';
+    preview.querySelector('h4').innerHTML = `
+      <div style="margin-bottom:8px;">📍 This CSV has no coordinates — looking up locations via OpenStreetMap...</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Each place name is searched on Nominatim (~1/sec rate limit). Places not found will be skipped.</div>
+      <div id="geocode-progress" style="font-size:12px;">Starting...</div>
+      <button class="btn btn-secondary" onclick="_geocodeCancelled=true" style="font-size:11px;padding:4px 12px;margin-top:8px;">⏹ Stop & use what we have</button>
+    `;
   }
   const toGeocode = results.filter(r => r._needsGeocode);
   let geocoded = 0;
 
   for (let i = 0; i < toGeocode.length; i++) {
+    if (_geocodeCancelled) break;
     const r = toGeocode[i];
-    const h4 = preview?.querySelector('h4');
-    if (h4) h4.textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}...`;
+    const progress = document.getElementById('geocode-progress');
+    if (progress) progress.textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}... (${geocoded} found so far)`;
     try {
-      await new Promise(resolve => setTimeout(resolve, 1100)); // Nominatim rate limit
+      await new Promise(resolve => setTimeout(resolve, 1100));
       const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
       const data = await res.json();
       if (data[0]) {
@@ -5975,9 +6355,9 @@ async function geocodeCSVResults(results) {
       }
     } catch {}
   }
-  const finalH4 = preview?.querySelector('h4');
-  if (finalH4) finalH4.textContent = `Geocoded ${geocoded}/${toGeocode.length} places`;
-  return results.filter(l => l.lat && l.lng);
+  const h4 = preview?.querySelector('h4');
+  if (h4) h4.textContent = `${_geocodeCancelled ? 'Stopped' : 'Done'}: ${geocoded}/${toGeocode.length} places found on OpenStreetMap`;
+  return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 function parseGeoJSON(content) {
@@ -5990,7 +6370,7 @@ function parseGeoJSON(content) {
     category: inferCategory(f.properties?.name || f.properties?.category || ''),
     address: f.properties?.address || '',
     status: 'been',
-  })).filter(l => l.lat && l.lng);
+  })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 function parseKML(content) {
@@ -6032,7 +6412,7 @@ function parseKML(content) {
     });
   });
 
-  return results.filter(l => l.lat && l.lng);
+  return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 function inferCategory(text) {
@@ -6084,47 +6464,6 @@ const OSM_CATEGORY_MAP = {
 function osmToCategory(osmClass, osmType) {
   if (!osmClass || !osmType) return null;
   return OSM_CATEGORY_MAP[osmClass + ':' + osmType] || null;
-}
-
-// Enrich locations with Nominatim reverse geocoding for better category inference
-async function enrichCategories(locations) {
-  const toEnrich = locations.filter(l => l.category === 'location' && l.lat && l.lng);
-  if (toEnrich.length === 0) return locations;
-
-  const maxEnrich = Math.min(toEnrich.length, 50); // Cap at 50 to avoid rate limits
-  let enriched = 0;
-
-  for (let i = 0; i < maxEnrich; i++) {
-    const loc = toEnrich[i];
-    try {
-      await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      if (data) {
-        const osmCat = osmToCategory(data.class, data.type);
-        if (osmCat) {
-          loc.category = osmCat;
-          loc.suggestedCategory = osmCat;
-          enriched++;
-        } else {
-          // Try inferring from the returned name + address
-          const inferred = inferCategory((data.name || '') + ' ' + (data.display_name || ''));
-          if (inferred !== 'location') {
-            loc.category = inferred;
-            loc.suggestedCategory = inferred;
-            enriched++;
-          }
-        }
-        // Also enrich address if missing
-        if (!loc.address && data.display_name) loc.address = data.display_name;
-      }
-    } catch {}
-  }
-  console.log(`Enriched ${enriched}/${maxEnrich} locations via Nominatim`);
-  return locations;
 }
 
 // Background enrichment — runs after import is done, updates locations one by one
@@ -6284,7 +6623,7 @@ function showImportPreview(items) {
     const dupLabel = isDup ? `<span style="color:var(--accent);font-size:10px;" title="Matches: ${esc(item._duplicate.name||'')}">⚠️dup</span>` : '';
     return `<tr style="${rowStyle}">
       <td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-        <input type="checkbox" class="import-row-cb" data-idx="${idx}" checked ${isDup ? '' : ''}>
+        <input type="checkbox" class="import-row-cb" data-idx="${idx}" ${isDup ? '' : 'checked'}>
         ${esc(item.name)} ${dupLabel}
       </label></td>
       <td>${cat.emoji} ${cat.label}</td>
@@ -6294,7 +6633,7 @@ function showImportPreview(items) {
     </tr>`;
   }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>` : '');
 
-  // Skip-duplicates button (always recreate to avoid stale state)
+  // Duplicate action button (always recreate to avoid stale state)
   const oldSkipBtn = document.getElementById('skip-dups-btn');
   if (oldSkipBtn) oldSkipBtn.remove();
   if (dupCount > 0) {
@@ -6304,11 +6643,11 @@ function showImportPreview(items) {
       btn.id = 'skip-dups-btn';
       btn.className = 'btn btn-secondary';
       btn.style.cssText = 'font-size:11px;padding:6px 10px;';
-      btn.textContent = `Uncheck ${dupCount} duplicate${dupCount > 1 ? 's' : ''}`;
+      btn.textContent = `Include ${dupCount} duplicate${dupCount > 1 ? 's' : ''}`;
       btn.onclick = () => {
         document.querySelectorAll('.import-row-cb').forEach(cb => {
           const idx = parseInt(cb.dataset.idx);
-          if (state.pendingImport[idx]?._duplicate) cb.checked = false;
+          if (state.pendingImport[idx]?._duplicate) cb.checked = !cb.checked;
         });
       };
       actionsDiv.insertBefore(btn, actionsDiv.querySelector('.btn-secondary'));
@@ -6407,8 +6746,9 @@ async function confirmImport() {
     const pendingCount = saved.filter(l => l.needsApproval).length;
     showToast(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations${pendingCount > 0 ? ' — review in approval queue' : ''}`);
 
-    // Enrich uncategorized locations in background (non-blocking)
-    if (!isFullRestore) {
+    // Enrich uncategorized locations via OSM (opt-in, non-blocking)
+    const osmEnrich = document.getElementById('import-osm-enrich')?.checked;
+    if (osmEnrich && !isFullRestore) {
       const uncategorized = saved.filter(l => (l.category === 'location') && l.lat && l.lng);
       if (uncategorized.length > 0) {
         enrichInBackground(uncategorized);
