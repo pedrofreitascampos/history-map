@@ -1568,12 +1568,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
       <div>
         <h1 style="font-family:var(--font-display);font-size:28px;">Bulk Edit</h1>
-        <p style="color:var(--text-muted);font-size:14px;">Select locations from the list, then apply changes to all at once.</p>
+        <p style="color:var(--text-muted);font-size:14px;">Filter, select, and apply changes to multiple locations at once.</p>
       </div>
+      <span style="font-size:12px;color:var(--text-muted);" id="bulk-total-count"></span>
     </div>
     <!-- Filters -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <select class="filter-select" id="bulk-filter-cat" onchange="renderBulkList()" style="width:160px;font-size:12px;">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Filter</span>
+      <select class="filter-select" id="bulk-filter-cat" onchange="renderBulkList()" style="width:150px;font-size:12px;">
         <option value="">All categories</option>
       </select>
       <select class="filter-select" id="bulk-filter-status" onchange="renderBulkList()" style="width:150px;font-size:12px;">
@@ -1583,29 +1585,40 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="uncategorized">❓ Uncategorized</option>
         <option value="pending">⏳ Pending approval</option>
       </select>
-      <select class="filter-select" id="bulk-filter-tag" onchange="renderBulkList()" style="width:140px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-tag" onchange="renderBulkList()" style="width:130px;font-size:12px;">
         <option value="">All tags</option>
       </select>
-      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." oninput="debouncedBulkFilter()" style="flex:1;font-size:12px;padding:6px 10px;">
+      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." oninput="debouncedBulkFilter()" style="flex:1;min-width:120px;font-size:12px;padding:6px 10px;">
       <button class="add-small-btn" onclick="selectAllBulk()" style="border-style:solid;font-size:11px;">Select all</button>
       <button class="add-small-btn" onclick="clearBulkSelection()" style="border-style:solid;font-size:11px;">Clear</button>
     </div>
-    <!-- Selection count + actions -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
-      <span style="font-size:13px;color:var(--accent);font-weight:600;min-width:100px;" id="bulk-selected-count">0 selected</span>
-      <select class="filter-select" id="bulk-category" style="width:150px;font-size:12px;"><option value="">Category →</option></select>
-      <select class="filter-select" id="bulk-status" style="width:120px;font-size:12px;">
-        <option value="">Status →</option><option value="been">✅ Been</option><option value="bucket">⭐ Bucket</option>
-      </select>
-      <select class="filter-select" id="bulk-trip" style="width:150px;font-size:12px;"><option value="">Trip →</option><option value="_none">No trip</option></select>
-      <select class="filter-select" id="bulk-tag-action" style="width:130px;font-size:12px;">
-        <option value="">Tags →</option>
-        <option value="_clear">🗑️ Remove all tags</option>
-      </select>
-      <input type="text" class="form-input" id="bulk-tag" placeholder="+ tag" style="width:80px;font-size:12px;padding:6px 8px;">
-      <select class="filter-select" id="bulk-collection" style="width:150px;font-size:12px;"><option value="">Collection →</option></select>
-      <button class="btn btn-primary" onclick="withLoading(this, applyBulkEdit)" style="font-size:12px;padding:6px 14px;">Apply</button>
-      <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">Delete</button>
+    <!-- Selection bar + actions -->
+    <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:stretch;">
+      <!-- Left: selection count -->
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);min-width:100px;">
+        <span style="font-size:13px;color:var(--accent);font-weight:600;" id="bulk-selected-count">0 selected</span>
+      </div>
+      <!-- Middle: assign actions -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;">
+        <select class="filter-select" id="bulk-category" style="width:140px;font-size:12px;"><option value="">Category →</option></select>
+        <select class="filter-select" id="bulk-status" style="width:110px;font-size:12px;">
+          <option value="">Status →</option><option value="been">✅ Been</option><option value="bucket">⭐ Bucket</option>
+        </select>
+        <select class="filter-select" id="bulk-trip" style="width:140px;font-size:12px;"><option value="">Trip →</option><option value="_none">No trip</option></select>
+        <select class="filter-select" id="bulk-tag-action" style="width:120px;font-size:12px;">
+          <option value="">Tags →</option>
+          <option value="_clear">🗑️ Remove all</option>
+        </select>
+        <input type="text" class="form-input" id="bulk-tag" placeholder="+ tag" style="width:70px;font-size:12px;padding:6px 8px;">
+        <select class="filter-select" id="bulk-collection" style="width:140px;font-size:12px;"><option value="">Collection →</option></select>
+      </div>
+      <!-- Right: action buttons -->
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-primary" onclick="withLoading(this, applyBulkEdit)" style="font-size:12px;padding:6px 14px;">Apply</button>
+        <button class="btn btn-secondary" onclick="withLoading(this, bulkEnrichOSM)" style="font-size:11px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
+        <button class="btn btn-secondary" onclick="withLoading(this, bulkSyncGoogle)" style="font-size:11px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
+        <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">🗑️</button>
+      </div>
     </div>
     <!-- Location list -->
     <div id="bulk-list" style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow-y:auto;flex:1;min-height:0;"></div>
@@ -2964,6 +2977,39 @@ function clearBulkSelection() {
 function updateBulkCount() {
   const el = document.getElementById('bulk-selected-count');
   if (el) el.textContent = bulkSelected.size + ' selected';
+  const totalEl = document.getElementById('bulk-total-count');
+  if (totalEl) totalEl.textContent = `${_bulkFiltered.length} of ${state.locations.length} locations`;
+}
+
+async function bulkEnrichOSM() {
+  if (bulkSelected.size === 0) { showToast('Select locations first.', 'warn'); return; }
+  const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
+  const uncategorized = selected.filter(l => l.category === 'location' && l.lat && l.lng);
+  if (uncategorized.length === 0) { showToast('No uncategorized locations in selection to enrich.', 'info'); return; }
+  showToast(`Enriching ${uncategorized.length} locations via OSM...`);
+  const count = await enrichInBackground(uncategorized, {
+    onProgress(done, total, found) {
+      const el = document.getElementById('bulk-selected-count');
+      if (el) el.textContent = `🗺️ ${done}/${total} · ${found} enriched`;
+    },
+  });
+  updateBulkCount();
+  _bulkVScrollState = null;
+  _bulkVScrollPaint();
+  showToast(`Enriched ${count} locations via OpenStreetMap`);
+}
+
+async function bulkSyncGoogle() {
+  if (bulkSelected.size === 0) { showToast('Select locations first.', 'warn'); return; }
+  const enabled = await checkPlacesEnabled();
+  if (!enabled) { showToast('Google Places API not configured. Add API key in Account settings.', 'warn'); return; }
+  const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
+  const toSync = selected.filter(l => !l._googleSyncedAt);
+  if (toSync.length === 0) { showToast('All selected locations already synced with Google.', 'info'); return; }
+  showToast(`Syncing ${toSync.length} locations with Google Places...`);
+  await syncImportedLocations(toSync);
+  _bulkVScrollState = null;
+  _bulkVScrollPaint();
 }
 
 async function applyBulkEdit() {
@@ -6319,31 +6365,55 @@ function parseCSV(content) {
   return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
-let _geocodeCancelled = false;
+// ── Nominatim concurrent pool (2 workers, ~500ms spacing = ~4 req/s total, within fair-use) ──
+let _nominatimCancelled = false;
+function cancelNominatim() { _nominatimCancelled = true; }
+
+async function nominatimPool(tasks, { concurrency = 2, delayMs = 550, onProgress } = {}) {
+  _nominatimCancelled = false;
+  let completed = 0, succeeded = 0;
+  const total = tasks.length;
+
+  async function worker(startIdx) {
+    for (let i = startIdx; i < total; i += concurrency) {
+      if (_nominatimCancelled) break;
+      const task = tasks[i];
+      try {
+        const res = await fetch(task.url, { headers: { 'Accept-Language': 'en' } });
+        const data = await res.json();
+        if (task.onResult(data)) succeeded++;
+      } catch {}
+      completed++;
+      if (onProgress) onProgress(completed, total, succeeded);
+      if (i + concurrency < total) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  const workers = [];
+  for (let w = 0; w < Math.min(concurrency, total); w++) {
+    workers.push(worker(w));
+    if (w < concurrency - 1) await new Promise(r => setTimeout(r, Math.floor(delayMs / concurrency)));
+  }
+  await Promise.all(workers);
+  return { completed, succeeded, cancelled: _nominatimCancelled };
+}
+
 async function geocodeCSVResults(results) {
-  _geocodeCancelled = false;
   const preview = document.getElementById('import-preview');
   if (preview) {
     preview.classList.add('active');
     preview.querySelector('h4').innerHTML = `
       <div style="margin-bottom:8px;">📍 This CSV has no coordinates — looking up locations via OpenStreetMap...</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Each place name is searched on Nominatim (~1/sec rate limit). Places not found will be skipped.</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Searching Nominatim with 2 parallel workers. Places not found will be skipped.</div>
       <div id="geocode-progress" style="font-size:12px;">Starting...</div>
-      <button class="btn btn-secondary" onclick="_geocodeCancelled=true" style="font-size:11px;padding:4px 12px;margin-top:8px;">⏹ Stop & use what we have</button>
+      <button class="btn btn-secondary" onclick="cancelNominatim()" style="font-size:11px;padding:4px 12px;margin-top:8px;">⏹ Stop & use what we have</button>
     `;
   }
   const toGeocode = results.filter(r => r._needsGeocode);
-  let geocoded = 0;
 
-  for (let i = 0; i < toGeocode.length; i++) {
-    if (_geocodeCancelled) break;
-    const r = toGeocode[i];
-    const progress = document.getElementById('geocode-progress');
-    if (progress) progress.textContent = `Geocoding ${i+1}/${toGeocode.length}: ${r.name}... (${geocoded} found so far)`;
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`, { headers: { 'Accept-Language': 'en' } });
-      const data = await res.json();
+  const tasks = toGeocode.map(r => ({
+    url: `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`,
+    onResult(data) {
       if (data[0]) {
         r.lat = parseFloat(data[0].lat);
         r.lng = parseFloat(data[0].lon);
@@ -6351,12 +6421,21 @@ async function geocodeCSVResults(results) {
         const osmCat = osmToCategory(data[0].class, data[0].type);
         if (osmCat) r.category = osmCat;
         delete r._needsGeocode;
-        geocoded++;
+        return true;
       }
-    } catch {}
-  }
+      return false;
+    },
+  }));
+
+  const result = await nominatimPool(tasks, {
+    onProgress(done, total, found) {
+      const el = document.getElementById('geocode-progress');
+      if (el) el.textContent = `${done}/${total} searched · ${found} found`;
+    },
+  });
+
   const h4 = preview?.querySelector('h4');
-  if (h4) h4.textContent = `${_geocodeCancelled ? 'Stopped' : 'Done'}: ${geocoded}/${toGeocode.length} places found on OpenStreetMap`;
+  if (h4) h4.textContent = `${result.cancelled ? 'Stopped' : 'Done'}: ${result.succeeded}/${toGeocode.length} places found on OpenStreetMap`;
   return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
@@ -6466,46 +6545,44 @@ function osmToCategory(osmClass, osmType) {
   return OSM_CATEGORY_MAP[osmClass + ':' + osmType] || null;
 }
 
-// Background enrichment — runs after import is done, updates locations one by one
-async function enrichInBackground(locations) {
-  const max = Math.min(locations.length, 50);
-  let enriched = 0;
-  for (let i = 0; i < max; i++) {
-    const loc = locations[i];
-    const locId = loc.id || loc._id;
-    if (!locId) continue;
-    // Skip if already approved while enrichment was running
-    const current = state.locations.find(l => (l.id || l._id) === locId);
-    if (current && !current.needsApproval && current.category !== 'location') continue;
-    try {
-      await new Promise(r => setTimeout(r, 1100));
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      if (!data) continue;
+// Background enrichment — reverse-geocode uncategorized locations via Nominatim
+async function enrichInBackground(locations, { onProgress } = {}) {
+  const toEnrich = locations.filter(l => {
+    const locId = l.id || l._id;
+    if (!locId || l.category !== 'location' || !l.lat || !l.lng) return false;
+    const current = state.locations.find(s => (s.id || s._id) === locId);
+    return !current || current.needsApproval || current.category === 'location';
+  }).slice(0, 50);
+
+  if (toEnrich.length === 0) return 0;
+
+  const tasks = toEnrich.map(loc => ({
+    url: `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+    onResult(data) {
+      if (!data) return false;
       const osmCat = osmToCategory(data.class, data.type);
       const newCat = osmCat || inferCategory((data.name || '') + ' ' + (data.display_name || ''));
-      if (newCat !== 'location') {
-        loc.category = newCat;
-        loc.suggestedCategory = newCat;
-        if (!loc.address && data.display_name) loc.address = data.display_name;
-        // Update in state
-        const stateIdx = state.locations.findIndex(l => (l.id || l._id) === locId);
-        if (stateIdx >= 0) Object.assign(state.locations[stateIdx], { category: newCat, suggestedCategory: newCat, address: loc.address });
-        // Persist to server
-        await api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: loc.address || undefined });
-        enriched++;
-      }
-    } catch {}
-  }
-  if (enriched > 0) {
-    console.log(`Background enrichment: updated ${enriched} categories`);
+      if (newCat === 'location') return false;
+      const locId = loc.id || loc._id;
+      loc.category = newCat;
+      loc.suggestedCategory = newCat;
+      if (!loc.address && data.display_name) loc.address = data.display_name;
+      const stateIdx = state.locations.findIndex(l => (l.id || l._id) === locId);
+      if (stateIdx >= 0) Object.assign(state.locations[stateIdx], { category: newCat, suggestedCategory: newCat, address: loc.address });
+      api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: loc.address || undefined }).catch(() => {});
+      return true;
+    },
+  }));
+
+  const result = await nominatimPool(tasks, { onProgress });
+
+  if (result.succeeded > 0) {
+    console.log(`Background enrichment: updated ${result.succeeded} categories`);
     renderMarkers();
     renderApproval();
     updateApprovalBadge();
   }
+  return result.succeeded;
 }
 
 // ── Google Timeline Edits (Timeline Edits.json — placeAggregates) ──
