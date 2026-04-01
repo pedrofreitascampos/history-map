@@ -308,10 +308,18 @@ app.delete('/api/locations/:id', auth, async (req, res) => {
 app.post('/api/locations/bulk', auth, async (req, res) => {
   const { locations: locs } = req.body;
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
+  const ALLOWED_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
+    'priceLevel','tripId','collections','people','tags','notes','visits','needsApproval',
+    'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt'];
   const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
   if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
-  const toInsert = valid.map(l => ({ ...l, userId: req.user.id, updatedAt: new Date().toISOString() }));
-  toInsert.forEach(l => delete l._id);
+  const toInsert = valid.map(l => {
+    const clean = {};
+    ALLOWED_FIELDS.forEach(f => { if (l[f] !== undefined) clean[f] = l[f]; });
+    clean.userId = req.user.id;
+    clean.updatedAt = new Date().toISOString();
+    return clean;
+  });
   const saved = await db.locations.insert(toInsert);
   log('info', 'db_bulk_insert', { table: 'locations', count: saved.length, skipped: locs.length - valid.length, userId: req.user.id });
   res.json(saved);
@@ -489,6 +497,23 @@ app.put('/api/settings', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── User's own backup list ───────────────────────────────
+app.get('/api/my-backups', auth, async (req, res) => {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
+    const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const userBackups = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+      .sort().reverse();
+    const list = userBackups.map(name => {
+      const stats = fs.statSync(path.join(BACKUP_DIR, name));
+      const dateMatch = name.match(/_(\d{4}-\d{2}-\d{2})\.json$/);
+      return { name, date: dateMatch ? dateMatch[1] : '', size: stats.size };
+    });
+    res.json(list);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── User's own latest backup ─────────────────────────────
 app.get('/api/my-backup', auth, async (req, res) => {
   try {
@@ -502,6 +527,19 @@ app.get('/api/my-backup', auth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/my-backup/:filename', auth, (req, res) => {
+  const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filename = path.basename(req.params.filename);
+  if (!filename.startsWith(username + '_') || !filename.endsWith('.json')) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  const filePath = path.resolve(BACKUP_DIR, filename);
+  const normalizedDir = path.resolve(BACKUP_DIR);
+  if (!filePath.startsWith(normalizedDir + path.sep)) return res.status(403).json({ error: 'Invalid path' });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Backup not found' });
+  res.download(filePath);
 });
 
 // ── Google Places API (proxied, key never exposed) ───────
