@@ -5979,7 +5979,7 @@ function initImport() {
   const dropZone = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
 
-  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('click', (e) => { if (e.target !== fileInput) fileInput.click(); });
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
   dropZone.addEventListener('drop', e => {
@@ -6369,7 +6369,7 @@ function parseCSV(content) {
 let _nominatimCancelled = false;
 function cancelNominatim() { _nominatimCancelled = true; }
 
-async function nominatimPool(tasks, { concurrency = 2, delayMs = 550, onProgress } = {}) {
+async function nominatimPool(tasks, { concurrency = 4, delayMs = 300, onProgress } = {}) {
   _nominatimCancelled = false;
   let completed = 0, succeeded = 0;
   const total = tasks.length;
