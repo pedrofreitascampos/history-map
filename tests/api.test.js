@@ -584,6 +584,30 @@ describe('Frontend invariants (code checks)', () => {
   });
 });
 
+// ─── Backups ────────────────────────────────────────────
+describe('User backup endpoints', () => {
+  test('my-backups returns empty array when no backups exist', async () => {
+    const res = await request(app).get('/api/my-backups').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  test('my-backup returns 404 when no backups exist', async () => {
+    const res = await request(app).get('/api/my-backup').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  test('my-backup/:filename rejects access to other users backups', async () => {
+    const res = await request(app).get('/api/my-backup/otheruser_2026-01-01.json').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('my-backups requires auth', async () => {
+    const res = await request(app).get('/api/my-backups');
+    expect(res.status).toBe(401);
+  });
+});
+
 // ─── Static files ────────────────────────────────────────
 describe('Static files', () => {
   test('serves index.html', async () => {
