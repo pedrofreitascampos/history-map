@@ -684,3 +684,260 @@ describe('Static files', () => {
     expect(res.headers['content-type']).toMatch(/json/);
   });
 });
+
+// ─── Auth negative paths ─────────────────────────────────
+describe('Auth negative paths', () => {
+  test('register without username → 400', async () => {
+    const res = await request(app).post('/api/auth/register').send({ password: 'testpass123' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  test('register without password → 400', async () => {
+    const res = await request(app).post('/api/auth/register').send({ username: 'newuser' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  test('login with nonexistent username → 401', async () => {
+    const res = await request(app).post('/api/auth/login').send({ username: 'doesnotexist', password: 'whatever' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid credentials');
+  });
+
+  test('login without body fields → 401', async () => {
+    // username undefined → findOne returns null → 401
+    const res = await request(app).post('/api/auth/login').send({});
+    expect(res.status).toBe(401);
+  });
+
+  test('google auth when OAuth not configured → 501', async () => {
+    // In tests GOOGLE_CLIENT_ID is unset → googleClient is null → 501 (not 400)
+    const res = await request(app).post('/api/auth/google').send({ credential: 'fake-credential' });
+    expect(res.status).toBe(501);
+  });
+});
+
+// ─── Authorization (no token) ────────────────────────────
+describe('Authorization (no token)', () => {
+  test('GET /api/locations → 401 No token', async () => {
+    const res = await request(app).get('/api/locations');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('No token');
+  });
+
+  test('GET /api/trips → 401 No token', async () => {
+    const res = await request(app).get('/api/trips');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('No token');
+  });
+
+  test('GET /api/collections → 401 No token', async () => {
+    const res = await request(app).get('/api/collections');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('No token');
+  });
+
+  test('GET /api/settings → 401 No token', async () => {
+    const res = await request(app).get('/api/settings');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('No token');
+  });
+
+  test('GET /api/places/status → 401 No token', async () => {
+    const res = await request(app).get('/api/places/status');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('No token');
+  });
+});
+
+// ─── Authorization (invalid token) ──────────────────────
+describe('Authorization (invalid token)', () => {
+  test('GET /api/locations → 401 Invalid token', async () => {
+    const res = await request(app).get('/api/locations').set('Authorization', 'Bearer garbage-not-a-real-jwt');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid token');
+  });
+
+  test('PUT /api/locations/anything → 401 Invalid token', async () => {
+    const res = await request(app).put('/api/locations/anything').set('Authorization', 'Bearer garbage-not-a-real-jwt').send({ name: 'X' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid token');
+  });
+});
+
+// ─── CRUD not found ──────────────────────────────────────
+describe('CRUD not found', () => {
+  test('PUT /api/locations/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).put('/api/locations/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`).send({ name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  test('DELETE /api/locations/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).delete('/api/locations/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  test('PUT /api/trips/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).put('/api/trips/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`).send({ name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  test('DELETE /api/trips/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).delete('/api/trips/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  test('PUT /api/collections/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).put('/api/collections/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`).send({ name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+
+  test('DELETE /api/collections/nonexistent-id-xyz → 404', async () => {
+    const res = await request(app).delete('/api/collections/nonexistent-id-xyz').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not found');
+  });
+});
+
+// ─── CRUD validation ─────────────────────────────────────
+describe('CRUD validation', () => {
+  test('POST /api/locations missing name → 400 Name required', async () => {
+    const res = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`).send({ lat: 38.7, lng: -9.1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Name required');
+  });
+
+  test('POST /api/locations missing lat → 400 Invalid latitude', async () => {
+    const res = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`).send({ name: 'X', lng: -9.1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid latitude');
+  });
+
+  test('POST /api/locations lat: 91 → 400 Invalid latitude', async () => {
+    const res = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`).send({ name: 'X', lat: 91, lng: 0 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid latitude');
+  });
+
+  test('POST /api/locations lng: 181 → 400 Invalid longitude', async () => {
+    const res = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`).send({ name: 'X', lat: 0, lng: 181 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid longitude');
+  });
+
+  test('POST /api/locations lat: "abc" (non-number) → 400 Invalid latitude', async () => {
+    const res = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`).send({ name: 'X', lat: 'abc', lng: 0 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid latitude');
+  });
+
+  test('POST /api/locations/bulk with non-array body → 400 Expected array', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`).send({ locations: 'foo' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Expected array');
+  });
+});
+
+// ─── Bulk import edge cases ──────────────────────────────
+describe('Bulk import edge cases', () => {
+  test('POST /api/locations/bulk with empty array → 400 No valid locations', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`).send({ locations: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('No valid locations');
+  });
+
+  test('POST /api/locations/bulk with only invalid items → 400 No valid locations', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`).send({ locations: [{ name: 'x' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('No valid locations');
+  });
+
+  test('POST /api/collections/bulk with non-array → 400 Expected array', async () => {
+    const res = await request(app).post('/api/collections/bulk').set('Authorization', `Bearer ${token}`).send({ collections: 'foo' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Expected array');
+  });
+});
+
+// ─── Settings ────────────────────────────────────────────
+describe('Settings', () => {
+  test('GET /api/settings returns googlePlacesKey: null for fresh user', async () => {
+    const res = await request(app).get('/api/settings').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.googlePlacesKey).toBeNull();
+  });
+
+  test('PUT /api/settings sets key, GET returns masked value', async () => {
+    const put = await request(app).put('/api/settings').set('Authorization', `Bearer ${token}`).send({ googlePlacesKey: 'AIzaTest1234' });
+    expect(put.status).toBe(200);
+    const get = await request(app).get('/api/settings').set('Authorization', `Bearer ${token}`);
+    expect(get.status).toBe(200);
+    expect(get.body.googlePlacesKey).toBe('••••1234');
+  });
+
+  test('PUT /api/settings with empty string clears key, GET returns null', async () => {
+    await request(app).put('/api/settings').set('Authorization', `Bearer ${token}`).send({ googlePlacesKey: '' });
+    const get = await request(app).get('/api/settings').set('Authorization', `Bearer ${token}`);
+    expect(get.status).toBe(200);
+    expect(get.body.googlePlacesKey).toBeNull();
+  });
+});
+
+// ─── Backup path security ────────────────────────────────
+describe('Backup path security', () => {
+  test('GET /api/my-backup/other-user-file.json → 403 Access denied', async () => {
+    const res = await request(app).get('/api/my-backup/other-user-file.json').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Access denied');
+  });
+
+  test('GET /api/my-backup with path traversal → 403', async () => {
+    const res = await request(app).get('/api/my-backup/..%2F..%2Fetc%2Fpasswd').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('GET /api/my-backups without token → 401', async () => {
+    const res = await request(app).get('/api/my-backups');
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── Cross-user data isolation (404 path) ────────────────
+describe('Cross-user data isolation (404 path)', () => {
+  let tokenB;
+
+  beforeAll(async () => {
+    const reg = await request(app).post('/api/auth/register').send({ username: 'userB-isolation', password: 'passB1234' });
+    tokenB = reg.body.token;
+  });
+
+  test('User B cannot PUT User A location → 404', async () => {
+    const created = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'UserA Location', lat: 10, lng: 10, category: 'park' });
+    expect(created.status).toBe(200);
+    const res = await request(app).put(`/api/locations/${created.body._id}`).set('Authorization', `Bearer ${tokenB}`).send({ name: 'Hacked' });
+    expect(res.status).toBe(404);
+  });
+
+  test('User B cannot DELETE User A trip → 404', async () => {
+    const created = await request(app).post('/api/trips').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'UserA Trip', startDate: '2024-06-01', endDate: '2024-06-07' });
+    expect(created.status).toBe(200);
+    const res = await request(app).delete(`/api/trips/${created.body._id}`).set('Authorization', `Bearer ${tokenB}`);
+    expect(res.status).toBe(404);
+  });
+
+  test('User B cannot PUT User A collection → 404', async () => {
+    const created = await request(app).post('/api/collections').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'UserA Collection', emoji: '📌' });
+    expect(created.status).toBe(200);
+    const res = await request(app).put(`/api/collections/${created.body._id}`).set('Authorization', `Bearer ${tokenB}`).send({ name: 'Hacked' });
+    expect(res.status).toBe(404);
+  });
+});
