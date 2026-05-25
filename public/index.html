@@ -2063,6 +2063,8 @@ const stateIndex = {
   locationsByCollection: new Map(),
   collectionById: new Map(),
   locationById: new Map(),
+  peopleCounts: new Map(),
+  tagCounts: new Map(),
 };
 
 function rebuildIndexes() {
@@ -2071,6 +2073,8 @@ function rebuildIndexes() {
   stateIndex.locationsByCollection.clear();
   stateIndex.collectionById.clear();
   stateIndex.locationById.clear();
+  stateIndex.peopleCounts.clear();
+  stateIndex.tagCounts.clear();
   for (const t of state.trips) stateIndex.tripById.set(t.id, t);
   for (const c of state.collections) stateIndex.collectionById.set(c.id, c);
   for (const l of state.locations) {
@@ -2085,6 +2089,12 @@ function rebuildIndexes() {
       let arr = stateIndex.locationsByCollection.get(colId);
       if (!arr) { arr = []; stateIndex.locationsByCollection.set(colId, arr); }
       arr.push(l);
+    }
+    for (const p of (l.people || [])) {
+      stateIndex.peopleCounts.set(p, (stateIndex.peopleCounts.get(p) || 0) + 1);
+    }
+    for (const t of (l.tags || [])) {
+      stateIndex.tagCounts.set(t, (stateIndex.tagCounts.get(t) || 0) + 1);
     }
   }
 }
@@ -2823,24 +2833,21 @@ function populateFilterDropdowns() {
     state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   tripSel.innerHTML = tripOpts;
 
-  const allPeople = new Set();
-  state.locations.forEach(l => (l.people || []).forEach(p => allPeople.add(p)));
   const peopleSel = document.getElementById('people-filter');
   peopleSel.innerHTML = '<option value="">Everyone</option>' +
-    [...allPeople].sort().map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    [...stateIndex.peopleCounts.keys()].sort().map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
 
   buildTagFilters();
 }
 
 let _tagFilterCache = '';
 function buildTagFilters() {
-  const allTags = {};
-  state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0) + 1; }));
+  const tagEntries = [...stateIndex.tagCounts.entries()];
   // Skip rebuild if tags haven't changed
-  const cacheKey = Object.entries(allTags).sort().map(([t,c])=>t+c).join('|');
+  const cacheKey = tagEntries.slice().sort().map(([t,c])=>t+c).join('|');
   if (cacheKey === _tagFilterCache) return;
   _tagFilterCache = cacheKey;
-  const sorted = Object.entries(allTags).sort((a,b) => b[1] - a[1]);
+  const sorted = tagEntries.sort((a,b) => b[1] - a[1]);
   const container = document.getElementById('tag-filters');
   container.innerHTML = '';
   if (sorted.length === 0) {
@@ -2922,10 +2929,8 @@ function initBulkView() {
   colAction.innerHTML = '<option value="">Collection →</option>' +
     state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
   // Populate tag filter
-  const allTags = {};
-  state.locations.forEach(l => (l.tags || []).forEach(t => { allTags[t] = (allTags[t]||0)+1; }));
   const tagFilter = document.getElementById('bulk-filter-tag');
-  const sortedTags = Object.entries(allTags).sort((a,b) => b[1]-a[1]);
+  const sortedTags = [...stateIndex.tagCounts.entries()].sort((a,b) => b[1]-a[1]);
   tagFilter.innerHTML = '<option value="">All tags</option>' +
     sortedTags.map(([t, n]) => `<option value="${esc(t)}">${esc(t)} (${n})</option>`).join('');
   // Tag action dropdown: remove specific tags
@@ -3633,9 +3638,7 @@ function renderModalTags() {
   // Populate tag autocomplete datalist with all existing tags
   const datalist = document.getElementById('tag-datalist');
   if (datalist) {
-    const allTags = new Set();
-    state.locations.forEach(l => (l.tags || []).forEach(t => allTags.add(t)));
-    datalist.innerHTML = [...allTags].sort()
+    datalist.innerHTML = [...stateIndex.tagCounts.keys()].sort()
       .filter(t => !state.modalTags.includes(t))
       .map(t => `<option value="${esc(t)}">`).join('');
   }
@@ -3849,11 +3852,7 @@ function closePeopleManager() {
   restoreFocus();
 }
 function renderPeopleManager() {
-  const allPeople = {};
-  state.locations.forEach(l => (l.people || []).forEach(p => {
-    allPeople[p] = (allPeople[p] || 0) + 1;
-  }));
-  const sorted = Object.entries(allPeople).sort((a,b) => b[1] - a[1]);
+  const sorted = [...stateIndex.peopleCounts.entries()].sort((a,b) => b[1] - a[1]);
   const container = document.getElementById('people-manager-list');
   const empty = document.getElementById('people-manager-empty');
 
@@ -3886,6 +3885,7 @@ function removePersonGlobal(idx) {
       }
     });
     await Promise.all(updates);
+    rebuildIndexes();
     renderPeopleManager();
     populateFilterDropdowns();
     renderMarkers();
@@ -3904,6 +3904,7 @@ async function renamePerson(idx) {
     }
   });
   await Promise.all(updates);
+  rebuildIndexes();
   renderPeopleManager();
   populateFilterDropdowns();
   renderMarkers();
@@ -4601,54 +4602,61 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 async function drawRoadRoutes(tripLocs, color) {
   const MAX_ROAD_DISTANCE_KM = 500;
+  const MAX_CONCURRENT = 8;
 
+  const legs = [];
   for (let i = 0; i < tripLocs.length - 1; i++) {
-    const from = tripLocs[i];
-    const to = tripLocs[i + 1];
+    const from = tripLocs[i], to = tripLocs[i + 1];
     const dist = haversineKm(from.lat, from.lng, to.lat, to.lng);
+    legs.push({ from, to, isFlight: dist > MAX_ROAD_DISTANCE_KM });
+  }
 
-    if (dist > MAX_ROAD_DISTANCE_KM) {
-      // Too far for roads (likely a flight) — draw dashed straight line
-      const line = L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
+  const fetchRoad = async (leg) => {
+    if (leg.isFlight) return leg;
+    try {
+      const coords = `${leg.from.lng},${leg.from.lat};${leg.to.lng},${leg.to.lat}`;
+      const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?geometries=geojson&overview=full`);
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes?.[0]) {
+        leg.routeCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      }
+    } catch {}
+    return leg;
+  };
+
+  const results = new Array(legs.length);
+  let idx = 0;
+  const workers = Array(Math.min(MAX_CONCURRENT, legs.length)).fill(0).map(async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= legs.length) return;
+      results[i] = await fetchRoad(legs[i]);
+    }
+  });
+  await Promise.all(workers);
+
+  for (const leg of results) {
+    if (leg.isFlight) {
+      tripPathLayer.addLayer(L.polyline([[leg.from.lat, leg.from.lng], [leg.to.lat, leg.to.lng]], {
         color, weight: 2, opacity: 0.4, dashArray: '4, 8',
-      });
-      tripPathLayer.addLayer(line);
-      // Flight icon at midpoint
-      const midLat = (from.lat + to.lat) / 2;
-      const midLng = (from.lng + to.lng) / 2;
-      const plane = L.marker([midLat, midLng], {
+      }));
+      const midLat = (leg.from.lat + leg.to.lat) / 2;
+      const midLng = (leg.from.lng + leg.to.lng) / 2;
+      tripPathLayer.addLayer(L.marker([midLat, midLng], {
         icon: L.divIcon({
           className: '',
           html: `<div style="font-size:14px;">✈️</div>`,
           iconSize: [14, 14], iconAnchor: [7, 7],
         })
-      });
-      tripPathLayer.addLayer(plane);
+      }));
+    } else if (leg.routeCoords) {
+      tripPathLayer.addLayer(L.polyline(leg.routeCoords, {
+        color, weight: 3, opacity: 0.7, smoothFactor: 1,
+      }));
     } else {
-      // Fetch road route from OSRM
-      try {
-        const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?geometries=geojson&overview=full`);
-        const data = await res.json();
-        if (data.code === 'Ok' && data.routes?.[0]) {
-          const geojson = data.routes[0].geometry;
-          const routeCoords = geojson.coordinates.map(c => [c[1], c[0]]);
-          const polyline = L.polyline(routeCoords, {
-            color, weight: 3, opacity: 0.7, smoothFactor: 1,
-          });
-          tripPathLayer.addLayer(polyline);
-        } else {
-          // Fallback to straight line
-          tripPathLayer.addLayer(L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
-            color, weight: 3, opacity: 0.5, dashArray: '8, 8',
-          }));
-        }
-      } catch {
-        // Fallback on network error
-        tripPathLayer.addLayer(L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
-          color, weight: 3, opacity: 0.5, dashArray: '8, 8',
-        }));
-      }
+      tripPathLayer.addLayer(L.polyline([[leg.from.lat, leg.from.lng], [leg.to.lat, leg.to.lng]], {
+        color, weight: 3, opacity: 0.5, dashArray: '8, 8',
+      }));
     }
   }
 }
@@ -4939,7 +4947,7 @@ function viewCollection(colId) {
           <option value="">All categories</option>
           ${catOptions}
         </select>
-        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="filterColAddList()" style="flex:1;">
+        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="debouncedFilterColAddList()" style="flex:1;">
       </div>
       <div id="col-add-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;">
         ${renderColAddItems(available)}
@@ -4990,6 +4998,12 @@ function renderColAddItems(items) {
       <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${esc(l.name)} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
     </label>`;
   }).join('');
+}
+
+let _colAddFilterTimer = null;
+function debouncedFilterColAddList() {
+  if (_colAddFilterTimer) clearTimeout(_colAddFilterTimer);
+  _colAddFilterTimer = setTimeout(() => { _colAddFilterTimer = null; filterColAddList(); }, 150);
 }
 
 function filterColAddList() {
