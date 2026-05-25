@@ -4552,7 +4552,19 @@ function sortTripLocations(locs) {
   });
 }
 
-function renderTripDetail(trip, tripLocs) {
+// Category groupings for the per-trip quality breakdown. Hotels excluded
+// (they're tracked as "stays", not "quality of place") — same for airport/event
+// neutral categories. Adjust here if a category should land in a different bucket.
+const TRIP_QUALITY_GROUPS = {
+  food:        { emoji: '🍽️', label: 'Food & Drink', cats: ['restaurant', 'cafe', 'bar', 'club'] },
+  nature:      { emoji: '🌿', label: 'Nature',       cats: ['park'] },
+  attractions: { emoji: '🏛️', label: 'Attractions', cats: ['monument', 'museum', 'show', 'stadium', 'festival', 'event', 'shopping'] },
+};
+
+// Aggregate trip metrics. Pure function so it's unit-testable via the
+// extract-from-html pattern in tests/import.test.js. tripLocs are expected
+// to be pre-sorted by sortTripLocations() — distance depends on the order.
+function computeTripStats(trip, tripLocs) {
   const allPeople = new Set();
   const catCounts = {};
   let totalRating = 0, ratedCount = 0;
@@ -4562,14 +4574,56 @@ function renderTripDetail(trip, tripLocs) {
     if (l.myRating) { totalRating += l.myRating; ratedCount++; }
   });
 
-  const dates = [trip.startDate, trip.endDate].filter(Boolean);
-  let duration = '';
-  if (dates.length === 2) {
-    const days = Math.ceil((new Date(dates[1]) - new Date(dates[0])) / (1000 * 60 * 60 * 24)) + 1;
-    duration = `${days} day${days !== 1 ? 's' : ''}`;
+  // Date range → days / nights
+  let days = 0, nights = 0;
+  if (trip.startDate && trip.endDate) {
+    const ms = new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime();
+    if (isFinite(ms) && ms >= 0) {
+      days = Math.ceil(ms / 86400000) + 1; // inclusive
+      nights = Math.max(0, days - 1);
+    }
   }
 
-  const avgRating = ratedCount ? (totalRating / ratedCount).toFixed(1) : '—';
+  // Distance: sum of great-circle distances between consecutive locations.
+  // Skips legs where either endpoint lacks valid coords. Caller pre-sorts.
+  // Number.isFinite (not the global isFinite) — strict: null/undefined/NaN all → false.
+  let km = 0;
+  const hasCoords = (l) => Number.isFinite(l.lat) && Number.isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0);
+  for (let i = 1; i < tripLocs.length; i++) {
+    const a = tripLocs[i - 1], b = tripLocs[i];
+    if (hasCoords(a) && hasCoords(b)) km += haversineKm(a.lat, a.lng, b.lat, b.lng);
+  }
+
+  // Hotel stays = count of hotel-category locations in this trip
+  const stays = tripLocs.filter(l => l.category === 'hotel').length;
+
+  // Quality breakdown: avg myRating + avg googleRating per group, plus place count
+  const quality = {};
+  for (const [groupKey, group] of Object.entries(TRIP_QUALITY_GROUPS)) {
+    const groupLocs = tripLocs.filter(l => group.cats.includes(l.category));
+    const mine   = groupLocs.map(l => l.myRating).filter(r => typeof r === 'number' && r > 0);
+    const google = groupLocs.map(l => l.googleRating).filter(r => typeof r === 'number' && r > 0);
+    quality[groupKey] = {
+      count: groupLocs.length,
+      myAvg:     mine.length   ? mine.reduce((s, r) => s + r, 0) / mine.length     : null,
+      googleAvg: google.length ? google.reduce((s, r) => s + r, 0) / google.length : null,
+    };
+  }
+
+  return {
+    allPeople, catCounts, days, nights, km, stays, quality,
+    avgRating: ratedCount ? totalRating / ratedCount : null,
+    placeCount: tripLocs.length,
+  };
+}
+
+function renderTripDetail(trip, tripLocs) {
+  const s = computeTripStats(trip, tripLocs);
+
+  const dates = [trip.startDate, trip.endDate].filter(Boolean);
+  const duration = s.days ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '';
+  const avgRating = s.avgRating !== null ? s.avgRating.toFixed(1) : '—';
+  const distance = s.km > 0 ? (s.km >= 100 ? Math.round(s.km) : s.km.toFixed(1)) : '—';
 
   let html = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
@@ -4582,19 +4636,47 @@ function renderTripDetail(trip, tripLocs) {
     </div>
 
     <div class="trip-stats-grid">
-      <div class="trip-stat-mini"><div class="ts-val">${tripLocs.length}</div><div class="ts-label">Places</div></div>
-      <div class="trip-stat-mini"><div class="ts-val">${Object.keys(catCounts).length}</div><div class="ts-label">Categories</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${s.placeCount}</div><div class="ts-label">Places</div></div>
+      <div class="trip-stat-mini" title="Great-circle distance between consecutive stops"><div class="ts-val">${distance}${s.km > 0 ? '<span style=\"font-size:12px;\"> km</span>' : ''}</div><div class="ts-label">Distance</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${s.nights || '—'}</div><div class="ts-label">Nights</div></div>
+      <div class="trip-stat-mini" title="Hotel-category locations in this trip"><div class="ts-val">${s.stays || '—'}</div><div class="ts-label">Stays</div></div>
       <div class="trip-stat-mini"><div class="ts-val">${avgRating}</div><div class="ts-label">Avg Rating</div></div>
-      <div class="trip-stat-mini"><div class="ts-val">${allPeople.size}</div><div class="ts-label">People</div></div>
+      <div class="trip-stat-mini"><div class="ts-val">${s.allPeople.size}</div><div class="ts-label">People</div></div>
     </div>`;
 
-  // Categories breakdown
+  // Quality breakdown — food / nature / attractions
+  const qualityRows = Object.entries(TRIP_QUALITY_GROUPS).map(([key, group]) => {
+    const q = s.quality[key];
+    if (!q || q.count === 0) return '';
+    const mine   = q.myAvg     !== null ? `★ ${q.myAvg.toFixed(1)} <span style="color:var(--text-muted);font-size:10px;">mine</span>`        : '<span style="color:var(--text-muted);">★ —</span>';
+    const google = q.googleAvg !== null ? `⭐ ${q.googleAvg.toFixed(1)} <span style="color:var(--text-muted);font-size:10px;">google</span>` : '<span style="color:var(--text-muted);">⭐ —</span>';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
+      <span style="font-size:18px;">${group.emoji}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:500;">${group.label}</div>
+        <div style="color:var(--text-muted);font-size:11px;">${q.count} place${q.count !== 1 ? 's' : ''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:11px;">
+        <div>${mine}</div>
+        <div>${google}</div>
+      </div>
+    </div>`;
+  }).filter(Boolean).join('');
+  if (qualityRows) {
+    html += `<h4 style="font-family:var(--font-display);font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;">Quality</h4>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">${qualityRows}</div>`;
+  }
+
+  // Categories breakdown (existing — kept after quality so it remains visible)
   html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">`;
-  Object.entries(catCounts).forEach(([cat, count]) => {
+  Object.entries(s.catCounts).forEach(([cat, count]) => {
     const c = CATEGORIES[cat] || CATEGORIES.location;
     html += `<span class="popup-tag">${c.emoji} ${c.label} × ${count}</span>`;
   });
   html += `</div>`;
+
+  // Locals for the existing people/route blocks below
+  const allPeople = s.allPeople;
 
   // People
   if (allPeople.size > 0) {

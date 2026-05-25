@@ -47,10 +47,12 @@ function extractConst(name) {
 const sandbox = {};
 const code = [
   extractConst('OSM_CATEGORY_MAP'),
+  extractConst('TRIP_QUALITY_GROUPS'),
   extractFunction('osmToCategory'),
   extractFunction('inferCategory'),
   extractFunction('extractPlaceId'),
   extractFunction('haversineKm'),
+  extractFunction('computeTripStats'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
@@ -1062,5 +1064,117 @@ describe('Import + query integration', () => {
     await request(app).delete(`/api/locations/${id}`).set('Authorization', `Bearer ${token}`);
     const list = await request(app).get('/api/locations').set('Authorization', `Bearer ${token}`);
     expect(list.body).toHaveLength(0);
+  });
+});
+
+// ─── Trip stats aggregation ──────────────────────────────
+describe('computeTripStats', () => {
+  // Helper: run computeTripStats inside the vm context, then flatten the Set
+  // to a Number so we don't need a cross-realm `instanceof` check in expectations.
+  const compute = (trip, locs) => {
+    const out = vm.runInContext(
+      `(() => {
+         const s = computeTripStats(${JSON.stringify(trip)}, ${JSON.stringify(locs)});
+         return { ...s, peopleCount: s.allPeople.size };
+       })()`,
+      ctx
+    );
+    return out;
+  };
+
+  const trip = { id: 't1', name: 'Iberia', startDate: '2026-06-01', endDate: '2026-06-08' };
+  const locs = [
+    { name: 'Belém Tower',  lat: 38.6916, lng: -9.2160, category: 'monument',   myRating: 4,   googleRating: 4.6, people: ['Ana'] },
+    { name: 'Pestana',      lat: 38.7100, lng: -9.1300, category: 'hotel',      myRating: 3,   googleRating: 4.1, people: ['Ana'] },
+    { name: 'Cervejaria',   lat: 41.1500, lng: -8.6100, category: 'restaurant', myRating: 5,   googleRating: 4.4 },
+    { name: 'Park Güell',   lat: 41.4145, lng: 2.1527,  category: 'park',       myRating: 4,   googleRating: 4.5, people: ['Bea', 'Ana'] },
+    { name: 'Hotel Madrid', lat: 40.4168, lng: -3.7038, category: 'hotel',                    googleRating: 4.0 },
+  ];
+
+  test('place + people + categories counts', () => {
+    const s = compute(trip, locs);
+    expect(s.placeCount).toBe(5);
+    expect(s.peopleCount).toBe(2); // Ana + Bea
+    expect(s.catCounts).toEqual({ monument: 1, hotel: 2, restaurant: 1, park: 1 });
+  });
+
+  test('days + nights from date range', () => {
+    const s = compute(trip, locs);
+    expect(s.days).toBe(8);   // Jun 1..Jun 8 inclusive
+    expect(s.nights).toBe(7); // days - 1
+  });
+
+  test('days + nights zero when dates absent', () => {
+    const s = compute({ id: 't2', name: 'Open' }, locs);
+    expect(s.days).toBe(0);
+    expect(s.nights).toBe(0);
+  });
+
+  test('distance sums consecutive haversine legs', () => {
+    const s = compute(trip, locs);
+    // Belém → Pestana (~8 km) → Porto (~270 km) → Barcelona (~900 km) → Madrid (~500 km)
+    // ≈ 1680 km total. Use a wide ballpark for tolerance.
+    expect(s.km).toBeGreaterThan(1500);
+    expect(s.km).toBeLessThan(2000);
+  });
+
+  test('distance is zero for a single location', () => {
+    const s = compute(trip, [locs[0]]);
+    expect(s.km).toBe(0);
+  });
+
+  test('distance skips legs with invalid coords', () => {
+    const dirty = [
+      locs[0],
+      { name: 'BadCoords', lat: NaN, lng: NaN, category: 'location' },
+      locs[2],
+    ];
+    const s = compute(trip, dirty);
+    expect(s.km).toBe(0); // both legs touch the NaN row → skipped
+  });
+
+  test('hotel stays counted correctly', () => {
+    const s = compute(trip, locs);
+    expect(s.stays).toBe(2);
+  });
+
+  test('quality breakdown: food group (restaurant/cafe/bar/club)', () => {
+    const s = compute(trip, locs);
+    expect(s.quality.food.count).toBe(1);    // 1 restaurant
+    expect(s.quality.food.myAvg).toBe(5);
+    expect(s.quality.food.googleAvg).toBe(4.4);
+  });
+
+  test('quality breakdown: nature group', () => {
+    const s = compute(trip, locs);
+    expect(s.quality.nature.count).toBe(1);
+    expect(s.quality.nature.myAvg).toBe(4);
+    expect(s.quality.nature.googleAvg).toBe(4.5);
+  });
+
+  test('quality breakdown: attractions group', () => {
+    const s = compute(trip, locs);
+    expect(s.quality.attractions.count).toBe(1);   // monument
+    expect(s.quality.attractions.myAvg).toBe(4);
+    expect(s.quality.attractions.googleAvg).toBe(4.6);
+  });
+
+  test('quality averages ignore zero / missing ratings', () => {
+    const noRatings = [
+      { name: 'A', lat: 0, lng: 0, category: 'restaurant', myRating: 0,    googleRating: 0    },
+      { name: 'B', lat: 0, lng: 0, category: 'restaurant', myRating: null, googleRating: null },
+      { name: 'C', lat: 0, lng: 0, category: 'restaurant', myRating: 4,    googleRating: 4.2  },
+    ];
+    const s = compute({ id: 't' }, noRatings);
+    expect(s.quality.food.count).toBe(3);
+    expect(s.quality.food.myAvg).toBe(4);       // only the one with a real rating
+    expect(s.quality.food.googleAvg).toBe(4.2);
+  });
+
+  test('avgRating null when no rated locations', () => {
+    const s = compute({ id: 't' }, [
+      { name: 'X', lat: 0, lng: 0, category: 'location' },
+    ]);
+    expect(s.avgRating).toBeNull();
   });
 });
