@@ -283,8 +283,18 @@ app.post('/api/locations', auth, async (req, res) => {
   res.json(saved);
 });
 
+// Clamp/validate fields on a location update payload. Shared between POST and PUT
+// so a stored value can't bypass the rules set during bulk import.
+function sanitizeLocationUpdate(updates) {
+  if (updates.bucketStrength !== undefined) {
+    const n = parseInt(updates.bucketStrength, 10);
+    updates.bucketStrength = isNaN(n) ? 0 : Math.max(0, Math.min(5, n));
+  }
+  return updates;
+}
+
 app.put('/api/locations/:id', auth, async (req, res) => {
-  const updates = { ...req.body, updatedAt: new Date().toISOString() };
+  const updates = sanitizeLocationUpdate({ ...req.body, updatedAt: new Date().toISOString() });
   delete updates._id;
   delete updates.userId;
   const count = await db.locations.update(
@@ -310,12 +320,13 @@ app.post('/api/locations/bulk', auth, async (req, res) => {
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
   const ALLOWED_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
     'priceLevel','tripId','collections','people','tags','notes','visits','needsApproval',
-    'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt'];
+    'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength'];
   const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
   if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
   const toInsert = valid.map(l => {
     const clean = {};
     ALLOWED_FIELDS.forEach(f => { if (l[f] !== undefined) clean[f] = l[f]; });
+    sanitizeLocationUpdate(clean);
     clean.userId = req.user.id;
     clean.updatedAt = new Date().toISOString();
     return clean;

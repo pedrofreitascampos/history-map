@@ -128,6 +128,68 @@ describe('Locations', () => {
   });
 });
 
+// ─── Bucket-list strength ────────────────────────────────
+describe('Bucket-list strength', () => {
+  test('bulk import round-trips a valid bucketStrength (1-5)', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
+      .send({ locations: [
+        { name: 'Wishlist3', lat: 50, lng: 50, category: 'monument', status: 'bucket', bucketStrength: 3 },
+        { name: 'Wishlist5', lat: 51, lng: 51, category: 'park',     status: 'bucket', bucketStrength: 5 },
+      ]});
+    expect(res.status).toBe(200);
+    expect(res.body[0].bucketStrength).toBe(3);
+    expect(res.body[1].bucketStrength).toBe(5);
+  });
+
+  test('bulk import clamps out-of-range bucketStrength', async () => {
+    const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
+      .send({ locations: [
+        { name: 'Negative',   lat: 60, lng: 60, category: 'park', status: 'bucket', bucketStrength: -1 },
+        { name: 'TooHigh',    lat: 61, lng: 61, category: 'park', status: 'bucket', bucketStrength: 99 },
+        { name: 'AsString',   lat: 62, lng: 62, category: 'park', status: 'bucket', bucketStrength: '4' },
+        { name: 'AsGarbage',  lat: 63, lng: 63, category: 'park', status: 'bucket', bucketStrength: 'banana' },
+      ]});
+    expect(res.status).toBe(200);
+    const byName = Object.fromEntries(res.body.map(l => [l.name, l]));
+    expect(byName.Negative.bucketStrength).toBe(0);
+    expect(byName.TooHigh.bucketStrength).toBe(5);
+    expect(byName.AsString.bucketStrength).toBe(4);
+    expect(byName.AsGarbage.bucketStrength).toBe(0);
+  });
+
+  test('PUT accepts bucketStrength update', async () => {
+    // Create a fresh bucket location
+    const created = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'TopPriority', lat: 70, lng: 70, category: 'monument', status: 'bucket' });
+    expect(created.status).toBe(200);
+    const updated = await request(app).put(`/api/locations/${created.body._id}`).set('Authorization', `Bearer ${token}`)
+      .send({ bucketStrength: 4 });
+    expect(updated.status).toBe(200);
+    expect(updated.body.bucketStrength).toBe(4);
+  });
+
+  test('PUT clamps out-of-range bucketStrength (regression: prevents stored-render DoS)', async () => {
+    // Stored values are used in `'♥'.repeat(loc.bucketStrength)` on the client.
+    // String.prototype.repeat() throws RangeError for huge or negative numbers,
+    // which would break the popup/list render for the affected location.
+    const created = await request(app).post('/api/locations').set('Authorization', `Bearer ${token}`)
+      .send({ name: 'ClampTarget', lat: 80, lng: 80, category: 'monument', status: 'bucket' });
+    expect(created.status).toBe(200);
+
+    const tooBig = await request(app).put(`/api/locations/${created.body._id}`).set('Authorization', `Bearer ${token}`)
+      .send({ bucketStrength: 999999 });
+    expect(tooBig.body.bucketStrength).toBe(5);
+
+    const negative = await request(app).put(`/api/locations/${created.body._id}`).set('Authorization', `Bearer ${token}`)
+      .send({ bucketStrength: -10 });
+    expect(negative.body.bucketStrength).toBe(0);
+
+    const garbage = await request(app).put(`/api/locations/${created.body._id}`).set('Authorization', `Bearer ${token}`)
+      .send({ bucketStrength: 'banana' });
+    expect(garbage.body.bucketStrength).toBe(0);
+  });
+});
+
 // ─── Auto-approve & Approval ─────────────────────────────
 describe('Import approval flow', () => {
   test('bulk import with needsApproval flag', async () => {

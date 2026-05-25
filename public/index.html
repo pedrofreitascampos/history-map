@@ -459,6 +459,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .star-rating .star:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .star-rating .star:focus:not(:focus-visible) { outline: none; }
 
+/* Want-to-go hearts — visually distinct from rating stars (gold) */
+.star-rating .heart {
+  font-size: 22px; cursor: pointer; color: var(--bg-tertiary);
+  transition: var(--transition); user-select: none; line-height: 1;
+}
+.star-rating .heart.filled { color: #ec4899; }                 /* pink-500 */
+.star-rating .heart.filled::before { content: '♥'; }            /* swap outline → filled glyph */
+.star-rating .heart:not(.filled)::before { content: '♡'; }
+.star-rating .heart:hover { color: #f472b6; }                   /* pink-400 */
+.star-rating .heart:focus { outline: 2px solid #ec4899; outline-offset: 2px; border-radius: 2px; }
+.star-rating .heart:focus:not(:focus-visible) { outline: none; }
+
 .people-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .people-tag {
   display: flex; align-items: center; gap: 4px;
@@ -1615,6 +1627,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <!-- Right: action buttons -->
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn btn-primary" onclick="withLoading(this, applyBulkEdit)" style="font-size:12px;padding:6px 14px;">Apply</button>
+        <button class="btn btn-secondary" onclick="openFillMissingModal()" style="font-size:11px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
         <button class="btn btn-secondary" onclick="withLoading(this, bulkEnrichOSM)" style="font-size:11px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
         <button class="btn btn-secondary" onclick="withLoading(this, bulkSyncGoogle)" style="font-size:11px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
         <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">🗑️</button>
@@ -1790,6 +1803,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
 
+      <div class="form-group" id="bucket-strength-group" style="display:none;">
+        <label>Want-to-Go Strength <span style="font-weight:400;color:var(--text-muted);font-size:11px;">— how much do you want to visit?</span></label>
+        <div class="star-rating" id="bucket-strength" role="radiogroup" aria-label="Want-to-go strength">
+          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        onclick="setBucketStrength(1)" onkeydown="handleHeartKey(event,1)"></span>
+          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              onclick="setBucketStrength(2)" onkeydown="handleHeartKey(event,2)"></span>
+          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           onclick="setBucketStrength(3)" onkeydown="handleHeartKey(event,3)"></span>
+          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  onclick="setBucketStrength(4)" onkeydown="handleHeartKey(event,4)"></span>
+          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         onclick="setBucketStrength(5)" onkeydown="handleHeartKey(event,5)"></span>
+        </div>
+      </div>
+
       <div class="form-row">
         <div class="form-group">
           <label>Google Maps Rating</label>
@@ -1894,6 +1918,28 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 </div>
 
+<!-- Fill Missing Data Modal -->
+<div class="modal-overlay" id="fill-missing-modal" role="dialog" aria-modal="true" aria-labelledby="fill-missing-title">
+  <div class="modal" style="width:480px;">
+    <div class="modal-header">
+      <h2 id="fill-missing-title">🔧 Fill Missing Data</h2>
+      <button class="modal-close" onclick="closeFillMissingModal()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" id="fill-missing-scope-label">Scope: all filtered locations</p>
+      <div id="fill-missing-gaps" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+        <!-- Populated by openFillMissingModal -->
+      </div>
+      <div id="fill-missing-progress" style="display:none;font-size:12px;color:var(--text-muted);padding:8px 0;"></div>
+      <div id="fill-missing-empty" style="display:none;font-size:12px;color:var(--text-muted);padding:8px 0;">All locations in scope are complete. Nothing to fill. 🎉</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeFillMissingModal()">Cancel</button>
+      <button class="btn btn-primary" id="fill-missing-run-btn" onclick="withLoading(this, runFillMissing)">Run</button>
+    </div>
+  </div>
+</div>
+
 <!-- Account Modal -->
 <div class="modal-overlay" id="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
   <div class="modal" style="width:460px;">
@@ -1986,6 +2032,7 @@ let state = {
   modalTags: [],
   modalPrice: 0,
   modalCollections: [],
+  modalBucketStrength: 0,
   mapStyle: 'clusters', // 'clusters' or 'heat'
   pendingImport: [],
   pendingRestoreTrips: [],
@@ -2317,10 +2364,18 @@ function createMarkerIcon(loc) {
   const hex = COLOR_HEX[cssColor] || DEFAULT_HEX;
   const cls = loc.needsApproval ? 'needs-approval' : loc.status;
   const bg = loc.status === 'been' ? hex + '22' : 'rgba(10,14,23,0.8)';
+  // For bucket items, opacity scales with bucketStrength (1-5).
+  // Unset (0) renders at the existing baseline so legacy data is unaffected.
+  // 1 → faded (low desire), 5 → fully opaque (top priority).
+  let opacity = 1;
+  if (loc.status === 'bucket' && loc.bucketStrength > 0) {
+    const s = Math.max(1, Math.min(5, loc.bucketStrength));
+    opacity = 0.5 + (s - 1) * 0.125;  // 0.50, 0.625, 0.75, 0.875, 1.00
+  }
 
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};">${cat.emoji}</div>`,
+    html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};opacity:${opacity};">${cat.emoji}</div>`,
     iconSize: [34, 34],
     iconAnchor: [17, 17],
     popupAnchor: [0, -20],
@@ -2384,7 +2439,7 @@ document.addEventListener('keydown', e => {
   const confirm = document.querySelector('.confirm-overlay');
   if (confirm) { confirm.remove(); return; }
   // Modals (close topmost)
-  const modals = ['account-modal', 'trips-modal', 'people-modal', 'edit-modal'];
+  const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
     if (m && m.classList.contains('open')) {
@@ -2568,6 +2623,9 @@ function createPopupContent(loc) {
   const tagChips = (loc.tags || []).map(t => `<span class="popup-tag">${esc(t)}</span>`).join('');
   const gmapsUrl = getGoogleMapsUrl(loc);
   const gmapsLink = gmapsUrl ? `<a href="${esc(gmapsUrl)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:12px;">📍 Open in Google Maps</a>` : '';
+  const wantStr = loc.status === 'bucket' && loc.bucketStrength > 0
+    ? `<div class="popup-meta" style="color:#ec4899;">${'♥'.repeat(loc.bucketStrength)}${'♡'.repeat(5 - loc.bucketStrength)} <span style="color:var(--text-muted);font-size:11px;">Want-to-go</span></div>`
+    : '';
 
   const isBeen = loc.status === 'been';
   return `<div class="popup-inner" style="position:relative;">
@@ -2579,6 +2637,7 @@ function createPopupContent(loc) {
       <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
     </div>
     ${gmapsLink ? `<div class="popup-meta">${gmapsLink}</div>` : ''}
+    ${wantStr}
     ${tagChips ? `<div class="popup-tags">${tagChips}</div>` : ''}
     ${visitDates ? `<div class="popup-meta">📅 ${visitDates}</div>` : ''}
     ${trip ? `<div class="popup-meta">🧳 ${esc(trip.name)}</div>` : ''}
@@ -2900,6 +2959,10 @@ function _renderBulkItem(loc) {
   const checked = bulkSelected.has(locId) ? 'checked' : '';
   const statusIcon = loc.status === 'been' ? '✅' : '⭐';
   const rating = loc.myRating ? `★${loc.myRating}` : '';
+  // Show want-to-go strength on bucket items only, when set
+  const strength = loc.status === 'bucket' && loc.bucketStrength > 0
+    ? `<span style="font-size:11px;color:#ec4899;" title="Want-to-go strength: ${loc.bucketStrength}/5">${'♥'.repeat(loc.bucketStrength)}</span>`
+    : '';
   const trip = stateIndex.tripById.get(loc.tripId);
   const tooltip = esc(_bulkItemTooltip(loc));
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;cursor:pointer;"
@@ -2912,6 +2975,7 @@ function _renderBulkItem(loc) {
     <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${c.label}</span>
     ${(loc.tags||[]).length ? `<span style="font-size:10px;color:var(--text-muted);">${(loc.tags||[]).slice(0,2).map(esc).join(', ')}</span>` : ''}
     ${rating ? `<span style="font-size:11px;color:var(--accent);">${rating}</span>` : ''}
+    ${strength}
     ${trip ? `<span style="font-size:10px;color:var(--text-muted);background:var(--bg-tertiary);padding:1px 6px;border-radius:8px;">${esc(trip.name)}</span>` : ''}
   </div>`;
 }
@@ -3235,6 +3299,7 @@ function openAddModal(lat, lng) {
   state.modalTags = [];
   state.modalPrice = 0;
   state.modalCollections = [];
+  state.modalBucketStrength = 0;
 
   document.getElementById('modal-title').textContent = 'Add Location';
   document.getElementById('delete-loc-btn').style.display = 'none';
@@ -3255,6 +3320,8 @@ function openAddModal(lat, lng) {
     o.classList.toggle('selected', o.dataset.status === 'been');
   });
   updateStars(0);
+  updateHearts(0);
+  updateBucketStrengthVisibility();
   renderPeopleTags();
   renderVisitFields();
   renderModalTags();
@@ -3281,6 +3348,7 @@ function openEditModal(id) {
   state.modalTags = [...(loc.tags || [])];
   state.modalPrice = loc.priceLevel || 0;
   state.modalCollections = [...(loc.collections || [])];
+  state.modalBucketStrength = loc.bucketStrength || 0;
 
   document.getElementById('modal-title').textContent = 'Edit Location';
   document.getElementById('delete-loc-btn').style.display = '';
@@ -3309,6 +3377,8 @@ function openEditModal(id) {
     o.classList.toggle('selected', o.dataset.status === loc.status);
   });
   updateStars(state.modalRating);
+  updateHearts(state.modalBucketStrength);
+  updateBucketStrengthVisibility();
   renderPeopleTags();
   renderVisitFields();
   renderModalTags();
@@ -3408,6 +3478,36 @@ function selectStatus(status, btn) {
   state.modalStatus = status;
   document.querySelectorAll('.status-option').forEach(o => o.classList.remove('selected'));
   btn.classList.add('selected');
+  updateBucketStrengthVisibility();
+}
+
+function updateBucketStrengthVisibility() {
+  const group = document.getElementById('bucket-strength-group');
+  if (group) group.style.display = state.modalStatus === 'bucket' ? '' : 'none';
+}
+
+function setBucketStrength(val) {
+  state.modalBucketStrength = val;
+  updateHearts(val);
+  // Move tabindex to selected heart for keyboard nav (matches star pattern)
+  document.querySelectorAll('#bucket-strength .heart').forEach(h => {
+    h.tabIndex = parseInt(h.dataset.val, 10) === val ? 0 : -1;
+  });
+}
+
+function updateHearts(val) {
+  document.querySelectorAll('#bucket-strength .heart').forEach(h => {
+    const v = parseInt(h.dataset.val, 10);
+    h.classList.toggle('filled', v <= val);
+    h.setAttribute('aria-checked', v === val ? 'true' : 'false');
+  });
+}
+
+function handleHeartKey(e, val) {
+  // Arrow keys + Enter/Space, mirroring star-rating accessibility
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp')   { e.preventDefault(); setBucketStrength(Math.min(5, val + 1)); document.querySelector(`#bucket-strength .heart[data-val="${Math.min(5, val + 1)}"]`)?.focus(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); const next = Math.max(0, val - 1); setBucketStrength(next); if (next > 0) document.querySelector(`#bucket-strength .heart[data-val="${next}"]`)?.focus(); }
+  else if (e.key === 'Enter' || e.key === ' ')         { e.preventDefault(); setBucketStrength(val); }
 }
 
 function setRating(val) {
@@ -3567,6 +3667,8 @@ async function saveLocation() {
     status: state.modalStatus,
     googleRating: parseFloat(document.getElementById('loc-google-rating').value) || null,
     myRating: state.modalRating,
+    // bucketStrength only meaningful for bucket items — clear when status is "been"
+    bucketStrength: state.modalStatus === 'bucket' ? (state.modalBucketStrength || 0) : 0,
     tripId: document.getElementById('loc-trip').value || null,
     people: [...state.modalPeople],
     visits: state.modalVisits.filter(v => v.date),
@@ -3809,14 +3911,24 @@ function renderTripManager() {
   }
   empty.style.display = 'none';
   container.innerHTML = state.trips.map(t => {
-    const locCount = (stateIndex.locationsByTrip.get(t.id) || []).length;
+    const tripLocs = stateIndex.locationsByTrip.get(t.id) || [];
+    const locCount = tripLocs.length;
     const dates = [t.startDate, t.endDate].filter(Boolean).join(' → ') || 'No dates';
+    // Top 3 categories by count for this trip, rendered as emoji + count chips
+    const catCounts = {};
+    tripLocs.forEach(l => { catCounts[l.category || 'location'] = (catCounts[l.category || 'location'] || 0) + 1; });
+    const topCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const catChips = topCats.map(([k, n]) => {
+      const c = CATEGORIES[k] || CATEGORIES.location;
+      return `<span style="font-size:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:1px 6px;color:var(--text-secondary);" title="${esc(c.label)}: ${n}">${c.emoji} ${n}</span>`;
+    }).join('');
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);background:var(--bg-tertiary);flex-wrap:wrap;">
       <span style="width:12px;height:12px;border-radius:50%;background:${t.color || 'var(--accent)'};flex-shrink:0;"></span>
       <div style="flex:1;min-width:120px;">
         <div style="font-size:13px;font-weight:500;">${esc(t.name)}</div>
         <div style="font-size:11px;color:var(--text-muted);">${esc(dates)} · ${locCount} place${locCount!==1?'s':''}</div>
       </div>
+      ${catChips ? `<div style="display:flex;gap:4px;flex-wrap:wrap;">${catChips}</div>` : ''}
       <button class="add-small-btn" onclick="renameTrip('${t.id}')" style="border-style:solid;padding:4px 8px;">rename</button>
       <button class="add-small-btn" onclick="editTripDates('${t.id}')" style="border-style:solid;padding:4px 8px;">dates</button>
       <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:11px;font-family:var(--font-body);" onclick="deleteTrip('${t.id}')">delete</button>
@@ -3916,7 +4028,7 @@ function renderApproval() {
       `<option value="${k}" ${k === (loc.suggestedCategory || 'location') ? 'selected' : ''}>${c.emoji} ${c.label}</option>`
     ).join('');
     return `<div class="approval-card" data-loc-idx="${idx}">
-      <h3>${esc(loc.name)}</h3>
+      <h3><span style="margin-right:6px;" title="${esc(suggested.label)}">${suggested.emoji}</span>${esc(loc.name)}</h3>
       <div class="addr">${esc(loc.address || 'No address')}</div>
       <div style="margin-bottom:12px;">
         <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Category</label>
@@ -6365,9 +6477,44 @@ function parseCSV(content) {
   return results.filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
-// ── Nominatim concurrent pool (2 workers, ~500ms spacing = ~4 req/s total, within fair-use) ──
+// ── Nominatim concurrent pool ──
+// 4 workers, 300ms per-worker spacing → ~13 req/s sustained. This is ABOVE
+// Nominatim's stated 1 req/s fair-use policy. Acceptable for occasional personal
+// imports given the retry+backoff below absorbs throttling, but flagged on the
+// roadmap as a future hardening item (self-host or drop to 1 req/s).
 let _nominatimCancelled = false;
 function cancelNominatim() { _nominatimCancelled = true; }
+
+// Fetch with exponential backoff on 429 / 5xx / network errors.
+// Honors the Retry-After header when present. Aborts immediately on cancellation.
+// Returns the Response on success or last response on exhausted retries; throws only
+// when the network never returned anything across all attempts.
+async function fetchWithRetry(url, opts = {}, { maxRetries = 3, baseDelay = 800 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (_nominatimCancelled) throw new Error('cancelled');
+    try {
+      const res = await fetch(url, opts);
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt === maxRetries) return res; // give up, caller will see non-ok
+        const ra = parseInt(res.headers.get('retry-after') || '0', 10);
+        // Honor Retry-After when present (capped at 60s to avoid runaway waits on a misconfigured server)
+        const wait = ra > 0 ? Math.min(ra, 60) * 1000 : baseDelay * Math.pow(2, attempt) + Math.random() * 200;
+        console.warn(`[geocode] ${res.status} on ${url.slice(0, 80)} (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${Math.round(wait)}ms`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      if (attempt === maxRetries) throw err;
+      const wait = baseDelay * Math.pow(2, attempt) + Math.random() * 200;
+      console.warn(`[geocode] network error "${err.message}" (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${Math.round(wait)}ms`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+  throw lastErr || new Error('fetchWithRetry exhausted');
+}
 
 async function nominatimPool(tasks, { concurrency = 4, delayMs = 300, onProgress } = {}) {
   _nominatimCancelled = false;
@@ -6379,10 +6526,15 @@ async function nominatimPool(tasks, { concurrency = 4, delayMs = 300, onProgress
       if (_nominatimCancelled) break;
       const task = tasks[i];
       try {
-        const res = await fetch(task.url, { headers: { 'Accept-Language': 'en' } });
-        const data = await res.json();
-        if (task.onResult(data)) succeeded++;
-      } catch {}
+        const res = await fetchWithRetry(task.url, { headers: { 'Accept-Language': 'en' } });
+        if (res.ok) {
+          const data = await res.json();
+          // onResult may be sync (returns boolean) or async (returns Promise<boolean>) — await covers both
+          if (await task.onResult(data)) succeeded++;
+        }
+      } catch (err) {
+        if (err.message !== 'cancelled') console.warn(`[geocode] task failed: ${err.message}`);
+      }
       completed++;
       if (onProgress) onProgress(completed, total, succeeded);
       if (i + concurrency < total) await new Promise(r => setTimeout(r, delayMs));
@@ -6583,6 +6735,176 @@ async function enrichInBackground(locations, { onProgress } = {}) {
     updateApprovalBadge();
   }
   return result.succeeded;
+}
+
+// ── Fill missing data — maintenance modal in Bulk Edit ──
+// Computes gaps over the bulk selection (if any) or filtered view, then offers
+// the user a choice of which to fix and orchestrates Nominatim search + reverse
+// passes via the shared retry-enabled nominatimPool.
+function _fillMissingScope() {
+  // If user has selected items in bulk edit, scope to those; else scope to the filtered view.
+  if (bulkSelected && bulkSelected.size > 0) {
+    return state.locations.filter(l => bulkSelected.has(l.id || l._id));
+  }
+  return (typeof getBulkFiltered === 'function') ? getBulkFiltered() : state.locations.slice();
+}
+
+function _computeFillMissingGaps(scope) {
+  const missingCoords = [];
+  const uncategorized = [];
+  const missingAddress = [];
+  for (const l of scope) {
+    const hasCoords = isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0);
+    if (!hasCoords) { missingCoords.push(l); continue; }
+    if ((l.category || 'location') === 'location') uncategorized.push(l);
+    if (!l.address) missingAddress.push(l);
+  }
+  return { missingCoords, uncategorized, missingAddress };
+}
+
+function openFillMissingModal() {
+  const scope = _fillMissingScope();
+  const gaps = _computeFillMissingGaps(scope);
+  const scopeLabel = bulkSelected.size > 0 ? `Scope: ${bulkSelected.size} selected location(s)` : `Scope: ${scope.length} filtered location(s)`;
+  document.getElementById('fill-missing-scope-label').textContent = scopeLabel;
+
+  const gapsContainer = document.getElementById('fill-missing-gaps');
+  const empty = document.getElementById('fill-missing-empty');
+  const runBtn = document.getElementById('fill-missing-run-btn');
+  const total = gaps.missingCoords.length + gaps.uncategorized.length + gaps.missingAddress.length;
+
+  if (total === 0) {
+    gapsContainer.innerHTML = '';
+    empty.style.display = '';
+    runBtn.disabled = true;
+  } else {
+    empty.style.display = 'none';
+    runBtn.disabled = false;
+    const row = (id, count, label, hint) => `
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);cursor:${count > 0 ? 'pointer' : 'not-allowed'};opacity:${count > 0 ? 1 : 0.5};">
+        <input type="checkbox" id="${id}" ${count > 0 ? 'checked' : 'disabled'} style="margin-top:2px;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:500;">${count} ${label}</div>
+          <div style="font-size:11px;color:var(--text-muted);">${hint}</div>
+        </div>
+      </label>`;
+    gapsContainer.innerHTML =
+      row('fm-coords',  gaps.missingCoords.length,  gaps.missingCoords.length === 1  ? 'location missing coordinates' : 'locations missing coordinates',  'Geocode by name via OpenStreetMap') +
+      row('fm-cat',     gaps.uncategorized.length,  gaps.uncategorized.length === 1  ? 'uncategorized location'        : 'uncategorized locations',        'Reverse-geocode to detect category from OSM tags') +
+      row('fm-addr',    gaps.missingAddress.length, gaps.missingAddress.length === 1 ? 'location missing address'      : 'locations missing address',      'Reverse-geocode to fill the display name');
+  }
+
+  const modal = document.getElementById('fill-missing-modal');
+  modal.classList.add('open');
+  focusModal(modal);
+  // Stash for runFillMissing
+  modal._gaps = gaps;
+}
+
+function closeFillMissingModal() {
+  const modal = document.getElementById('fill-missing-modal');
+  modal.classList.remove('open');
+  modal._gaps = null;
+  document.getElementById('fill-missing-progress').style.display = 'none';
+  restoreFocus();
+}
+
+async function runFillMissing() {
+  const modal = document.getElementById('fill-missing-modal');
+  const gaps = modal._gaps;
+  if (!gaps) return;
+  const doCoords = document.getElementById('fm-coords')?.checked;
+  const doCat    = document.getElementById('fm-cat')?.checked;
+  const doAddr   = document.getElementById('fm-addr')?.checked;
+  if (!doCoords && !doCat && !doAddr) { showToast('Pick at least one gap to fill', 'warn'); return; }
+
+  const progressEl = document.getElementById('fill-missing-progress');
+  progressEl.style.display = '';
+  let totalSucceeded = 0;
+  let putFailures = 0;
+  const t0 = Date.now();
+
+  // Persists an update and only mutates local state if the server accepted it.
+  // Returns true on success — used as the geocode task's onResult value so
+  // failed PUTs don't inflate the "succeeded" counter (M1: silent-catch fix).
+  async function persistAndApply(loc, updates) {
+    const locId = loc.id || loc._id;
+    try {
+      await api('PUT', '/locations/' + locId, updates);
+      Object.assign(loc, updates);
+      return true;
+    } catch (err) {
+      putFailures++;
+      console.warn(`[fill-missing] PUT failed for ${locId}: ${err.message}`);
+      return false;
+    }
+  }
+
+  // Pass 1: missing coordinates — search Nominatim by name
+  if (doCoords && gaps.missingCoords.length > 0) {
+    progressEl.textContent = `Geocoding ${gaps.missingCoords.length} name${gaps.missingCoords.length !== 1 ? 's' : ''}…`;
+    const tasks = gaps.missingCoords.map(loc => ({
+      url: `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(loc.name)}&format=json&limit=1&addressdetails=1`,
+      async onResult(data) {
+        if (!data || !data[0]) return false;
+        const r = data[0];
+        const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+        if (!isFinite(lat) || !isFinite(lng)) return false;
+        const updates = { lat, lng };
+        if (!loc.address && r.display_name) updates.address = r.display_name;
+        const osmCat = osmToCategory(r.class, r.type);
+        if (osmCat && (loc.category || 'location') === 'location') updates.category = osmCat;
+        return persistAndApply(loc, updates);
+      },
+    }));
+    const r = await nominatimPool(tasks, {
+      onProgress(done, total, found) { progressEl.textContent = `Coordinates: ${done}/${total} (${found} found)`; },
+    });
+    totalSucceeded += r.succeeded;
+    if (r.cancelled) { progressEl.textContent = 'Stopped.'; renderMarkers(); return; }
+  }
+
+  // Pass 2 + 3: reverse-geocode for category and/or address — uses same reverse call,
+  // applies whichever fields the user requested.
+  const reverseTargets = new Map(); // id → loc, dedup union of cat + addr passes
+  if (doCat)  for (const l of gaps.uncategorized)  if (isFinite(l.lat) && isFinite(l.lng)) reverseTargets.set(l.id || l._id, l);
+  if (doAddr) for (const l of gaps.missingAddress) if (isFinite(l.lat) && isFinite(l.lng)) reverseTargets.set(l.id || l._id, l);
+
+  if (reverseTargets.size > 0) {
+    progressEl.textContent = `Reverse-geocoding ${reverseTargets.size} location${reverseTargets.size !== 1 ? 's' : ''}…`;
+    const tasks = [...reverseTargets.values()].map(loc => ({
+      url: `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+      async onResult(data) {
+        if (!data) return false;
+        const updates = {};
+        if (doCat && (loc.category || 'location') === 'location') {
+          const newCat = osmToCategory(data.class, data.type) || inferCategory((data.name || '') + ' ' + (data.display_name || ''));
+          if (newCat && newCat !== 'location') { updates.category = newCat; updates.suggestedCategory = newCat; }
+        }
+        if (doAddr && !loc.address && data.display_name) updates.address = data.display_name;
+        if (Object.keys(updates).length === 0) return false;
+        return persistAndApply(loc, updates);
+      },
+    }));
+    const r = await nominatimPool(tasks, {
+      onProgress(done, total, found) { progressEl.textContent = `Reverse-geocode: ${done}/${total} (${found} updated)`; },
+    });
+    totalSucceeded += r.succeeded;
+  }
+
+  const ms = Date.now() - t0;
+  console.log(`[fill-missing] completed: ${totalSucceeded} updates, ${putFailures} PUT failures in ${ms}ms`);
+
+  // Re-render and close
+  rebuildIndexes();
+  renderMarkers();
+  renderBulkList();
+  populateFilterDropdowns();
+  closeFillMissingModal();
+  const summary = putFailures > 0
+    ? `Fill missing: ${totalSucceeded} updated, ${putFailures} failed to save`
+    : `Fill missing: ${totalSucceeded} location${totalSucceeded !== 1 ? 's' : ''} updated`;
+  showToast(summary, putFailures > 0 ? 'warn' : 'info');
 }
 
 // ── Google Timeline Edits (Timeline Edits.json — placeAggregates) ──
