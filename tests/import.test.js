@@ -54,6 +54,7 @@ const code = [
   extractFunction('haversineKm'),
   extractFunction('computeTripStats'),
   extractFunction('computeChronologyMilestones'),
+  extractFunction('computeMarkerSize'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
@@ -1296,5 +1297,90 @@ describe('computeChronologyMilestones', () => {
     const { firstVisit, yearStats } = computeMilestones([], []);
     expect(firstVisit).toHaveLength(0);
     expect(yearStats).toHaveLength(0);
+  });
+});
+
+// ─── Marker size by mode ─────────────────────────────────
+describe('computeMarkerSize', () => {
+  const size = (loc, mode) => vm.runInContext(
+    `computeMarkerSize(${JSON.stringify(loc)}, ${JSON.stringify(mode)})`,
+    ctx
+  );
+
+  test('default mode always returns 34', () => {
+    expect(size({}, 'default')).toBe(34);
+    expect(size({ myRating: 5, googleRating: 5, userRatingsTotal: 10000, visits: [{date:'2024-01-01'}], bucketStrength: 5 }, 'default')).toBe(34);
+  });
+
+  test('missing/unknown mode returns 34', () => {
+    expect(size({}, undefined)).toBe(34);
+    expect(size({}, '')).toBe(34);
+    expect(size({}, 'nonsense')).toBe(34);
+  });
+
+  test('my-rating: 0/missing → 20, 1 → 24, 5 → 50', () => {
+    expect(size({}, 'my-rating')).toBe(20);
+    expect(size({ myRating: 0 }, 'my-rating')).toBe(20);
+    expect(size({ myRating: 1 }, 'my-rating')).toBe(24);
+    expect(size({ myRating: 3 }, 'my-rating')).toBe(37);
+    expect(size({ myRating: 5 }, 'my-rating')).toBe(50);
+  });
+
+  test('my-rating clamps values > 5', () => {
+    expect(size({ myRating: 99 }, 'my-rating')).toBe(50);
+  });
+
+  test('bucket: 0/missing → 20, 1 → 24, 5 → 50, clamps', () => {
+    expect(size({}, 'bucket')).toBe(20);
+    expect(size({ bucketStrength: 0 }, 'bucket')).toBe(20);
+    expect(size({ bucketStrength: 1 }, 'bucket')).toBe(24);
+    expect(size({ bucketStrength: 5 }, 'bucket')).toBe(50);
+    expect(size({ bucketStrength: 99 }, 'bucket')).toBe(50);
+  });
+
+  test('visits: 0 → 20, 1 → ~26, many → caps at 50', () => {
+    expect(size({}, 'visits')).toBe(20);
+    expect(size({ visits: [] }, 'visits')).toBe(20);
+    const s1 = size({ visits: [{ date: '2024-01-01' }] }, 'visits');
+    expect(s1).toBeGreaterThanOrEqual(24);
+    expect(s1).toBeLessThanOrEqual(28);
+    const sMany = size({ visits: new Array(100).fill({ date: '2024-01-01' }) }, 'visits');
+    expect(sMany).toBe(50);
+  });
+
+  test('google-pop: no data → 20, top-tier → 50', () => {
+    expect(size({}, 'google-pop')).toBe(20);
+    expect(size({ googleRating: 0, userRatingsTotal: 0 }, 'google-pop')).toBe(20);
+    const top = size({ googleRating: 5, userRatingsTotal: 100000 }, 'google-pop');
+    expect(top).toBe(50);
+    const meh = size({ googleRating: 3, userRatingsTotal: 10 }, 'google-pop');
+    expect(meh).toBeGreaterThan(20);
+    expect(meh).toBeLessThan(40);
+  });
+
+  test('google-pop scales with both rating and count', () => {
+    // Same rating, more reviews → larger
+    const fewReviews = size({ googleRating: 4.5, userRatingsTotal: 10 }, 'google-pop');
+    const manyReviews = size({ googleRating: 4.5, userRatingsTotal: 10000 }, 'google-pop');
+    expect(manyReviews).toBeGreaterThan(fewReviews);
+    // Same count, higher rating → larger
+    const lowRating = size({ googleRating: 3.0, userRatingsTotal: 1000 }, 'google-pop');
+    const highRating = size({ googleRating: 4.8, userRatingsTotal: 1000 }, 'google-pop');
+    expect(highRating).toBeGreaterThan(lowRating);
+  });
+
+  test('size always within [20, 50] bounds', () => {
+    const modes = ['default', 'my-rating', 'google-pop', 'visits', 'bucket'];
+    const samples = [
+      {}, { myRating: 3 }, { googleRating: 4, userRatingsTotal: 500 },
+      { visits: [{ date: '2024-01-01' }, { date: '2024-02-01' }] }, { bucketStrength: 3 },
+    ];
+    for (const m of modes) {
+      for (const s of samples) {
+        const px = size(s, m);
+        expect(px).toBeGreaterThanOrEqual(20);
+        expect(px).toBeLessThanOrEqual(50);
+      }
+    }
   });
 });

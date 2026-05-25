@@ -190,11 +190,11 @@ body {
 /* Custom marker */
 .marker-icon {
   display: flex; align-items: center; justify-content: center;
-  font-size: 17px; border-radius: 50%;
-  width: 34px !important; height: 34px !important;
-  margin-left: -17px !important; margin-top: -17px !important;
+  font-size: var(--mfs, 17px); border-radius: 50%;
+  width: var(--ms, 34px) !important; height: var(--ms, 34px) !important;
+  margin-left: calc(var(--ms, 34px) * -0.5) !important; margin-top: calc(var(--ms, 34px) * -0.5) !important;
   box-shadow: 0 3px 12px rgba(0,0,0,0.4);
-  transition: transform 0.15s;
+  transition: transform 0.15s, width 0.2s, height 0.2s;
   position: relative;
 }
 .marker-icon:hover { transform: scale(1.25); z-index: 9999 !important; }
@@ -1337,6 +1337,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
 
+    <div class="filter-section">
+      <h4>Marker Size</h4>
+      <select class="filter-select" id="marker-size-mode" onchange="setMarkerSizeMode(this.value)">
+        <option value="default">Default (fixed)</option>
+        <option value="my-rating">⭐ My rating</option>
+        <option value="google-pop">🌟 Google popularity</option>
+        <option value="visits">📅 Visit count</option>
+        <option value="bucket">🪣 Bucket strength</option>
+      </select>
+    </div>
+
     <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
   </aside>
 
@@ -1906,6 +1917,7 @@ let state = {
   modalCollections: [],
   modalBucketStrength: 0,
   mapStyle: 'clusters', // 'clusters' or 'heat'
+  markerSizeMode: 'default', // 'default' | 'my-rating' | 'google-pop' | 'visits' | 'bucket'
   pendingImport: [],
   pendingRestoreTrips: [],
   contextMenuLatLng: null,
@@ -2244,6 +2256,36 @@ function initMap() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* MARKERS                                                               */
 /* ═══════════════════════════════════════════════════════════════════════ */
+// Pure: compute marker pixel size from sizing mode + location data.
+// Modes: 'default' (fixed 34), 'my-rating', 'google-pop', 'visits', 'bucket'.
+// Locations missing data for the chosen mode render at 20px (no-data baseline).
+function computeMarkerSize(loc, mode) {
+  if (mode === 'default' || !mode) return 34;
+  if (mode === 'my-rating') {
+    const v = loc.myRating || 0;
+    if (v <= 0) return 20;
+    return Math.round(24 + (Math.min(5, v) - 1) * 6.5);
+  }
+  if (mode === 'google-pop') {
+    const r = loc.googleRating || 0;
+    const c = loc.userRatingsTotal || 0;
+    if (r <= 0 && c <= 0) return 20;
+    const score = r * Math.log10(c + 1);
+    return Math.round(20 + Math.min(30, score * 1.5));
+  }
+  if (mode === 'visits') {
+    const n = (loc.visits || []).length;
+    if (n === 0) return 20;
+    return Math.round(20 + Math.min(30, Math.log2(n + 1) * 6.5));
+  }
+  if (mode === 'bucket') {
+    const v = loc.bucketStrength || 0;
+    if (v <= 0) return 20;
+    return Math.round(24 + (Math.min(5, v) - 1) * 6.5);
+  }
+  return 34;
+}
+
 function createMarkerIcon(loc) {
   const cat = CATEGORIES[loc.category] || CATEGORIES.location;
   const cssColor = cat.color;
@@ -2259,12 +2301,16 @@ function createMarkerIcon(loc) {
     opacity = 0.5 + (s - 1) * 0.125;  // 0.50, 0.625, 0.75, 0.875, 1.00
   }
 
+  const size = computeMarkerSize(loc, state.markerSizeMode);
+  const fontSize = Math.round(size * 0.5);
+  const half = size / 2;
+
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="border-color:${hex};background:${bg};opacity:${opacity};">${cat.emoji}</div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-    popupAnchor: [0, -20],
+    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${cat.emoji}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [half, half],
+    popupAnchor: [0, -half - 3],
   });
 }
 
@@ -2761,6 +2807,14 @@ function setMapStyle(style, btn) {
     btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   }
+  renderMarkers();
+}
+
+const VALID_MARKER_SIZE_MODES = ['default', 'my-rating', 'google-pop', 'visits', 'bucket'];
+function setMarkerSizeMode(mode) {
+  if (!VALID_MARKER_SIZE_MODES.includes(mode)) mode = 'default';
+  state.markerSizeMode = mode;
+  try { localStorage.setItem('markerSizeMode', mode); } catch {}
   renderMarkers();
 }
 
@@ -6799,6 +6853,14 @@ async function startApp(username) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('display-username').textContent = username;
   applyTheme(localStorage.getItem('hm_theme') || 'midnight');
+
+  // Restore marker-size preference
+  const savedSizeMode = localStorage.getItem('markerSizeMode');
+  if (savedSizeMode && VALID_MARKER_SIZE_MODES.includes(savedSizeMode)) {
+    state.markerSizeMode = savedSizeMode;
+    const sel = document.getElementById('marker-size-mode');
+    if (sel) sel.value = savedSizeMode;
+  }
 
   await loadFromServer();
   // No sample data seeding — start with a clean slate
