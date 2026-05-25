@@ -2062,6 +2062,7 @@ const stateIndex = {
   locationsByTrip: new Map(),
   locationsByCollection: new Map(),
   collectionById: new Map(),
+  locationById: new Map(),
 };
 
 function rebuildIndexes() {
@@ -2069,9 +2070,12 @@ function rebuildIndexes() {
   stateIndex.locationsByTrip.clear();
   stateIndex.locationsByCollection.clear();
   stateIndex.collectionById.clear();
+  stateIndex.locationById.clear();
   for (const t of state.trips) stateIndex.tripById.set(t.id, t);
   for (const c of state.collections) stateIndex.collectionById.set(c.id, c);
   for (const l of state.locations) {
+    stateIndex.locationById.set(l.id || l._id, l);
+    l._region = (l.address || '').split(',').pop().trim();
     if (l.tripId) {
       let arr = stateIndex.locationsByTrip.get(l.tripId);
       if (!arr) { arr = []; stateIndex.locationsByTrip.set(l.tripId, arr); }
@@ -2400,7 +2404,7 @@ function createMarkerIcon(loc) {
 }
 
 function bindMarkerBehavior(marker, loc) {
-  marker.bindPopup(createPopupContent(loc), { maxWidth: 320, className: '' });
+  marker.bindPopup(() => createPopupContent(loc), { maxWidth: 320, className: '' });
 }
 
 // Escape HTML to prevent XSS in innerHTML
@@ -2601,7 +2605,7 @@ function getGoogleMapsUrl(loc) {
 }
 
 async function toggleStatusFromPopup(locId) {
-  const loc = state.locations.find(l => l.id === locId);
+  const loc = stateIndex.locationById.get(locId);
   if (!loc) return;
   const newStatus = loc.status === 'been' ? 'bucket' : 'been';
   try {
@@ -2613,7 +2617,7 @@ async function toggleStatusFromPopup(locId) {
 }
 
 async function deleteFromPopup(locId) {
-  const loc = state.locations.find(l => l.id === locId);
+  const loc = stateIndex.locationById.get(locId);
   if (!loc) return;
   const confirmed = await showConfirm(`Delete "${loc.name}"?`);
   if (!confirmed) return;
@@ -3353,7 +3357,7 @@ function openAddModal(lat, lng) {
 }
 
 function openEditModal(id) {
-  const loc = state.locations.find(l => l.id === id);
+  const loc = stateIndex.locationById.get(id);
   if (!loc) return;
 
   state.editingId = id;
@@ -4278,15 +4282,19 @@ function renderCharts(been) {
   const ratingDist = [0,0,0,0,0];
   been.forEach(l => { if (l.myRating >= 1 && l.myRating <= 5) ratingDist[l.myRating-1]++; });
 
-  if (chartRatings) chartRatings.destroy();
-  chartRatings = new Chart(document.getElementById('chart-ratings'), {
-    type: 'bar',
-    data: {
-      labels: ['1★','2★','3★','4★','5★'],
-      datasets: [{ data: ratingDist, backgroundColor: ['#ef4444','#fb923c','#fbbf24','#a3e635','#22c55e'], borderRadius: 6, barThickness: 32 }]
-    },
-    options: chartOpts
-  });
+  if (chartRatings) {
+    chartRatings.data.datasets[0].data = ratingDist;
+    chartRatings.update('none');
+  } else {
+    chartRatings = new Chart(document.getElementById('chart-ratings'), {
+      type: 'bar',
+      data: {
+        labels: ['1★','2★','3★','4★','5★'],
+        datasets: [{ data: ratingDist, backgroundColor: ['#ef4444','#fb923c','#fbbf24','#a3e635','#22c55e'], borderRadius: 6, barThickness: 32 }]
+      },
+      options: chartOpts
+    });
+  }
 
   // Activity over time
   const monthCounts = {};
@@ -4299,20 +4307,25 @@ function renderCharts(been) {
     });
   });
   const months = Object.keys(monthCounts).sort();
-  if (chartActivity) chartActivity.destroy();
-  chartActivity = new Chart(document.getElementById('chart-activity'), {
-    type: 'line',
-    data: {
-      labels: months,
-      datasets: [{
-        data: months.map(m => monthCounts[m]),
-        borderColor: '#ffc144', backgroundColor: 'rgba(255,193,68,0.1)',
-        fill: true, tension: 0.4, pointRadius: 4,
-        pointBackgroundColor: '#ffc144',
-      }]
-    },
-    options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, beginAtZero: true } } }
-  });
+  if (chartActivity) {
+    chartActivity.data.labels = months;
+    chartActivity.data.datasets[0].data = months.map(m => monthCounts[m]);
+    chartActivity.update('none');
+  } else {
+    chartActivity = new Chart(document.getElementById('chart-activity'), {
+      type: 'line',
+      data: {
+        labels: months,
+        datasets: [{
+          data: months.map(m => monthCounts[m]),
+          borderColor: '#ffc144', backgroundColor: 'rgba(255,193,68,0.1)',
+          fill: true, tension: 0.4, pointRadius: 4,
+          pointBackgroundColor: '#ffc144',
+        }]
+      },
+      options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, beginAtZero: true } } }
+    });
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -4325,7 +4338,7 @@ function computeChronologyMilestones(locations, trips) {
   const regionEarliest = new Map();
 
   for (const loc of eligible) {
-    const region = (loc.address || '').split(',').pop().trim();
+    const region = loc._region ?? (loc.address || '').split(',').pop().trim();
     if (!region) continue;
     for (const v of (loc.visits || [])) {
       if (!v.date) continue;
@@ -4536,7 +4549,7 @@ function selectTrip(tripId) {
         iconSize: [34, 34], iconAnchor: [17, 17],
       })
     });
-    marker.bindPopup(createPopupContent(loc), { maxWidth: 320 });
+    marker.bindPopup(() => createPopupContent(loc), { maxWidth: 320 });
     tripMarkersLayer.addLayer(marker);
     bounds.extend([loc.lat, loc.lng]);
   });
@@ -4998,7 +5011,7 @@ async function bulkAddToCollection(colId) {
   if (checkboxes.length === 0) { showToast('Select at least one location.', 'warn'); return; }
   const updates = [];
   checkboxes.forEach(cb => {
-    const loc = state.locations.find(l => l.id === cb.value);
+    const loc = stateIndex.locationById.get(cb.value);
     if (loc) {
       loc.collections = [...(loc.collections || []), colId];
       updates.push(api('PUT', '/locations/' + loc.id, { collections: loc.collections }));
@@ -6137,7 +6150,7 @@ async function syncFromEditModal() {
   await syncSingleLocation(state.editingId);
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync Google'; }
   // Refresh modal fields
-  const loc = state.locations.find(l => l.id === state.editingId);
+  const loc = stateIndex.locationById.get(state.editingId);
   if (loc) {
     document.getElementById('loc-google-rating').value = loc.googleRating || '';
     document.getElementById('loc-address').value = loc.address || document.getElementById('loc-address').value;
