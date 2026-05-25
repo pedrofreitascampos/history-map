@@ -53,6 +53,7 @@ const code = [
   extractFunction('extractPlaceId'),
   extractFunction('haversineKm'),
   extractFunction('computeTripStats'),
+  extractFunction('computeChronologyMilestones'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
@@ -1176,5 +1177,124 @@ describe('computeTripStats', () => {
       { name: 'X', lat: 0, lng: 0, category: 'location' },
     ]);
     expect(s.avgRating).toBeNull();
+  });
+});
+
+// ─── Chronology milestones ───────────────────────────────
+describe('computeChronologyMilestones', () => {
+  const computeMilestones = (locs, trips) => {
+    const out = vm.runInContext(
+      `(() => {
+         const r = computeChronologyMilestones(${JSON.stringify(locs)}, ${JSON.stringify(trips)});
+         return {
+           firstVisit: Array.from(r.firstVisit.entries()),
+           yearStats: Array.from(r.yearStats.entries()),
+         };
+       })()`,
+      ctx
+    );
+    return out;
+  };
+
+  test('first visit per region — single region, single visit', () => {
+    const locs = [{ id: 'l1', name: 'Lisbon', status: 'been', needsApproval: false, address: 'Lisbon, Portugal', visits: [{ date: '2023-06-01' }] }];
+    const { firstVisit } = computeMilestones(locs, []);
+    expect(firstVisit).toHaveLength(1);
+    expect(firstVisit[0]).toEqual(['l1|2023-06-01', 'Portugal']);
+  });
+
+  test('first visit per region — multiple visits same region', () => {
+    const locs = [{ id: 'l1', name: 'Lisbon', status: 'been', needsApproval: false, address: 'Lisbon, Portugal', visits: [{ date: '2023-06-01' }, { date: '2022-03-10' }, { date: '2024-01-15' }] }];
+    const { firstVisit } = computeMilestones(locs, []);
+    expect(firstVisit).toHaveLength(1);
+    expect(firstVisit[0]).toEqual(['l1|2022-03-10', 'Portugal']);
+  });
+
+  test('first visit per region — two regions', () => {
+    const locs = [
+      { id: 'l1', name: 'Lisbon', status: 'been', needsApproval: false, address: 'Lisbon, Portugal', visits: [{ date: '2023-06-01' }] },
+      { id: 'l2', name: 'Berlin', status: 'been', needsApproval: false, address: 'Berlin, Germany', visits: [{ date: '2022-05-10' }] },
+    ];
+    const { firstVisit } = computeMilestones(locs, []);
+    expect(firstVisit).toHaveLength(2);
+    const keys = firstVisit.map(([k]) => k);
+    expect(keys).toContain('l1|2023-06-01');
+    expect(keys).toContain('l2|2022-05-10');
+  });
+
+  test('first visit per region — needsApproval excluded', () => {
+    const locs = [{ id: 'l1', name: 'Porto', status: 'been', needsApproval: true, address: 'Porto, Portugal', visits: [{ date: '2023-06-01' }] }];
+    const { firstVisit } = computeMilestones(locs, []);
+    expect(firstVisit).toHaveLength(0);
+  });
+
+  test('first visit per region — status bucket excluded', () => {
+    const locs = [{ id: 'l1', name: 'Paris', status: 'bucket', needsApproval: false, address: 'Paris, France', visits: [{ date: '2023-06-01' }] }];
+    const { firstVisit } = computeMilestones(locs, []);
+    expect(firstVisit).toHaveLength(0);
+  });
+
+  test('most-visited per year — single year', () => {
+    const locs = [
+      { id: 'a', name: 'LocA', status: 'been', needsApproval: false, address: 'City, Country', visits: [{ date: '2024-01-01' }, { date: '2024-02-01' }, { date: '2024-03-01' }] },
+      { id: 'b', name: 'LocB', status: 'been', needsApproval: false, address: 'City2, Country', visits: [{ date: '2024-04-01' }] },
+    ];
+    const { yearStats } = computeMilestones(locs, []);
+    const entry = yearStats.find(([y]) => y === '2024');
+    expect(entry).toBeTruthy();
+    expect(entry[1].mostVisited).toEqual({ name: 'LocA', count: 3 });
+  });
+
+  test('most-visited per year — tie broken alphabetically', () => {
+    const locs = [
+      { id: 'z', name: 'Zebra', status: 'been', needsApproval: false, address: 'City, Country', visits: [{ date: '2024-01-01' }, { date: '2024-02-01' }] },
+      { id: 'a', name: 'Apple', status: 'been', needsApproval: false, address: 'City2, Country', visits: [{ date: '2024-03-01' }, { date: '2024-04-01' }] },
+    ];
+    const { yearStats } = computeMilestones(locs, []);
+    const entry = yearStats.find(([y]) => y === '2024');
+    expect(entry[1].mostVisited.name).toBe('Apple');
+  });
+
+  test('longest trip per year — single year', () => {
+    const trips = [
+      { id: 't1', name: 'Short', startDate: '2024-06-01', endDate: '2024-06-06' },
+      { id: 't2', name: 'Long', startDate: '2024-07-01', endDate: '2024-07-11' },
+    ];
+    const { yearStats } = computeMilestones([], trips);
+    const entry = yearStats.find(([y]) => y === '2024');
+    expect(entry[1].longestTrip).toEqual({ name: 'Long', nights: 10 });
+  });
+
+  test('longest trip per year — invalid dates skipped', () => {
+    const trips = [
+      { id: 't1', name: 'Valid', startDate: '2024-06-01', endDate: '2024-06-06' },
+      { id: 't2', name: 'Bad', startDate: '2024-07-01', endDate: '' },
+    ];
+    const { yearStats } = computeMilestones([], trips);
+    const entry = yearStats.find(([y]) => y === '2024');
+    expect(entry[1].longestTrip.name).toBe('Valid');
+  });
+
+  test('longest trip per year — grouped by start year', () => {
+    const trips = [
+      { id: 't1', name: 'NewYear', startDate: '2023-12-30', endDate: '2024-01-05' },
+    ];
+    const { yearStats } = computeMilestones([], trips);
+    const in2023 = yearStats.find(([y]) => y === '2023');
+    const in2024 = yearStats.find(([y]) => y === '2024');
+    expect(in2023).toBeTruthy();
+    expect(in2023[1].longestTrip.name).toBe('NewYear');
+    expect(in2024).toBeFalsy();
+  });
+
+  test('year appears in yearStats only when has data', () => {
+    const { yearStats } = computeMilestones([], []);
+    expect(yearStats).toHaveLength(0);
+  });
+
+  test('empty inputs', () => {
+    const { firstVisit, yearStats } = computeMilestones([], []);
+    expect(firstVisit).toHaveLength(0);
+    expect(yearStats).toHaveLength(0);
   });
 });
