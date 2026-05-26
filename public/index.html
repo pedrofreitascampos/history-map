@@ -762,6 +762,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .replay-controls { display: flex; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
 .replay-play-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--bg-primary); border: 0; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .replay-play-btn:hover { transform: scale(1.05); }
+.replay-play-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .replay-scrubber-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .replay-scrubber-wrap input[type="range"] { width: 100%; cursor: pointer; }
 .replay-position-label { font-size: 11px; color: var(--text-muted); text-align: center; min-height: 14px; }
@@ -1225,12 +1226,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="login-tab" onclick="switchLoginTab('register')">Register</button>
       </div>
       <div class="form-group">
-        <label>Username</label>
+        <label for="auth-username">Username</label>
         <input type="text" class="form-input" id="auth-username" placeholder="username"
           onkeydown="if(event.key==='Enter') document.getElementById('auth-password').focus()">
       </div>
       <div class="form-group">
-        <label>Password</label>
+        <label for="auth-password">Password</label>
         <input type="password" class="form-input" id="auth-password" placeholder="••••••••"
           onkeydown="if(event.key==='Enter') doAuth()">
       </div>
@@ -1392,6 +1393,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="visits">📅 Visit count</option>
         <option value="bucket">🪣 Bucket strength</option>
       </select>
+      <span id="marker-size-desc" style="font-size:11px;color:var(--text-muted);display:block;margin-top:4px;"></span>
     </div>
 
     <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
@@ -1921,8 +1923,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Context Menu -->
-<div class="context-menu" id="context-menu">
-  <div class="context-menu-item" onclick="addPinHere()">📌 Add location here</div>
+<div class="context-menu" id="context-menu" role="menu">
+  <button type="button" class="context-menu-item" role="menuitem" tabindex="-1" onclick="addPinHere()">📌 Add location here</button>
 </div>
 
 
@@ -2322,6 +2324,10 @@ function initMap() {
     cm.style.left = e.originalEvent.pageX + 'px';
     cm.style.top = e.originalEvent.pageY + 'px';
     cm.classList.add('open');
+    requestAnimationFrame(() => {
+      const first = cm.querySelector('[role="menuitem"]');
+      if (first) first.focus();
+    });
   });
 
   document.addEventListener('click', () => {
@@ -2907,10 +2913,19 @@ function setMapStyle(style, btn) {
 }
 
 const VALID_MARKER_SIZE_MODES = ['default', 'my-rating', 'google-pop', 'visits', 'bucket'];
+const MARKER_SIZE_DESCRIPTIONS = {
+  'default': 'Uniform size for all markers',
+  'my-rating': 'Sized by your rating (1–5★); no rating renders small',
+  'google-pop': 'Sized by Google rating × log(review count); log-scaled',
+  'visits': 'Sized by visit count; log-scaled, cap at 50px',
+  'bucket': 'Sized by bucket-list strength (1–5 ♥)',
+};
 function setMarkerSizeMode(mode) {
   if (!VALID_MARKER_SIZE_MODES.includes(mode)) mode = 'default';
   state.markerSizeMode = mode;
   try { localStorage.setItem('markerSizeMode', mode); } catch {}
+  const desc = document.getElementById('marker-size-desc');
+  if (desc) desc.textContent = MARKER_SIZE_DESCRIPTIONS[mode] || '';
   renderMarkers();
 }
 
@@ -3557,7 +3572,7 @@ function updateHearts(val) {
 function handleHeartKey(e, val) {
   // Arrow keys + Enter/Space, mirroring star-rating accessibility
   if (e.key === 'ArrowRight' || e.key === 'ArrowUp')   { e.preventDefault(); setBucketStrength(Math.min(5, val + 1)); document.querySelector(`#bucket-strength .heart[data-val="${Math.min(5, val + 1)}"]`)?.focus(); }
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); const next = Math.max(0, val - 1); setBucketStrength(next); if (next > 0) document.querySelector(`#bucket-strength .heart[data-val="${next}"]`)?.focus(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); const next = Math.max(0, val - 1); setBucketStrength(next); document.querySelector(`#bucket-strength .heart[data-val="${next > 0 ? next : 1}"]`)?.focus(); }
   else if (e.key === 'Enter' || e.key === ' ')         { e.preventDefault(); setBucketStrength(val); }
 }
 
@@ -4611,8 +4626,10 @@ function toggleReplay() {
   btn.textContent = replayState.panelOpen ? '✕ Close Replay' : '▶ Replay';
   if (replayState.panelOpen) {
     initReplayMap();
-    rebuildReplayFrames();
-    setTimeout(() => replayState.map && replayState.map.invalidateSize(), 50);
+    setTimeout(() => {
+      if (replayState.map) replayState.map.invalidateSize();
+      rebuildReplayFrames();
+    }, 50);
   } else {
     pauseReplay();
   }
@@ -4650,6 +4667,8 @@ function rebuildReplayFrames() {
     const bounds = L.latLngBounds(replayState.frames.map(f => [f.lat, f.lng]));
     replayState.map.fitBounds(bounds, { padding: [40, 40] });
   }
+  const playBtn = document.getElementById('replay-play-btn');
+  if (playBtn) playBtn.disabled = replayState.frames.length === 0;
 }
 
 function toggleReplayPlay() {
@@ -5288,11 +5307,11 @@ function viewCollection(colId) {
     <details>
       <summary style="font-size:12px;color:var(--accent);cursor:pointer;">Add existing locations to this collection</summary>
       <div style="display:flex;gap:8px;margin:8px 0;">
-        <select class="filter-select" id="col-add-cat-filter" onchange="filterColAddList()" style="flex:1;">
+        <select class="filter-select" id="col-add-cat-filter" onchange="filterColAddList('${colId}')" style="flex:1;">
           <option value="">All categories</option>
           ${catOptions}
         </select>
-        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="debouncedFilterColAddList()" style="flex:1;">
+        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="debouncedFilterColAddList('${colId}')" style="flex:1;">
       </div>
       <div id="col-add-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;">
         ${renderColAddItems(available)}
@@ -5382,15 +5401,14 @@ function renderColAddItems(items) {
 }
 
 let _colAddFilterTimer = null;
-function debouncedFilterColAddList() {
+function debouncedFilterColAddList(colId) {
   if (_colAddFilterTimer) clearTimeout(_colAddFilterTimer);
-  _colAddFilterTimer = setTimeout(() => { _colAddFilterTimer = null; filterColAddList(); }, 150);
+  _colAddFilterTimer = setTimeout(() => { _colAddFilterTimer = null; filterColAddList(colId); }, 150);
 }
 
-function filterColAddList() {
+function filterColAddList(colId) {
   const catFilter = document.getElementById('col-add-cat-filter')?.value || '';
   const textFilter = (document.getElementById('col-add-search')?.value || '').toLowerCase();
-  const colId = document.querySelector('[onclick*="bulkAddToCollection"]')?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
   const inCol = colId ? new Set((stateIndex.locationsByCollection.get(colId) || []).map(l => l.id || l._id)) : null;
   const available = state.locations.filter(l => {
     if (inCol && inCol.has(l.id || l._id)) return false;
@@ -7112,7 +7130,8 @@ function showImportPreview(items) {
       <td>${item.lng?.toFixed(4) || '?'}</td>
       <td>${item.status}${visits ? ` · ${visits} visit${visits>1?'s':''}` : ''}</td>
     </tr>`;
-  }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>` : '');
+  }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>
+<tr><td colspan="5"><div style="font-size:11px;color:var(--warning,#f59e0b);margin-top:8px;">⚠️ Items beyond #200 are not visible but will be imported. Check carefully before confirming.</div></td></tr>` : '');
 
   // Duplicate action button (always recreate to avoid stale state)
   const oldSkipBtn = document.getElementById('skip-dups-btn');
@@ -7359,7 +7378,10 @@ function applyTheme(name) {
   allVars.forEach(v => document.body.style.removeProperty(v));
   Object.entries(theme.vars).forEach(([k,v]) => document.body.style.setProperty(k, v));
   document.documentElement.setAttribute('data-theme', name === 'parchment' ? 'light' : 'dark');
-  document.getElementById('theme-toggle').textContent = theme.icon;
+  const toggleBtn = document.getElementById('theme-toggle');
+  toggleBtn.textContent = theme.icon;
+  const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(name) + 1) % THEME_ORDER.length];
+  toggleBtn.setAttribute('aria-label', `Switch theme (current: ${name}, next: ${nextTheme})`);
   currentTheme = name;
   localStorage.setItem('hm_theme', name);
 
@@ -7395,6 +7417,8 @@ async function startApp(username) {
     const sel = document.getElementById('marker-size-mode');
     if (sel) sel.value = savedSizeMode;
   }
+  const initDesc = document.getElementById('marker-size-desc');
+  if (initDesc) initDesc.textContent = MARKER_SIZE_DESCRIPTIONS[state.markerSizeMode] || MARKER_SIZE_DESCRIPTIONS['default'];
 
   await loadFromServer();
   // No sample data seeding — start with a clean slate

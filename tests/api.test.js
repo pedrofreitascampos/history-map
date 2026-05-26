@@ -1137,3 +1137,27 @@ describe('XSS escape invariants', () => {
     expect(html).toContain("'/api/admin/backups/' + encodeURIComponent(filename)");
   });
 });
+
+// ─── M-T3: admin1-boundaries auth regression ─────────────
+describe('admin1-boundaries auth', () => {
+  test('returns 401 with no token', async () => {
+    const res = await request(app).get('/api/admin1-boundaries');
+    expect(res.status).toBe(401);
+  });
+
+  test('does not return 401 with valid token', async () => {
+    const res = await request(app)
+      .get('/api/admin1-boundaries')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+  });
+});
+
+// ─── M-T4: Replay play button disabled invariant ─────────
+describe('Replay play button disabled invariant', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('rebuildReplayFrames sets disabled based on frames.length', () => {
+    expect(html).toMatch(/rebuildReplayFrames[\s\S]{0,2000}playBtn\.disabled\s*=\s*replayState\.frames\.length\s*===\s*0/);
+  });
+});

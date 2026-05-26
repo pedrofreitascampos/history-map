@@ -1500,3 +1500,38 @@ describe('pickMarkerEmoji', () => {
     expect(run({ category: 'cafe' }, { emojiOverride: null })).toBe('☕');
   });
 });
+
+// ─── M-T1: osmToCategory ─────────────────────────────────
+describe('osmToCategory', () => {
+  const run = (osmClass, osmType) => vm.runInContext(`osmToCategory(${JSON.stringify(osmClass)}, ${JSON.stringify(osmType)})`, ctx);
+
+  test('amenity:restaurant → restaurant', () => expect(run('amenity', 'restaurant')).toBe('restaurant'));
+  test('amenity:cafe → cafe', () => expect(run('amenity', 'cafe')).toBe('cafe'));
+  test('amenity:bar → bar', () => expect(run('amenity', 'bar')).toBe('bar'));
+  test('amenity:place_of_worship → monument', () => expect(run('amenity', 'place_of_worship')).toBe('monument'));
+  test('tourism:museum → museum', () => expect(run('tourism', 'museum')).toBe('museum'));
+  test('leisure:park → park', () => expect(run('leisure', 'park')).toBe('park'));
+  test('natural:beach → park', () => expect(run('natural', 'beach')).toBe('park'));
+  test('natural:peak → park', () => expect(run('natural', 'peak')).toBe('park'));
+  test('aeroway:aerodrome → airport', () => expect(run('aeroway', 'aerodrome')).toBe('airport'));
+  test('unknown class+type → null (location fallback)', () => expect(run('foo', 'bar')).toBeNull());
+});
+
+// ─── M-T2: haversineKm ───────────────────────────────────
+describe('haversineKm', () => {
+  const run = (lat1, lng1, lat2, lng2) => vm.runInContext(`haversineKm(${lat1}, ${lng1}, ${lat2}, ${lng2})`, ctx);
+
+  test('same point returns 0', () => expect(run(48.8566, 2.3522, 48.8566, 2.3522)).toBe(0));
+  test('London to Paris ~344 km', () => {
+    const d = run(51.5074, -0.1278, 48.8566, 2.3522);
+    expect(d).toBeGreaterThan(334);
+    expect(d).toBeLessThan(354);
+  });
+  test('antipodal points ~20000 km', () => {
+    const d = run(0, 0, 0, 180);
+    expect(d).toBeGreaterThan(19900);
+    expect(d).toBeLessThan(20100);
+  });
+  test('NaN args return NaN', () => expect(run(NaN, 0, 0, 0)).toBeNaN());
+  test('undefined args return NaN', () => expect(run(undefined, 0, 0, 0)).toBeNaN());
+});

@@ -124,7 +124,8 @@ function requireAdmin(req, res, next) {
 }
 
 function auth(req, res, next) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const m = req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
+  const token = m && m[1];
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -485,7 +486,7 @@ const NE_ADMIN1_URLS = [
   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson',
 ];
 
-app.get('/api/admin1-boundaries', async (req, res) => {
+app.get('/api/admin1-boundaries', auth, async (req, res) => {
   try {
     // Serve from cache if available
     if (fs.existsSync(ADMIN1_CACHE)) {
