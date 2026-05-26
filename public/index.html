@@ -287,11 +287,26 @@ body {
   display: flex; align-items: center; justify-content: space-between;
 }
 .filter-section h4 .clear-btn {
-  font-family: var(--font-body); font-size: 10px; text-transform: none;
-  letter-spacing: 0; color: var(--accent); cursor: pointer;
-  opacity: 0; transition: var(--transition);
+  opacity: 0.6;
+  margin-left: auto;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--text-muted);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-family: inherit;
 }
-.filter-section:hover h4 .clear-btn { opacity: 1; }
+.filter-section h4 .clear-btn:hover,
+.filter-section h4 .clear-btn:focus {
+  opacity: 1;
+  color: var(--text-primary);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.filter-section:hover h4 .clear-btn,
+.filter-section:focus-within h4 .clear-btn { opacity: 1; }
 
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .filter-chip {
@@ -755,6 +770,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .replay-speed-btn.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
 .replay-speed-btn:hover:not(.active) { border-color: var(--border-strong); }
 
+@media (max-width: 768px) {
+  #replay-map { height: 240px; }
+  .replay-controls { flex-wrap: wrap; gap: 8px; padding: 10px; }
+  .replay-scrubber-wrap { flex: 1 1 100%; order: 3; min-width: 0; }
+  .replay-play-btn { order: 1; }
+  .replay-speed-group { order: 2; }
+  .replay-speed-btn { padding: 4px 8px; font-size: 11px; }
+}
+
 .timeline-item .ti-firstvisit {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;
   background: rgba(245, 158, 11, 0.15); color: rgb(245, 158, 11);
@@ -1022,6 +1046,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .trip-people-section { margin-top: 16px; }
 .trip-people-section h4 { font-family: var(--font-display); font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 
+#trips-view { flex-direction: row; }
+#trips-view #trip-sidebar { width: 360px; flex-shrink: 0; }
+@media (max-width: 768px) {
+  #trips-view { flex-direction: column; }
+  #trips-view #trip-sidebar { width: 100%; max-height: 40vh; border-left: 0; border-top: 1px solid var(--border); }
+  #trips-view > div:first-child { flex: 1; min-height: 50vh; }
+}
+
 /* ═══════════════════════════════════════════════════════════ */
 /* LOGIN SCREEN                                               */
 /* ═══════════════════════════════════════════════════════════ */
@@ -1151,7 +1183,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 <body>
 
 <div class="noise-overlay"></div>
-<div id="toast-container"></div>
+<div id="toast-container" aria-live="polite" aria-atomic="false" role="status"></div>
 
 <!-- ═══════════════════════ LOGIN ═══════════════════════ -->
 <div id="login-screen">
@@ -1283,7 +1315,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Status <span class="clear-btn" onclick="clearStatusFilter()">clear</span></h4>
+      <h4>Status <button class="clear-btn" type="button" onclick="clearStatusFilter()">clear</button></h4>
       <div class="filter-group">
         <button class="filter-group-btn active" data-status="all" onclick="setStatusFilter('all', this)">All</button>
         <button class="filter-group-btn" data-status="been" onclick="setStatusFilter('been', this)">✅ Been</button>
@@ -1292,31 +1324,31 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
 
     <div class="filter-section">
-      <h4>Categories <span class="clear-btn" onclick="selectAllCategories()">select all</span> <span class="clear-btn" onclick="clearCategoryFilter()">clear all</span></h4>
+      <h4>Categories <button class="clear-btn" type="button" onclick="selectAllCategories()">select all</button> <button class="clear-btn" type="button" onclick="clearCategoryFilter()">clear all</button></h4>
       <div class="filter-chips" id="category-filters"></div>
     </div>
 
     <div class="filter-section">
-      <h4>Trip <span class="clear-btn" onclick="openTripManager()">manage</span></h4>
+      <h4>Trip <button class="clear-btn" type="button" onclick="openTripManager()">manage</button></h4>
       <select class="filter-select" id="trip-filter" onchange="applyFilters()">
         <option value="">All Trips</option>
       </select>
     </div>
 
     <div class="filter-section">
-      <h4>People <span class="clear-btn" onclick="openPeopleManager()">manage</span></h4>
+      <h4>People <button class="clear-btn" type="button" onclick="openPeopleManager()">manage</button></h4>
       <select class="filter-select" id="people-filter" onchange="applyFilters()">
         <option value="">Everyone</option>
       </select>
     </div>
 
     <div class="filter-section">
-      <h4>Tags <span class="clear-btn" onclick="clearTagFilter()">clear</span></h4>
+      <h4>Tags <button class="clear-btn" type="button" onclick="clearTagFilter()">clear</button></h4>
       <div class="filter-chips" id="tag-filters" style="max-height:120px;overflow-y:auto;"></div>
     </div>
 
     <div class="filter-section">
-      <h4>Price Level <span class="clear-btn" onclick="clearPriceFilter()">clear</span></h4>
+      <h4>Price Level <button class="clear-btn" type="button" onclick="clearPriceFilter()">clear</button></h4>
       <div class="filter-chips">
         <button class="filter-chip" data-price="1" onclick="togglePriceFilter(1, this)">€</button>
         <button class="filter-chip" data-price="2" onclick="togglePriceFilter(2, this)">€€</button>
@@ -1440,7 +1472,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 
   <!-- TRIPS VIEW -->
-  <div class="view" id="trips-view" style="flex-direction:row;">
+  <div class="view" id="trips-view">
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
@@ -1451,7 +1483,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
       <div id="trip-map" style="flex:1;"></div>
     </div>
-    <div id="trip-sidebar" style="width:360px;border-left:1px solid var(--border);overflow-y:auto;background:var(--bg-secondary);display:flex;flex-direction:column;">
+    <div id="trip-sidebar" style="overflow-y:auto;background:var(--bg-secondary);display:flex;flex-direction:column;">
       <div id="trip-detail" style="padding:20px;">
         <div class="empty-state">
           <div class="empty-icon">🧳</div>
@@ -1545,7 +1577,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="btn btn-secondary" onclick="openFillMissingModal()" style="font-size:11px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
         <button class="btn btn-secondary" onclick="withLoading(this, bulkEnrichOSM)" style="font-size:11px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
         <button class="btn btn-secondary" onclick="withLoading(this, bulkSyncGoogle)" style="font-size:11px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
-        <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;">🗑️</button>
+        <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:11px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
       </div>
     </div>
     <!-- Location list -->
@@ -2217,6 +2249,11 @@ async function generateSampleData() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* MAP INITIALIZATION                                                    */
 /* ═══════════════════════════════════════════════════════════════════════ */
+function currentBaseTileUrl() {
+  const url = window._activeBaseLayer && window._activeBaseLayer._url;
+  return url || 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+}
+
 function initMap() {
   map = L.map('map', {
     center: [30, 0], zoom: 3,
@@ -4584,7 +4621,7 @@ function toggleReplay() {
 function initReplayMap() {
   if (replayState.map) return;
   replayState.map = L.map('replay-map', { center: [30, 0], zoom: 3, attributionControl: false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(replayState.map);
+  L.tileLayer(currentBaseTileUrl(), { maxZoom: 19 }).addTo(replayState.map);
   replayState.markersLayer = L.layerGroup().addTo(replayState.map);
   replayState.polylineLayer = L.layerGroup().addTo(replayState.map);
 }
@@ -4792,7 +4829,7 @@ let tripMap, tripMarkersLayer, tripPathLayer;
 function initTripMap() {
   if (tripMap) return;
   tripMap = L.map('trip-map', { center: [30, 0], zoom: 3, zoomControl: true, attributionControl: false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(tripMap);
+  L.tileLayer(currentBaseTileUrl(), { maxZoom: 19 }).addTo(tripMap);
   tripMarkersLayer = L.layerGroup().addTo(tripMap);
   tripPathLayer = L.layerGroup().addTo(tripMap);
 }
@@ -5317,7 +5354,7 @@ function initCollectionMap(col, locs) {
     return;
   }
   _collectionMap = L.map('collection-map', { center: [30, 0], zoom: 3, attributionControl: false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(_collectionMap);
+  L.tileLayer(currentBaseTileUrl(), { maxZoom: 19 }).addTo(_collectionMap);
   const layer = L.layerGroup().addTo(_collectionMap);
   const emoji = col.emoji || '📋';
   validLocs.forEach(loc => {
@@ -5604,6 +5641,7 @@ const REGION_COLORS = {
 function initRegionsMap() {
   if (regionsMap) return;
   regionsMap = L.map('regions-map', { center: [30, 0], zoom: 3, zoomControl: true, attributionControl: false });
+  // Regions map intentionally uses dark_nolabels — labels would compete with region fills.
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(regionsMap);
 }
 

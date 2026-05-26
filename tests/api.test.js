@@ -606,6 +606,44 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).not.toContain('toggleBulkMode');
   });
 
+  // ── Phase D: UI/UX fixes ──
+
+  test('U1: replay panel has mobile media query shrinking map to 240px', () => {
+    expect(indexHtml).toContain('#replay-map { height: 240px; }');
+    expect(indexHtml).toContain('.replay-scrubber-wrap { flex: 1 1 100%; order: 3; min-width: 0; }');
+  });
+
+  test('U2: trips-view flex-direction set via CSS not inline style', () => {
+    expect(indexHtml).toContain('#trips-view { flex-direction: row; }');
+    expect(indexHtml).not.toContain('id="trips-view" style="flex-direction:row;"');
+    expect(indexHtml).toContain('#trips-view #trip-sidebar { width: 360px; flex-shrink: 0; }');
+  });
+
+  test('U3: clear-btn elements are <button> tags (keyboard accessible)', () => {
+    const matches = indexHtml.match(/<button class="clear-btn"/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(5);
+    expect(indexHtml).not.toContain('<span class="clear-btn"');
+  });
+
+  test('U3: clear-btn has visible focus style in CSS', () => {
+    expect(indexHtml).toContain('.filter-section h4 .clear-btn:focus');
+    expect(indexHtml).toContain('outline: 2px solid var(--accent)');
+  });
+
+  test('U4: currentBaseTileUrl helper defined for sub-map theme inheritance', () => {
+    expect(indexHtml).toContain('function currentBaseTileUrl()');
+    expect(indexHtml).toContain('window._activeBaseLayer && window._activeBaseLayer._url');
+  });
+
+  test('U5: bulk delete button has aria-label', () => {
+    expect(indexHtml).toContain('aria-label="Delete selected locations"');
+  });
+
+  test('U6: toast container has aria-live and role=status', () => {
+    expect(indexHtml).toContain('aria-live="polite"');
+    expect(indexHtml).toContain('role="status"');
+  });
+
 });
 
 // ─── Backups ────────────────────────────────────────────
