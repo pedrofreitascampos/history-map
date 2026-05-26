@@ -53,11 +53,42 @@ function audit(event, details, req) {
 // Middleware
 app.set('trust proxy', 1); // Trust first proxy (Render)
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    // 'unsafe-inline' is required because the app uses many inline event handlers
+    // and inline <style>/<script> blocks. Removing it would require a full
+    // refactor to nonces or external files — captured separately in roadmap.
+    // What we DO get: strict origin allowlist on every fetch destination, so
+    // a stored XSS can't reach attacker-controlled servers.
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://cdn.jsdelivr.net", "https://accounts.google.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: [
+        "'self'",
+        "https://nominatim.openstreetmap.org",
+        "https://maps.googleapis.com",
+        "https://router.project-osrm.org",
+        "https://accounts.google.com",
+        "https://cdn.jsdelivr.net",
+        "https://raw.githubusercontent.com",
+      ],
+      frameSrc: ["https://accounts.google.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Required for Google Sign-In
 }));
-app.use(cors(process.env.ALLOWED_ORIGINS ? { origin: process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) } : undefined));
+// CORS: explicit allowlist. When ALLOWED_ORIGINS is unset in production, deny
+// all cross-origin requests (origin: false). In dev, allow localhost so the
+// frontend served by Express can still call its own API.
+const corsAllowed = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : (process.env.NODE_ENV === 'production' ? false : ['http://localhost:3001', 'http://localhost:3000']);
+app.use(cors({ origin: corsAllowed, credentials: false }));
 app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
@@ -108,7 +139,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-    if (password.length < 4) return res.status(400).json({ error: 'Password too short' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username.toLowerCase())) {
       audit('register_blocked', { username, reason: 'not_in_allowlist' }, req);
       return res.status(403).json({ error: 'Registration is restricted. Contact the admin.' });
@@ -226,7 +257,8 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
     audit('account_merge', { from: fromUsername, to: toUsername, locations: locCount, trips: tripCount, collections: colCount }, req);
     res.json({ ok: true, merged: { locations: locCount, trips: tripCount, collections: colCount } });
   } catch (err) {
-    res.status(500).json({ error: 'Merge failed: ' + err.message });
+    log('error', 'merge_accounts_failed', { error: err.message });
+    res.status(500).json({ error: 'Merge failed' });
   }
 });
 
@@ -242,7 +274,8 @@ app.post('/api/admin/reset-password', auth, requireAdmin, async (req, res) => {
     audit('password_reset', { username, by: req.user.username }, req);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'password_reset_failed', { error: err.message });
+    res.status(500).json({ error: 'Reset failed' });
   }
 });
 
@@ -342,18 +375,31 @@ app.get('/api/trips', auth, async (req, res) => {
   res.json(trips);
 });
 
+// Allowlist + cap for trip writes. Color must be a CSS-safe hex (#RRGGBB / #RGB)
+// or a short keyword so it can't break out of an inline style attribute.
+const TRIP_FIELDS = ['name', 'color', 'startDate', 'endDate', 'notes'];
+const COLOR_RE = /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]{1,20}$/;
+function sanitizeTripUpdate(body) {
+  const out = {};
+  for (const k of TRIP_FIELDS) {
+    if (body[k] === undefined) continue;
+    if (k === 'color' && typeof body[k] === 'string' && !COLOR_RE.test(body[k])) continue;
+    if (typeof body[k] === 'string' && body[k].length > 2000) continue;
+    out[k] = body[k];
+  }
+  return out;
+}
+
 app.post('/api/trips', auth, async (req, res) => {
-  const trip = { ...req.body, userId: req.user.id };
-  delete trip._id;
+  const trip = { ...sanitizeTripUpdate(req.body), userId: req.user.id };
+  if (!trip.name) return res.status(400).json({ error: 'name required' });
   const saved = await db.trips.insert(trip);
   log('info', 'db_insert', { table: 'trips', id: saved._id, name: saved.name, userId: req.user.id });
   res.json(saved);
 });
 
 app.put('/api/trips/:id', auth, async (req, res) => {
-  const updates = { ...req.body };
-  delete updates._id;
-  delete updates.userId;
+  const updates = sanitizeTripUpdate(req.body);
   const count = await db.trips.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
   if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.trips.findOne({ _id: req.params.id });
@@ -374,23 +420,38 @@ app.get('/api/collections', auth, async (req, res) => {
   res.json(cols);
 });
 
+const COLLECTION_FIELDS = ['name', 'emoji', 'description', 'totalItems'];
+const MAX_COLLECTIONS_PER_BULK = 500;
+function sanitizeCollectionUpdate(body) {
+  const out = {};
+  for (const k of COLLECTION_FIELDS) {
+    if (body[k] === undefined) continue;
+    if (typeof body[k] === 'string' && body[k].length > 5000) continue;
+    if (k === 'totalItems') {
+      const n = parseInt(body[k], 10);
+      if (Number.isFinite(n) && n >= 0 && n <= 1e6) out[k] = n;
+      continue;
+    }
+    out[k] = body[k];
+  }
+  return out;
+}
+
 app.post('/api/collections', auth, async (req, res) => {
   try {
-    const col = { ...req.body, userId: req.user.id };
-    delete col._id;
+    const col = { ...sanitizeCollectionUpdate(req.body), userId: req.user.id };
+    if (!col.name) return res.status(400).json({ error: 'name required' });
     const saved = await db.collections.insert(col);
     log('info', 'db_insert', { table: 'collections', id: saved._id, name: saved.name, userId: req.user.id });
     res.json(saved);
   } catch (err) {
     log('error', 'db_insert_error', { table: 'collections', error: err.message, userId: req.user.id });
-    res.status(500).json({ error: 'Failed to create collection: ' + err.message });
+    res.status(500).json({ error: 'Failed to create collection' });
   }
 });
 
 app.put('/api/collections/:id', auth, async (req, res) => {
-  const updates = { ...req.body };
-  delete updates._id;
-  delete updates.userId;
+  const updates = sanitizeCollectionUpdate(req.body);
   const count = await db.collections.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
   if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.collections.findOne({ _id: req.params.id });
@@ -405,12 +466,12 @@ app.delete('/api/collections/:id', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Bulk import collections
+// Bulk import collections — sanitized + length-capped to prevent unbounded inserts.
 app.post('/api/collections/bulk', auth, async (req, res) => {
   const { collections: cols } = req.body;
   if (!Array.isArray(cols)) return res.status(400).json({ error: 'Expected array' });
-  const toInsert = cols.map(c => ({ ...c, userId: req.user.id }));
-  toInsert.forEach(c => delete c._id);
+  if (cols.length > MAX_COLLECTIONS_PER_BULK) return res.status(400).json({ error: `Too many collections (max ${MAX_COLLECTIONS_PER_BULK})` });
+  const toInsert = cols.map(c => ({ ...sanitizeCollectionUpdate(c), userId: req.user.id })).filter(c => c.name);
   const saved = await db.collections.insert(toInsert);
   log('info', 'db_bulk_insert', { table: 'collections', count: saved.length, userId: req.user.id });
   res.json(saved);

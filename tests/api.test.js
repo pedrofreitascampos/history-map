@@ -306,11 +306,15 @@ describe('Collections', () => {
   });
 
   test('create collection with null optional fields', async () => {
-    // Regression: null totalItems, empty description must not crash
+    // Regression: null totalItems, empty description must not crash.
+    // After sanitizer added in Phase B, null/invalid values are dropped rather
+    // than persisted — totalItems being absent is acceptable; the assertion is
+    // that the request doesn't crash and a valid collection is created.
     const res = await request(app).post('/api/collections').set('Authorization', `Bearer ${token}`)
       .send({ name: 'Open Ended', emoji: '📋', description: null, totalItems: null });
     expect(res.status).toBe(200);
-    expect(res.body.totalItems).toBeNull();
+    expect(res.body.name).toBe('Open Ended');
+    expect(res.body.totalItems == null).toBe(true); // null or undefined both OK
   });
 
   test('list collections', async () => {
@@ -957,6 +961,98 @@ describe('Places search lat/lng validation', () => {
     const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
     expect(serverSrc).toMatch(/Math\.abs\(fLat\)\s*>\s*90/);
     expect(serverSrc).toMatch(/Math\.abs\(fLng\)\s*>\s*180/);
+  });
+});
+
+// ─── Input validation regressions (Phase B) ──────────────
+describe('Input validation hardening', () => {
+  test('password min length is now 8 (was 4) — source check (avoids rate limit)', () => {
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    expect(serverSrc).toMatch(/password\.length\s*<\s*8/);
+    expect(serverSrc).not.toMatch(/password\.length\s*<\s*4\b/);
+  });
+
+  test('POST /api/trips strips disallowed fields', async () => {
+    const res = await request(app).post('/api/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'X', userId: 'evil', _id: 'evil', __proto__: { polluted: true }, totallyMadeUp: 'val' });
+    expect(res.status).toBe(200);
+    expect(res.body.totallyMadeUp).toBeUndefined();
+    expect(res.body.userId).not.toBe('evil');
+  });
+
+  test('POST /api/trips rejects bad color formats', async () => {
+    const res = await request(app).post('/api/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'BadColor', color: 'red; background: url(evil)' });
+    expect(res.status).toBe(200);
+    expect(res.body.color).toBeUndefined(); // dropped by COLOR_RE
+  });
+
+  test('POST /api/trips accepts valid hex color', async () => {
+    const res = await request(app).post('/api/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'GoodColor', color: '#ff8800' });
+    expect(res.status).toBe(200);
+    expect(res.body.color).toBe('#ff8800');
+  });
+
+  test('POST /api/trips requires name', async () => {
+    const res = await request(app).post('/api/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ color: '#fff' });
+    expect(res.status).toBe(400);
+  });
+
+  test('POST /api/collections/bulk caps at 500', async () => {
+    const overflow = Array.from({ length: 501 }, (_, i) => ({ name: 'C' + i, emoji: '📋' }));
+    const res = await request(app).post('/api/collections/bulk')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ collections: overflow });
+    expect(res.status).toBe(400);
+  });
+
+  test('POST /api/collections strips disallowed fields', async () => {
+    const res = await request(app).post('/api/collections')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'StrictCol', emoji: '📋', userId: 'evil', secretField: 'x' });
+    expect(res.status).toBe(200);
+    expect(res.body.userId).not.toBe('evil');
+    expect(res.body.secretField).toBeUndefined();
+  });
+});
+
+// ─── Defense-in-depth invariants ─────────────────────────
+describe('Helmet / CORS hardening', () => {
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+
+  test('CSP is enabled (not contentSecurityPolicy: false)', () => {
+    expect(serverSrc).not.toMatch(/contentSecurityPolicy:\s*false/);
+    expect(serverSrc).toMatch(/contentSecurityPolicy:\s*\{/);
+    expect(serverSrc).toContain("defaultSrc: [\"'self'\"]");
+  });
+
+  test('CORS does not reflect arbitrary origins when ALLOWED_ORIGINS unset in production', () => {
+    expect(serverSrc).toMatch(/process\.env\.NODE_ENV === 'production' \? false :/);
+  });
+});
+
+// ─── Frontend bug fixes (Phase B) ────────────────────────
+describe('Frontend correctness fixes', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('computeTripStats uses Number.isFinite for ms', () => {
+    expect(html).toMatch(/Number\.isFinite\(ms\)\s*&&\s*ms\s*>=\s*0/);
+  });
+
+  test('pickSearchResult uses dataset.cat (not dataset.category)', () => {
+    // The buggy line was `o.classList.toggle('selected', o.dataset.category === cat)`
+    // inside pickSearchResult; the builders set dataset.cat.
+    expect(html).not.toMatch(/dataset\.category\s*===\s*cat\b/);
+  });
+
+  test('logout resets _placesEnabled cache', () => {
+    expect(html).toMatch(/function logout\(\)\s*\{[\s\S]*?_placesEnabled\s*=\s*null/);
   });
 });
 
