@@ -48,6 +48,7 @@ const sandbox = {};
 const code = [
   extractConst('OSM_CATEGORY_MAP'),
   extractConst('TRIP_QUALITY_GROUPS'),
+  extractConst('CATEGORIES'),
   extractFunction('osmToCategory'),
   extractFunction('inferCategory'),
   extractFunction('extractPlaceId'),
@@ -56,6 +57,7 @@ const code = [
   extractFunction('computeChronologyMilestones'),
   extractFunction('computeMarkerSize'),
   extractFunction('computeReplayFrames'),
+  extractFunction('pickMarkerEmoji'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
@@ -1460,5 +1462,41 @@ describe('computeReplayFrames', () => {
   it('falls back to _id when id is missing (legacy NeDB)', () => {
     const out = run([{ _id: 'nedb1', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] }]);
     expect(out[0].id).toBe('nedb1');
+  });
+});
+
+describe('pickMarkerEmoji', () => {
+  const run = (loc, opts) => vm.runInContext(
+    `pickMarkerEmoji(${JSON.stringify(loc)}, ${JSON.stringify(opts || null)})`,
+    ctx
+  );
+
+  it('returns category emoji when no opts', () => {
+    expect(run({ category: 'cafe' })).toBe('☕');
+  });
+
+  it('returns category emoji when opts is empty object', () => {
+    expect(run({ category: 'cafe' }, {})).toBe('☕');
+  });
+
+  it('returns category emoji when emojiOverride is empty string', () => {
+    expect(run({ category: 'cafe' }, { emojiOverride: '' })).toBe('☕');
+  });
+
+  it('returns override when emojiOverride is a non-empty string', () => {
+    expect(run({ category: 'cafe' }, { emojiOverride: '🏆' })).toBe('🏆');
+  });
+
+  it('returns override even when category emoji exists', () => {
+    expect(run({ category: 'restaurant' }, { emojiOverride: '🦄' })).toBe('🦄');
+  });
+
+  it('falls back to location category emoji for unknown category', () => {
+    expect(run({ category: 'nonsense_xyz' })).toBe('📍');
+  });
+
+  it('ignores non-string emojiOverride values', () => {
+    expect(run({ category: 'cafe' }, { emojiOverride: 42 })).toBe('☕');
+    expect(run({ category: 'cafe' }, { emojiOverride: null })).toBe('☕');
   });
 });

@@ -2318,7 +2318,15 @@ function computeMarkerSize(loc, mode) {
   return 34;
 }
 
-function createMarkerIcon(loc) {
+function pickMarkerEmoji(loc, opts) {
+  if (opts && typeof opts.emojiOverride === 'string' && opts.emojiOverride !== '') {
+    return opts.emojiOverride;
+  }
+  const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+  return cat.emoji;
+}
+
+function createMarkerIcon(loc, opts) {
   const cat = CATEGORIES[loc.category] || CATEGORIES.location;
   const cssColor = cat.color;
   const hex = COLOR_HEX[cssColor] || DEFAULT_HEX;
@@ -2339,7 +2347,7 @@ function createMarkerIcon(loc) {
 
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${cat.emoji}</div>`,
+    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${pickMarkerEmoji(loc, opts)}</div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
     popupAnchor: [0, -half - 3],
@@ -5032,6 +5040,7 @@ async function moveTripLoc(locId, direction) {
 /* COLLECTIONS                                                           */
 /* ═══════════════════════════════════════════════════════════════════════ */
 function renderCollections() {
+  destroyCollectionMap();
   const container = document.getElementById('collections-grid');
   if (state.collections.length === 0) {
     container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
@@ -5088,6 +5097,10 @@ function viewCollection(colId) {
     </div>
   </div>`;
 
+  html += `<div style="grid-column:1/-1;margin-bottom:16px;">
+    <div id="collection-map" style="height:380px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg-secondary);"></div>
+  </div>`;
+
   // Add existing locations (multi-select with category filter)
   const available = state.locations.filter(l => !(l.collections || []).includes(colId));
   const catOptions = Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
@@ -5137,9 +5150,45 @@ function viewCollection(colId) {
     }).join('');
   }
   container.innerHTML = html;
+  initCollectionMap(col, locs);
 }
 
 
+
+let _collectionMap = null;
+
+function destroyCollectionMap() {
+  if (_collectionMap) {
+    _collectionMap.remove();
+    _collectionMap = null;
+  }
+}
+
+function initCollectionMap(col, locs) {
+  destroyCollectionMap();
+  const mapEl = document.getElementById('collection-map');
+  if (!mapEl) return;
+  const validLocs = (locs || []).filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
+  if (validLocs.length === 0) {
+    mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:13px;">No locations with coordinates in this collection yet.</div>';
+    return;
+  }
+  _collectionMap = L.map('collection-map', { center: [30, 0], zoom: 3, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(_collectionMap);
+  const layer = L.layerGroup().addTo(_collectionMap);
+  const emoji = col.emoji || '📋';
+  validLocs.forEach(loc => {
+    const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc, { emojiOverride: emoji }) });
+    marker.bindPopup(() => createPopupContent(loc), { maxWidth: 320 });
+    layer.addLayer(marker);
+  });
+  if (validLocs.length === 1) {
+    _collectionMap.setView([validLocs[0].lat, validLocs[0].lng], 11);
+  } else {
+    _collectionMap.fitBounds(L.latLngBounds(validLocs.map(l => [l.lat, l.lng])), { padding: [40, 40] });
+  }
+  setTimeout(() => _collectionMap && _collectionMap.invalidateSize(), 50);
+}
 
 // ── Collection: bulk add existing locations ──
 function renderColAddItems(items) {
