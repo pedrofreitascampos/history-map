@@ -587,7 +587,7 @@ describe('Frontend invariants (code checks)', () => {
   });
 
   test('tag filter has rebuild cache', () => {
-    expect(indexHtml).toContain('_tagFilterCache');
+    expect(indexHtml).toContain('_tagFilterGen');
   });
 
   test('bulk edit is a separate tab with list-based selection', () => {

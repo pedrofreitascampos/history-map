@@ -1478,7 +1478,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="view" id="regions-view" style="flex-direction:column;overflow:hidden;">
     <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg-glass);backdrop-filter:blur(12px);z-index:10;">
       <h2 style="font-family:var(--font-display);font-size:18px;margin:0;">🌍 Visited Regions</h2>
-      <select class="filter-select" id="region-color-scheme" onchange="renderRegionsMap()" style="width:160px;">
+      <select class="filter-select" id="region-color-scheme" onchange="updateRegionsColorScheme()" style="width:160px;">
         <option value="amber">🟡 Amber</option>
         <option value="blue">🔵 Blue</option>
         <option value="green">🟢 Green</option>
@@ -1964,6 +1964,9 @@ const stateIndex = {
   locationById: new Map(),
   peopleCounts: new Map(),
   tagCounts: new Map(),
+  pendingApproval: [],
+  beenLocations: [],
+  generation: 0,
 };
 
 function rebuildIndexes() {
@@ -1974,11 +1977,16 @@ function rebuildIndexes() {
   stateIndex.locationById.clear();
   stateIndex.peopleCounts.clear();
   stateIndex.tagCounts.clear();
+  stateIndex.pendingApproval.length = 0;
+  stateIndex.beenLocations.length = 0;
+  stateIndex.generation++;
   for (const t of state.trips) stateIndex.tripById.set(t.id, t);
   for (const c of state.collections) stateIndex.collectionById.set(c.id, c);
   for (const l of state.locations) {
     stateIndex.locationById.set(l.id || l._id, l);
     l._region = (l.address || '').split(',').pop().trim();
+    if (l.needsApproval) stateIndex.pendingApproval.push(l);
+    if (l.status === 'been') stateIndex.beenLocations.push(l);
     if (l.tripId) {
       let arr = stateIndex.locationsByTrip.get(l.tripId);
       if (!arr) { arr = []; stateIndex.locationsByTrip.set(l.tripId, arr); }
@@ -2623,6 +2631,7 @@ function createPopupContent(loc) {
 }
 
 let _individualMarkersLayer = null;
+let _heatLazyHandler = null;
 // INVARIANT (regression fix): _heatZoomHandler MUST be a stable function reference
 // defined outside renderMarkers. If defined inside, map.off() can't remove old listeners,
 // causing accumulated handlers that reference stale layers → map breaks after toggling.
@@ -2656,6 +2665,7 @@ function renderMarkers() {
     // 1. Full teardown — always, regardless of mode
     markersLayer.clearLayers();
     map.off('zoomend', _heatZoomHandler);
+    if (_heatLazyHandler) { map.off('zoomend', _heatLazyHandler); _heatLazyHandler = null; }
     if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
     if (heatLayer) { try { map.removeLayer(heatLayer); } catch {} heatLayer = null; }
 
@@ -2672,15 +2682,26 @@ function renderMarkers() {
       );
       map.addLayer(heatLayer);
 
-      // 2b. Individual markers (shown at high zoom)
-      _individualMarkersLayer = L.layerGroup();
-      filtered.forEach(loc => {
-        const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-        bindMarkerBehavior(marker, loc);
-        _individualMarkersLayer.addLayer(marker);
-      });
-      map.on('zoomend', _heatZoomHandler);
-      _heatZoomHandler();
+      // 2b. Individual markers: build lazily on first zoom past threshold
+      const _heatFiltered = filtered;
+      _heatLazyHandler = function() {
+        if (map.getZoom() < 10) return;
+        map.off('zoomend', _heatLazyHandler);
+        _heatLazyHandler = null;
+        _individualMarkersLayer = L.layerGroup();
+        _heatFiltered.forEach(loc => {
+          const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          bindMarkerBehavior(marker, loc);
+          _individualMarkersLayer.addLayer(marker);
+        });
+        map.addLayer(_individualMarkersLayer);
+        map.on('zoomend', _heatZoomHandler);
+      };
+      if (map.getZoom() >= 10) {
+        _heatLazyHandler();
+      } else {
+        map.on('zoomend', _heatLazyHandler);
+      }
     } else {
       // 2c. Cluster mode (default) — batch add for performance
       const markers = filtered.map(loc => {
@@ -2781,14 +2802,11 @@ function populateFilterDropdowns() {
   buildTagFilters();
 }
 
-let _tagFilterCache = '';
+let _tagFilterGen = -1;
 function buildTagFilters() {
-  const tagEntries = [...stateIndex.tagCounts.entries()];
-  // Skip rebuild if tags haven't changed
-  const cacheKey = tagEntries.slice().sort().map(([t,c])=>t+c).join('|');
-  if (cacheKey === _tagFilterCache) return;
-  _tagFilterCache = cacheKey;
-  const sorted = tagEntries.sort((a,b) => b[1] - a[1]);
+  if (_tagFilterGen === stateIndex.generation) return;
+  _tagFilterGen = stateIndex.generation;
+  const sorted = [...stateIndex.tagCounts.entries()].sort((a,b) => b[1] - a[1]);
   const container = document.getElementById('tag-filters');
   container.innerHTML = '';
   if (sorted.length === 0) {
@@ -2863,29 +2881,30 @@ function setMarkerSizeMode(mode) {
 /* ═══════════════════════════════════════════════════════════════════════ */
 let bulkSelected = new Set();
 
+let _bulkDropdownsGen = -1;
 function initBulkView() {
-  // Populate filter + action dropdowns
-  const catFilter = document.getElementById('bulk-filter-cat');
-  catFilter.innerHTML = '<option value="">All categories</option>' +
-    Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
-  const catAction = document.getElementById('bulk-category');
-  catAction.innerHTML = '<option value="">Category →</option>' +
-    Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
-  const tripAction = document.getElementById('bulk-trip');
-  tripAction.innerHTML = '<option value="">Trip →</option><option value="_none">No trip</option>' +
-    state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  const colAction = document.getElementById('bulk-collection');
-  colAction.innerHTML = '<option value="">Collection →</option>' +
-    state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
-  // Populate tag filter
-  const tagFilter = document.getElementById('bulk-filter-tag');
-  const sortedTags = [...stateIndex.tagCounts.entries()].sort((a,b) => b[1]-a[1]);
-  tagFilter.innerHTML = '<option value="">All tags</option>' +
-    sortedTags.map(([t, n]) => `<option value="${esc(t)}">${esc(t)} (${n})</option>`).join('');
-  // Tag action dropdown: remove specific tags
-  const tagAction = document.getElementById('bulk-tag-action');
-  tagAction.innerHTML = '<option value="">Tags →</option><option value="_clear">🗑️ Remove all tags</option>' +
-    sortedTags.map(([t]) => `<option value="_remove:${esc(t)}">❌ Remove "${esc(t)}"</option>`).join('');
+  if (_bulkDropdownsGen !== stateIndex.generation) {
+    _bulkDropdownsGen = stateIndex.generation;
+    const catFilter = document.getElementById('bulk-filter-cat');
+    catFilter.innerHTML = '<option value="">All categories</option>' +
+      Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
+    const catAction = document.getElementById('bulk-category');
+    catAction.innerHTML = '<option value="">Category →</option>' +
+      Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
+    const tripAction = document.getElementById('bulk-trip');
+    tripAction.innerHTML = '<option value="">Trip →</option><option value="_none">No trip</option>' +
+      state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+    const colAction = document.getElementById('bulk-collection');
+    colAction.innerHTML = '<option value="">Collection →</option>' +
+      state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
+    const tagFilter = document.getElementById('bulk-filter-tag');
+    const sortedTags = [...stateIndex.tagCounts.entries()].sort((a,b) => b[1]-a[1]);
+    tagFilter.innerHTML = '<option value="">All tags</option>' +
+      sortedTags.map(([t, n]) => `<option value="${esc(t)}">${esc(t)} (${n})</option>`).join('');
+    const tagAction = document.getElementById('bulk-tag-action');
+    tagAction.innerHTML = '<option value="">Tags →</option><option value="_clear">🗑️ Remove all tags</option>' +
+      sortedTags.map(([t]) => `<option value="_remove:${esc(t)}">❌ Remove "${esc(t)}"</option>`).join('');
+  }
   bulkSelected.clear();
   renderBulkList();
 }
@@ -3063,7 +3082,7 @@ async function applyBulkEdit() {
 
   const updates = [];
   for (const locId of bulkSelected) {
-    const loc = state.locations.find(l => (l.id || l._id) === locId);
+    const loc = stateIndex.locationById.get(locId);
     if (!loc) continue;
     const patch = {};
     if (category) { loc.category = category; patch.category = category; }
@@ -3223,6 +3242,7 @@ function switchView(viewId, skipHash) {
       if (_renderMarkersPending) { _renderMarkersPending = false; renderMarkers(); }
     }, 150);
   }
+  if (viewId !== 'chrono-view' && replayState.map) destroyReplayMap();
   if (viewId === 'import-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
@@ -3968,14 +3988,14 @@ function openAddTripFromManager() {
 /* APPROVAL                                                              */
 /* ═══════════════════════════════════════════════════════════════════════ */
 function updateApprovalBadge() {
-  const count = state.locations.filter(l => l.needsApproval).length;
+  const count = stateIndex.pendingApproval.length;
   const badge = document.getElementById('approval-badge');
   badge.textContent = count;
   badge.style.display = count > 0 ? '' : 'none';
 }
 
 function renderApproval() {
-  const pending = state.locations.filter(l => l.needsApproval);
+  const pending = stateIndex.pendingApproval;
   const section = document.getElementById('approval-section');
   const container = document.getElementById('approval-list');
   document.getElementById('approval-count-label').textContent = pending.length + ' pending';
@@ -4019,7 +4039,7 @@ async function approveByIndex(idx) {
   if (_approving) return;
   _approving = true;
   try {
-    const pending = state.locations.filter(l => l.needsApproval);
+    const pending = stateIndex.pendingApproval;
     const loc = pending[idx];
     if (!loc) { console.error('No pending location at index', idx); return; }
     const locId = loc.id || loc._id;
@@ -4045,7 +4065,7 @@ async function approveByIndex(idx) {
 }
 
 async function bulkApprove() {
-  const pending = state.locations.filter(l => l.needsApproval);
+  const pending = stateIndex.pendingApproval;
   if (pending.length === 0) return;
   let ok = 0, fail = 0;
   const results = await Promise.all(pending.map(async loc => {
@@ -4080,7 +4100,7 @@ function computeStats() {
     if (l.needsApproval) continue;
     const isBeen = l.status === 'been';
     if (isBeen) s.been++; else if (l.status === 'bucket') s.bucket++;
-    const country = (l.address || '').split(',').pop().trim();
+    const country = l._region || '';
     if (country) s.countries.add(country);
     if (isBeen && l.myRating) { s.ratingSum += l.myRating; s.ratingCount++; }
     if (isBeen) {
@@ -4280,6 +4300,9 @@ function renderCharts(been) {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* CHRONOLOGY                                                            */
 /* ═══════════════════════════════════════════════════════════════════════ */
+let _milestoneCache = null;
+let _milestoneCacheGen = -1;
+
 function computeChronologyMilestones(locations, trips) {
   const eligible = locations.filter(l => l.status === 'been' && !l.needsApproval);
 
@@ -4382,7 +4405,11 @@ function renderChronology() {
   const catFilter = document.getElementById('chrono-cat').value;
   const tripFilter = document.getElementById('chrono-trip').value;
 
-  const { firstVisit, yearStats } = computeChronologyMilestones(state.locations, state.trips);
+  if (_milestoneCacheGen !== stateIndex.generation) {
+    _milestoneCache = computeChronologyMilestones(state.locations, state.trips);
+    _milestoneCacheGen = stateIndex.generation;
+  }
+  const { firstVisit, yearStats } = _milestoneCache;
 
   // Collect all visits
   let entries = [];
@@ -4403,43 +4430,75 @@ function renderChronology() {
     return;
   }
 
-  let html = '';
-  let currentYear = '';
-  entries.forEach(entry => {
-    const year = entry.date.substring(0, 4);
-    if (year !== currentYear) {
-      currentYear = year;
-      html += `<div class="timeline-year">${year}</div>`;
-      const ys = yearStats.get(year);
-      if (ys) {
-        let chips = '';
-        if (ys.mostVisited) chips += `<span class="timeline-milestone tm-most">🏆 Most-visited: <strong>${esc(ys.mostVisited.name)}</strong> · ${ys.mostVisited.count} visit${ys.mostVisited.count === 1 ? '' : 's'}</span>`;
-        if (ys.longestTrip) chips += `<span class="timeline-milestone tm-trip">📍 Longest trip: <strong>${esc(ys.longestTrip.name)}</strong> · ${ys.longestTrip.nights} night${ys.longestTrip.nights === 1 ? '' : 's'}</span>`;
-        html += `<div class="timeline-milestones">${chips}</div>`;
+  const CHRONO_PAGE = 300;
+  let _chronoEntries = entries;
+  let _chronoRendered = 0;
+
+  function _renderChronoPage(from, to) {
+    let html = '';
+    let currentYear = from === 0 ? '' : (_chronoEntries[from - 1]?.date?.substring(0, 4) || '');
+    for (let i = from; i < to; i++) {
+      const entry = _chronoEntries[i];
+      const year = entry.date.substring(0, 4);
+      if (year !== currentYear) {
+        currentYear = year;
+        html += `<div class="timeline-year">${year}</div>`;
+        const ys = yearStats.get(year);
+        if (ys) {
+          let chips = '';
+          if (ys.mostVisited) chips += `<span class="timeline-milestone tm-most">🏆 Most-visited: <strong>${esc(ys.mostVisited.name)}</strong> · ${ys.mostVisited.count} visit${ys.mostVisited.count === 1 ? '' : 's'}</span>`;
+          if (ys.longestTrip) chips += `<span class="timeline-milestone tm-trip">📍 Longest trip: <strong>${esc(ys.longestTrip.name)}</strong> · ${ys.longestTrip.nights} night${ys.longestTrip.nights === 1 ? '' : 's'}</span>`;
+          html += `<div class="timeline-milestones">${chips}</div>`;
+        }
       }
+      const cat = CATEGORIES[entry.loc.category] || CATEGORIES.location;
+      const trip = stateIndex.tripById.get(entry.loc.tripId);
+      const people = (entry.loc.people || []).map(p => esc(p)).join(', ');
+      const entryKey = `${entry.loc.id}|${entry.date}`;
+      const firstVisitRegion = firstVisit.get(entryKey);
+      html += `<div class="timeline-item" onclick="openEditModal('${entry.loc.id}')">
+        <div class="ti-top">
+          <span class="ti-emoji">${cat.emoji}</span>
+          <span class="ti-name">${esc(entry.loc.name)}</span>
+          <span class="ti-date">${formatDate(entry.date)}</span>
+        </div>
+        <div class="ti-bottom">
+          ${firstVisitRegion ? `<span class="ti-firstvisit">🥇 First visit to ${esc(firstVisitRegion)}</span>` : ''}
+          ${trip ? `<span class="ti-trip">🧳 ${esc(trip.name)}</span>` : ''}
+          ${people ? `<span class="ti-people">👥 ${people}</span>` : ''}
+        </div>
+      </div>`;
     }
-    const cat = CATEGORIES[entry.loc.category] || CATEGORIES.location;
-    const trip = stateIndex.tripById.get(entry.loc.tripId);
-    const people = (entry.loc.people || []).map(p => esc(p)).join(', ');
-    const entryKey = `${entry.loc.id}|${entry.date}`;
-    const firstVisitRegion = firstVisit.get(entryKey);
-    html += `<div class="timeline-item" onclick="openEditModal('${entry.loc.id}')">
-      <div class="ti-top">
-        <span class="ti-emoji">${cat.emoji}</span>
-        <span class="ti-name">${esc(entry.loc.name)}</span>
-        <span class="ti-date">${formatDate(entry.date)}</span>
-      </div>
-      <div class="ti-bottom">
-        ${firstVisitRegion ? `<span class="ti-firstvisit">🥇 First visit to ${esc(firstVisitRegion)}</span>` : ''}
-        ${trip ? `<span class="ti-trip">🧳 ${esc(trip.name)}</span>` : ''}
-        ${people ? `<span class="ti-people">👥 ${people}</span>` : ''}
-      </div>
-    </div>`;
-  });
-  container.innerHTML = html;
+    return html;
+  }
+
+  function _appendChronoPage() {
+    const btn = document.getElementById('chrono-load-more');
+    if (btn) btn.remove();
+    const nextEnd = Math.min(_chronoRendered + CHRONO_PAGE, _chronoEntries.length);
+    const frag = document.createElement('div');
+    frag.innerHTML = _renderChronoPage(_chronoRendered, nextEnd);
+    while (frag.firstChild) container.appendChild(frag.firstChild);
+    _chronoRendered = nextEnd;
+    if (_chronoRendered < _chronoEntries.length) {
+      const more = document.createElement('button');
+      more.id = 'chrono-load-more';
+      more.className = 'btn btn-secondary';
+      more.style.cssText = 'display:block;margin:16px auto;padding:8px 24px;';
+      more.textContent = `Load more (${_chronoEntries.length - _chronoRendered} remaining)`;
+      more.onclick = _appendChronoPage;
+      container.appendChild(more);
+    }
+  }
+
+  container.innerHTML = '';
+  _appendChronoPage();
 }
 
+let _chronoFiltersGen = -1;
 function populateChronoFilters() {
+  if (_chronoFiltersGen === stateIndex.generation) return;
+  _chronoFiltersGen = stateIndex.generation;
   const years = new Set();
   state.locations.forEach(l => (l.visits || []).forEach(v => { if (v.date) years.add(v.date.substring(0,4)); }));
   const yearSel = document.getElementById('chrono-year');
@@ -4472,6 +4531,7 @@ function formatDate(dateStr) {
 const replayState = {
   frames: [],
   currentIdx: -1,
+  renderedUpTo: -1,
   isPlaying: false,
   speed: 2,
   baseDelayMs: 500,
@@ -4480,6 +4540,8 @@ const replayState = {
   markersLayer: null,
   polylineLayer: null,
   panelOpen: false,
+  pathLines: { old: null, mid: null, recent: null },
+  lastBoundaries: { oldEnd: -1, midEnd: -1, total: -1 },
 };
 const REPLAY_BUCKET_OPACITY = [0.2, 0.5, 0.9];
 const REPLAY_LINE_COLOR = '#ffc144';
@@ -4518,6 +4580,9 @@ function rebuildReplayFrames() {
   };
   replayState.frames = computeReplayFrames(state.locations, filters);
   replayState.currentIdx = -1;
+  replayState.renderedUpTo = -1;
+  replayState.pathLines = { old: null, mid: null, recent: null };
+  replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
   const scrubber = document.getElementById('replay-scrubber');
   scrubber.max = Math.max(0, replayState.frames.length - 1);
   scrubber.value = 0;
@@ -4540,6 +4605,9 @@ function playReplay() {
   if (replayState.frames.length === 0) return;
   if (replayState.currentIdx >= replayState.frames.length - 1) {
     replayState.currentIdx = -1;
+    replayState.renderedUpTo = -1;
+    replayState.pathLines = { old: null, mid: null, recent: null };
+    replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
     if (replayState.markersLayer) replayState.markersLayer.clearLayers();
     if (replayState.polylineLayer) replayState.polylineLayer.clearLayers();
   }
@@ -4554,6 +4622,26 @@ function pauseReplay() {
   if (replayState.timerId) { clearTimeout(replayState.timerId); replayState.timerId = null; }
   const btn = document.getElementById('replay-play-btn');
   if (btn) btn.textContent = '▶';
+}
+
+function destroyReplayMap() {
+  pauseReplay();
+  if (replayState.map) {
+    replayState.map.remove();
+    replayState.map = null;
+    replayState.markersLayer = null;
+    replayState.polylineLayer = null;
+  }
+  replayState.panelOpen = false;
+  replayState.currentIdx = -1;
+  replayState.frames = [];
+  replayState.renderedUpTo = -1;
+  replayState.pathLines = { old: null, mid: null, recent: null };
+  replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
+  const panel = document.getElementById('replay-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = document.getElementById('replay-toggle-btn');
+  if (btn) btn.textContent = '▶ Replay';
 }
 
 function scheduleNextReplayTick() {
@@ -4585,6 +4673,7 @@ function buildReplayMarker(frame) {
 function setReplayPosition(idx) {
   if (idx < 0 || idx >= replayState.frames.length) return;
   replayState.currentIdx = idx;
+  replayState.renderedUpTo = idx;
   replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[idx]));
   renderReplayPath();
   const scrubber = document.getElementById('replay-scrubber');
@@ -4596,12 +4685,21 @@ function seekReplay(rawIdx) {
   const idx = parseInt(rawIdx, 10);
   if (!Number.isFinite(idx) || idx < 0) return;
   pauseReplay();
-  replayState.markersLayer.clearLayers();
-  replayState.polylineLayer.clearLayers();
   const upTo = Math.min(idx, replayState.frames.length - 1);
-  for (let i = 0; i <= upTo; i++) {
-    replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
+  if (upTo >= replayState.renderedUpTo) {
+    for (let i = replayState.renderedUpTo + 1; i <= upTo; i++) {
+      replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
+    }
+  } else {
+    replayState.markersLayer.clearLayers();
+    replayState.polylineLayer.clearLayers();
+    replayState.pathLines = { old: null, mid: null, recent: null };
+    replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
+    for (let i = 0; i <= upTo; i++) {
+      replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
+    }
   }
+  replayState.renderedUpTo = upTo;
   replayState.currentIdx = upTo;
   renderReplayPath();
   updateReplayPositionLabel();
@@ -4609,20 +4707,33 @@ function seekReplay(rawIdx) {
 
 function renderReplayPath() {
   if (!replayState.polylineLayer) return;
-  replayState.polylineLayer.clearLayers();
   const idx = replayState.currentIdx;
-  if (idx <= 0) return;
-  const visited = replayState.frames.slice(0, idx + 1);
-  const total = visited.length;
+  if (idx <= 0) {
+    replayState.polylineLayer.clearLayers();
+    replayState.pathLines = { old: null, mid: null, recent: null };
+    replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
+    return;
+  }
+  const total = idx + 1;
   const oldEnd = Math.floor(total * 0.5);
   const midEnd = Math.floor(total * 0.75);
-  const oldPts = visited.slice(0, Math.max(0, oldEnd)).map(f => [f.lat, f.lng]);
-  // overlap by 1 point so segments connect visually
-  const midPts = visited.slice(Math.max(0, oldEnd - 1), Math.max(0, midEnd)).map(f => [f.lat, f.lng]);
-  const recentPts = visited.slice(Math.max(0, midEnd - 1)).map(f => [f.lat, f.lng]);
-  if (oldPts.length >= 2)    L.polyline(oldPts,    { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[0], weight: 2 }).addTo(replayState.polylineLayer);
-  if (midPts.length >= 2)    L.polyline(midPts,    { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[1], weight: 2 }).addTo(replayState.polylineLayer);
-  if (recentPts.length >= 2) L.polyline(recentPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[2], weight: 2.5 }).addTo(replayState.polylineLayer);
+  const lb = replayState.lastBoundaries;
+  const pl = replayState.pathLines;
+
+  if (lb.oldEnd === oldEnd && lb.midEnd === midEnd && pl.recent) {
+    const frame = replayState.frames[idx];
+    pl.recent.addLatLng([frame.lat, frame.lng]);
+  } else {
+    replayState.polylineLayer.clearLayers();
+    const visited = replayState.frames.slice(0, total);
+    const oldPts = visited.slice(0, Math.max(0, oldEnd)).map(f => [f.lat, f.lng]);
+    const midPts = visited.slice(Math.max(0, oldEnd - 1), Math.max(0, midEnd)).map(f => [f.lat, f.lng]);
+    const recentPts = visited.slice(Math.max(0, midEnd - 1)).map(f => [f.lat, f.lng]);
+    pl.old = oldPts.length >= 2 ? L.polyline(oldPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[0], weight: 2 }).addTo(replayState.polylineLayer) : null;
+    pl.mid = midPts.length >= 2 ? L.polyline(midPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[1], weight: 2 }).addTo(replayState.polylineLayer) : null;
+    pl.recent = recentPts.length >= 2 ? L.polyline(recentPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[2], weight: 2.5 }).addTo(replayState.polylineLayer) : null;
+    replayState.lastBoundaries = { oldEnd, midEnd, total };
+  }
 }
 
 function setReplaySpeed(speed) {
@@ -4822,11 +4933,15 @@ async function drawRoadRoutes(tripLocs, color) {
 }
 
 function sortTripLocations(locs) {
+  const keys = new Map();
+  for (const l of locs) {
+    const earliest = (l.visits || []).map(v => v.date).filter(Boolean).sort()[0] || 'z';
+    keys.set(l, earliest);
+  }
   return locs.sort((a, b) => {
-    const dateA = (a.visits || []).map(v => v.date).filter(Boolean).sort()[0] || 'z';
-    const dateB = (b.visits || []).map(v => v.date).filter(Boolean).sort()[0] || 'z';
+    const dateA = keys.get(a);
+    const dateB = keys.get(b);
     if (dateA !== dateB) return dateA.localeCompare(dateB);
-    // Same date: use tripOrder if set, otherwise creation order
     return (a.tripOrder || 0) - (b.tripOrder || 0);
   });
 }
@@ -5102,7 +5217,8 @@ function viewCollection(colId) {
   </div>`;
 
   // Add existing locations (multi-select with category filter)
-  const available = state.locations.filter(l => !(l.collections || []).includes(colId));
+  const inCollection = new Set((stateIndex.locationsByCollection.get(colId) || []).map(l => l.id || l._id));
+  const available = state.locations.filter(l => !inCollection.has(l.id || l._id));
   const catOptions = Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
   html += `<div style="grid-column:1/-1;margin-bottom:8px;">
     <details>
@@ -5210,10 +5326,10 @@ function debouncedFilterColAddList() {
 function filterColAddList() {
   const catFilter = document.getElementById('col-add-cat-filter')?.value || '';
   const textFilter = (document.getElementById('col-add-search')?.value || '').toLowerCase();
-  // Get the current collection ID from the page context
   const colId = document.querySelector('[onclick*="bulkAddToCollection"]')?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+  const inCol = colId ? new Set((stateIndex.locationsByCollection.get(colId) || []).map(l => l.id || l._id)) : null;
   const available = state.locations.filter(l => {
-    if (colId && (l.collections || []).includes(colId)) return false;
+    if (inCol && inCol.has(l.id || l._id)) return false;
     if (catFilter && l.category !== catFilter) return false;
     if (textFilter && !(l.name || '').toLowerCase().includes(textFilter)) return false;
     return true;
@@ -5506,10 +5622,16 @@ function getBBoxes(geo) {
   return _bboxCache;
 }
 
+let _regionAssignCache = null;
+let _regionAssignCacheGen = -1;
+
 function countLocationsByRegion(geo) {
-  const beenLocs = state.locations.filter(l => l.status === 'been');
-  const regionCounts = new Map(); // feature index → count
-  const regionLocs = new Map(); // feature index → [loc ids]
+  if (_regionAssignCacheGen === stateIndex.generation && _regionAssignCache && _regionAssignCache.geoRef === geo) {
+    return { regionCounts: _regionAssignCache.regionCounts, regionLocs: _regionAssignCache.regionLocs };
+  }
+  const beenLocs = stateIndex.beenLocations;
+  const regionCounts = new Map();
+  const regionLocs = new Map();
   const bboxes = getBBoxes(geo);
 
   beenLocs.forEach(loc => {
@@ -5524,10 +5646,63 @@ function countLocationsByRegion(geo) {
       }
     }
   });
+  _regionAssignCache = { regionCounts, regionLocs, geoRef: geo };
+  _regionAssignCacheGen = stateIndex.generation;
   return { regionCounts, regionLocs };
 }
 
 let _regionData = null; // cache for click handler
+
+function _buildRegionStyleParams(regionCounts) {
+  const counts = [...regionCounts.values()];
+  const maxCount = counts.length ? Math.max(1, ...counts) : 1;
+  const minCount = counts.length ? Math.min(...counts) : 0;
+  const range = maxCount - minCount || 1;
+  const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
+  return { maxCount, minCount, range, scheme };
+}
+
+function _regionStyleFn(featureIdx, regionCounts, minCount, maxCount, range, scheme) {
+  return function(feature) {
+    const idx = featureIdx.get(feature);
+    const count = regionCounts.get(idx) || 0;
+    const rank = count > 0 ? (count - minCount) / range : 0;
+    const logIntensity = count > 0 ? Math.log(count + 1) / Math.log(maxCount + 1) : 0;
+    const intensity = count > 0 ? 0.15 + 0.85 * Math.max(rank, logIntensity) : 0;
+    return {
+      fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
+      fillOpacity: count > 0 ? 0.35 + 0.5 * intensity : 0,
+      weight: count > 0 ? 1.2 : 0.2,
+      color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.05)',
+    };
+  };
+}
+
+function _updateRegionsSummary(geo, regionCounts) {
+  const visitedRegions = new Set();
+  const visitedCountries = new Set();
+  regionCounts.forEach((count, idx) => {
+    if (count > 0) {
+      const f = geo.features[idx];
+      if (f) {
+        visitedRegions.add(f.properties.name);
+        visitedCountries.add(f.properties.country);
+      }
+    }
+  });
+  document.getElementById('regions-summary').textContent =
+    `${visitedRegions.size} regions · ${visitedCountries.size} countries · ${stateIndex.beenLocations.length} locations`;
+}
+
+function updateRegionsColorScheme() {
+  if (!regionsLayer || !_regionData) { renderRegionsMap(); return; }
+  const { regionCounts, geo } = _regionData;
+  const { maxCount, minCount, range, scheme } = _buildRegionStyleParams(regionCounts);
+  const featureIdx = new Map();
+  geo.features.forEach((f, i) => featureIdx.set(f, i));
+  regionsLayer.setStyle(_regionStyleFn(featureIdx, regionCounts, minCount, maxCount, range, scheme));
+  _updateRegionsSummary(geo, regionCounts);
+}
 
 async function renderRegionsMap() {
   initRegionsMap();
@@ -5536,40 +5711,15 @@ async function renderRegionsMap() {
 
   const { regionCounts, regionLocs } = countLocationsByRegion(geo);
   _regionData = { regionCounts, regionLocs, geo };
-  const counts = [...regionCounts.values()];
-  const maxCount = Math.max(1, ...counts);
-  const minCount = Math.min(...counts);
-  const range = maxCount - minCount || 1;
-  const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
+  const { maxCount, minCount, range, scheme } = _buildRegionStyleParams(regionCounts);
 
   if (regionsLayer) regionsMap.removeLayer(regionsLayer);
 
-  const visitedRegions = new Set();
-  const visitedCountries = new Set();
-
-  // Build index map for O(1) lookup
   const featureIdx = new Map();
   geo.features.forEach((f, i) => featureIdx.set(f, i));
 
   regionsLayer = L.geoJSON(geo, {
-    style: function(feature) {
-      const idx = featureIdx.get(feature);
-      const count = regionCounts.get(idx) || 0;
-      if (count > 0) {
-        visitedRegions.add(feature.properties.name);
-        visitedCountries.add(feature.properties.country);
-      }
-      // Use logarithmic scale for better differentiation + relative rank
-      const rank = count > 0 ? (count - minCount) / range : 0; // 0-1 relative to other regions
-      const logIntensity = count > 0 ? Math.log(count + 1) / Math.log(maxCount + 1) : 0;
-      const intensity = count > 0 ? 0.15 + 0.85 * Math.max(rank, logIntensity) : 0;
-      return {
-        fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
-        fillOpacity: count > 0 ? 0.35 + 0.5 * intensity : 0,
-        weight: count > 0 ? 1.2 : 0.2,
-        color: count > 0 ? scheme.mid : 'rgba(255,255,255,0.05)',
-      };
-    },
+    style: _regionStyleFn(featureIdx, regionCounts, minCount, maxCount, range, scheme),
     onEachFeature: function(feature, layer) {
       const idx = featureIdx.get(feature);
       const count = regionCounts.get(idx) || 0;
@@ -5584,8 +5734,7 @@ async function renderRegionsMap() {
     }
   }).addTo(regionsMap);
 
-  document.getElementById('regions-summary').textContent =
-    `${visitedRegions.size} regions · ${visitedCountries.size} countries · ${state.locations.filter(l => l.status === 'been').length} locations`;
+  _updateRegionsSummary(geo, regionCounts);
 
   setTimeout(() => regionsMap.invalidateSize(), 100);
 }
@@ -5734,7 +5883,7 @@ async function syncImportedLocations(locations) {
       const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address, _googlePlaceId: l._googlePlaceId || null }));
       const results = await api('POST', '/places/bulk-sync', { locations: toSync });
       results.forEach(r => {
-        const loc = state.locations.find(l => (l.id || l._id) === r.id);
+        const loc = stateIndex.locationById.get(r.id);
         if (loc) {
           if (r.found) {
             if (r.googleRating) loc.googleRating = r.googleRating;
@@ -5768,7 +5917,7 @@ async function bulkGoogleSync() {
       const toSync = batch.map(l => ({ id: l.id || l._id, name: l.name, lat: l.lat, lng: l.lng, address: l.address, _googlePlaceId: l._googlePlaceId || null }));
       const results = await api('POST', '/places/bulk-sync', { locations: toSync });
       results.forEach(r => {
-        const loc = state.locations.find(l => (l.id || l._id) === r.id);
+        const loc = stateIndex.locationById.get(r.id);
         if (loc) {
           if (r.found) {
             if (r.googleRating) loc.googleRating = r.googleRating;
@@ -5808,7 +5957,7 @@ async function syncFromEditModal() {
 async function syncSingleLocation(locId) {
   const enabled = await checkPlacesEnabled();
   if (!enabled) { showToast('Google Places API not configured. Add API key in Account settings.', 'warn'); return; }
-  const loc = state.locations.find(l => (l.id || l._id) === locId);
+  const loc = stateIndex.locationById.get(locId);
   if (!loc) return;
   try {
     const result = await api('POST', '/places/sync', { name: loc.name, lat: loc.lat, lng: loc.lng, placeId: loc._googlePlaceId || null });
@@ -6543,7 +6692,7 @@ async function enrichInBackground(locations, { onProgress } = {}) {
   const toEnrich = locations.filter(l => {
     const locId = l.id || l._id;
     if (!locId || l.category !== 'location' || !l.lat || !l.lng) return false;
-    const current = state.locations.find(s => (s.id || s._id) === locId);
+    const current = stateIndex.locationById.get(locId);
     return !current || current.needsApproval || current.category === 'location';
   }).slice(0, 50);
 
@@ -6560,8 +6709,8 @@ async function enrichInBackground(locations, { onProgress } = {}) {
       loc.category = newCat;
       loc.suggestedCategory = newCat;
       if (!loc.address && data.display_name) loc.address = data.display_name;
-      const stateIdx = state.locations.findIndex(l => (l.id || l._id) === locId);
-      if (stateIdx >= 0) Object.assign(state.locations[stateIdx], { category: newCat, suggestedCategory: newCat, address: loc.address });
+      const stateLoc = stateIndex.locationById.get(locId);
+      if (stateLoc) Object.assign(stateLoc, { category: newCat, suggestedCategory: newCat, address: loc.address });
       api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: loc.address || undefined }).catch(() => {});
       return true;
     },
