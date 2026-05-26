@@ -3566,7 +3566,7 @@ function renderVisitFields() {
   container.innerHTML = state.modalVisits.map((v, i) =>
     `<div class="visit-item">
       <input type="date" class="form-input" value="${v.date || ''}" onchange="state.modalVisits[${i}].date=this.value" style="flex:1;">
-      <input type="text" class="form-input" value="${v.notes || ''}" placeholder="Notes" onchange="state.modalVisits[${i}].notes=this.value" style="flex:2;">
+      <input type="text" class="form-input" value="${esc(v.notes || '')}" placeholder="Notes" onchange="state.modalVisits[${i}].notes=this.value" style="flex:2;">
       <span class="remove-visit" onclick="removeVisit(${i})">&times;</span>
     </div>`
   ).join('');
@@ -5201,7 +5201,7 @@ function viewCollection(colId) {
       <span style="font-size:32px;">${col.emoji || '📋'}</span>
       <div>
         <h2 style="font-family:var(--font-display);font-size:22px;margin:0;">${esc(col.name)}</h2>
-        <p style="font-size:13px;color:var(--text-muted);">${col.description || ''}</p>
+        <p style="font-size:13px;color:var(--text-muted);">${esc(col.description || '')}</p>
       </div>
     </div>
     <div class="trip-stats-grid" style="max-width:400px;">
@@ -5260,7 +5260,7 @@ function viewCollection(colId) {
         <span class="cat-stat-emoji">${cat.emoji}</span>
         <div class="cat-stat-info">
           <div class="cat-stat-name">${statusIcon} ${esc(loc.name)}</div>
-          <div class="cat-stat-counts">${cat.label}${rating} · ${loc.address || ''}</div>
+          <div class="cat-stat-counts">${cat.label}${rating} · ${esc(loc.address || '')}</div>
         </div>
       </div>`;
     }).join('');
@@ -6055,7 +6055,7 @@ async function downloadBackup(filename) {
 function restoreBackup(filename) {
   showConfirm('Restore this backup? This will ADD all locations from the backup. Existing data is not deleted.', async () => {
     try {
-      const res = await fetch('/api/admin/backups/' + filename, { headers: apiHeaders() });
+      const res = await fetch('/api/admin/backups/' + encodeURIComponent(filename), { headers: apiHeaders() });
       const data = await res.json();
       state.pendingImport = (data.locations || []).map(item => ({
         ...item,

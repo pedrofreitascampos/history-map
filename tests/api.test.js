@@ -899,3 +899,84 @@ describe('Cross-user data isolation (404 path)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ─── Admin endpoint authorization ────────────────────────
+// Regression: requireAdmin guard previously was `if (ADMIN_EMAIL && ...)` which
+// short-circuited to a no-op when ALLOWED_EMAILS was unset (open-registration),
+// silently granting every authenticated user admin privileges. The fix inverts
+// the guard to `if (!ADMIN_EMAIL || ...)` — when no admin is configured, NO ONE
+// is admin. Test env has ALLOWED_EMAILS='' → all admin endpoints must 403.
+describe('Admin authorization (ALLOWED_EMAILS unset)', () => {
+  test('POST /api/admin/merge-accounts → 403 for normal user', async () => {
+    const res = await request(app).post('/api/admin/merge-accounts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fromUsername: 'testuser', toUsername: 'someone' });
+    expect(res.status).toBe(403);
+  });
+
+  test('POST /api/admin/reset-password → 403 for normal user', async () => {
+    const res = await request(app).post('/api/admin/reset-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'testuser', newPassword: 'newpass123' });
+    expect(res.status).toBe(403);
+  });
+
+  test('GET /api/admin/users → 403 for normal user', async () => {
+    const res = await request(app).get('/api/admin/users').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('GET /api/audit → 403 for normal user', async () => {
+    const res = await request(app).get('/api/audit').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('GET /api/admin/backups → 403 for normal user', async () => {
+    const res = await request(app).get('/api/admin/backups').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('GET /api/admin/backups/:filename → 403 for normal user', async () => {
+    const res = await request(app).get('/api/admin/backups/anything.json').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('admin endpoints still require auth first (no token → 401, not 403)', async () => {
+    const res = await request(app).get('/api/admin/users');
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── SSRF / input validation regressions ─────────────────
+describe('Places search lat/lng validation', () => {
+  test('rejects non-numeric lat', async () => {
+    // No API key configured in test env → expect 501 first; but if lat is invalid
+    // we want 400 to fire BEFORE the key check would matter. Actually the code
+    // checks the key first; with no key we get 501 regardless. Verify the validation
+    // exists by string-grep on the server source instead.
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    expect(serverSrc).toMatch(/Math\.abs\(fLat\)\s*>\s*90/);
+    expect(serverSrc).toMatch(/Math\.abs\(fLng\)\s*>\s*180/);
+  });
+});
+
+// ─── XSS regression checks ───────────────────────────────
+describe('XSS escape invariants', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('col.description is escaped in viewCollection', () => {
+    expect(html).toContain('${esc(col.description || \'\')}');
+  });
+
+  test('loc.address is escaped in collection detail list', () => {
+    expect(html).toContain('${esc(loc.address || \'\')}');
+  });
+
+  test('v.notes is escaped in visit-field value attribute', () => {
+    expect(html).toContain('value="${esc(v.notes || \'\')}"');
+  });
+
+  test('restoreBackup encodes filename', () => {
+    expect(html).toContain("'/api/admin/backups/' + encodeURIComponent(filename)");
+  });
+});

@@ -86,7 +86,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Auth middleware ──────────────────────────────────────
 function requireAdmin(req, res, next) {
-  if (ADMIN_EMAIL && req.user.username.toLowerCase() !== ADMIN_EMAIL) {
+  if (!ADMIN_EMAIL || !req.user?.username || req.user.username.toLowerCase() !== ADMIN_EMAIL) {
     return res.status(403).json({ error: 'Admin only' });
   }
   next();
@@ -600,7 +600,14 @@ app.get('/api/places/search', auth, async (req, res) => {
     const { q, lat, lng } = req.query;
     if (!q) return res.status(400).json({ error: 'Query required' });
     let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${placesKey}`;
-    if (lat && lng) url += `&location=${lat},${lng}&radius=50000`;
+    if (lat !== undefined && lng !== undefined) {
+      const fLat = parseFloat(lat);
+      const fLng = parseFloat(lng);
+      if (!Number.isFinite(fLat) || !Number.isFinite(fLng) || Math.abs(fLat) > 90 || Math.abs(fLng) > 180) {
+        return res.status(400).json({ error: 'Invalid coordinates' });
+      }
+      url += `&location=${fLat},${fLng}&radius=50000`;
+    }
     const _t0 = Date.now();
     const response = await fetch(url);
     const data = await response.json();
@@ -707,11 +714,6 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
   }
 });
 
-// ── Catch-all for SPA ────────────────────────────────────
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
-
 // ── Auto-backup (daily, per user) ────────────────────────
 const BACKUP_DIR = path.join(process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..', 'data')), 'backups');
 const MAX_BACKUPS_PER_USER = 7; // Keep last 7 daily backups
@@ -781,6 +783,12 @@ app.get('/api/admin/backups/:filename', auth, requireAdmin, (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   }
   res.download(filePath);
+});
+
+// ── Catch-all for SPA ────────────────────────────────────
+// MUST be the last route — anything defined after this is dead code.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 if (require.main === module) {
