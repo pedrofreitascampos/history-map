@@ -55,14 +55,20 @@ app.set('trust proxy', 1); // Trust first proxy (Render)
 app.use(helmet({
   contentSecurityPolicy: {
     // 'unsafe-inline' is required because the app uses many inline event handlers
-    // and inline <style>/<script> blocks. Removing it would require a full
-    // refactor to nonces or external files — captured separately in roadmap.
-    // What we DO get: strict origin allowlist on every fetch destination, so
-    // a stored XSS can't reach attacker-controlled servers.
+    // (onclick="…") and inline <style>/<script> blocks. Removing it would
+    // require a full refactor to nonces — captured separately in roadmap.
+    // CSP3 browsers split script-src into script-src-elem (for <script> tags)
+    // and script-src-attr (for onclick handlers). 'unsafe-inline' on the
+    // unified script-src does NOT always cascade to script-src-attr, so we
+    // set both explicitly. Same for style-src-attr (inline style="…").
+    // What we DO still get: strict origin allowlist on every fetch destination,
+    // so a stored XSS can't reach attacker-controlled servers.
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://cdn.jsdelivr.net", "https://accounts.google.com"],
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
+      styleSrcAttr: ["'unsafe-inline'"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: [
