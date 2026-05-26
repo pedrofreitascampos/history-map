@@ -3081,34 +3081,53 @@ async function applyBulkEdit() {
   const colId = document.getElementById('bulk-collection').value;
   if (!category && !status && !trip && !tagAction && !tagAdd && !colId) { showToast('Choose at least one action.', 'warn'); return; }
 
-  const updates = [];
+  // Build patches WITHOUT mutating loc objects. Apply mutations only on per-PUT
+  // success (rollback-safe: a failed PUT leaves the in-memory state in sync
+  // with the server instead of optimistically diverged).
+  const items = [];
   for (const locId of bulkSelected) {
     const loc = stateIndex.locationById.get(locId);
     if (!loc) continue;
     const patch = {};
-    if (category) { loc.category = category; patch.category = category; }
-    if (status) { loc.status = status; patch.status = status; }
-    if (trip === '_none') { loc.tripId = null; patch.tripId = null; }
-    else if (trip) { loc.tripId = trip; patch.tripId = trip; }
-    // Tag actions
-    if (tagAction === '_clear') { loc.tags = []; patch.tags = []; }
+    if (category) patch.category = category;
+    if (status) patch.status = status;
+    if (trip === '_none') patch.tripId = null;
+    else if (trip) patch.tripId = trip;
+
+    let newTags = (loc.tags || []).slice();
+    let tagsChanged = false;
+    if (tagAction === '_clear') { newTags = []; tagsChanged = true; }
     else if (tagAction?.startsWith('_remove:')) {
-      const removeTag = tagAction.slice(8);
-      loc.tags = (loc.tags || []).filter(t => t !== removeTag);
-      patch.tags = loc.tags;
+      const t = tagAction.slice(8);
+      if (newTags.includes(t)) { newTags = newTags.filter(x => x !== t); tagsChanged = true; }
     }
-    if (tagAdd && !(loc.tags || []).includes(tagAdd)) { loc.tags = [...(loc.tags || []), tagAdd]; patch.tags = loc.tags; }
-    if (colId && !(loc.collections || []).includes(colId)) { loc.collections = [...(loc.collections || []), colId]; patch.collections = loc.collections; }
-    if (Object.keys(patch).length > 0) updates.push(api('PUT', '/locations/' + locId, patch));
+    if (tagAdd && !newTags.includes(tagAdd)) { newTags = [...newTags, tagAdd]; tagsChanged = true; }
+    if (tagsChanged) patch.tags = newTags;
+
+    if (colId && !(loc.collections || []).includes(colId)) {
+      patch.collections = [...(loc.collections || []), colId];
+    }
+    if (Object.keys(patch).length > 0) items.push({ loc, locId, patch });
   }
-  await Promise.all(updates);
+
+  const results = await Promise.allSettled(items.map(it => api('PUT', '/locations/' + it.locId, it.patch)));
+  let ok = 0, failed = 0;
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      Object.assign(items[i].loc, items[i].patch);
+      ok++;
+    } else {
+      failed++;
+    }
+  });
   bulkSelected.clear();
   document.getElementById('bulk-tag').value = '';
   rebuildIndexes();
   renderBulkList();
   renderMarkers();
   populateFilterDropdowns();
-  showToast(`Updated ${updates.length} locations`);
+  if (failed > 0) showToast(`${ok} updated, ${failed} failed (state preserved)`, 'warn');
+  else showToast(`Updated ${ok} locations`);
 }
 
 function deleteBulkSelection() {
@@ -4685,6 +4704,7 @@ function setReplayPosition(idx) {
 function seekReplay(rawIdx) {
   const idx = parseInt(rawIdx, 10);
   if (!Number.isFinite(idx) || idx < 0) return;
+  if (!replayState.markersLayer || !replayState.polylineLayer || replayState.frames.length === 0) return;
   pauseReplay();
   const upTo = Math.min(idx, replayState.frames.length - 1);
   if (upTo >= replayState.renderedUpTo) {
@@ -4786,10 +4806,12 @@ function populateTripSelector() {
     }).join('');
 }
 
+let _selectTripVersion = 0;
 function selectTrip(tripId) {
+  const myVersion = ++_selectTripVersion;
   initTripMap();
-  tripMarkersLayer.clearLayers();
-  tripPathLayer.clearLayers();
+  if (tripMarkersLayer) tripMarkersLayer.clearLayers();
+  if (tripPathLayer) tripPathLayer.clearLayers();
 
   if (!tripId) {
     document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
@@ -4827,9 +4849,10 @@ function selectTrip(tripId) {
     bounds.extend([loc.lat, loc.lng]);
   });
 
-  // Draw path
+  // Draw path — pass version so async OSRM responses from a stale trip selection
+  // can be discarded if the user has since selected a different trip.
   if (tripLocs.length > 1) {
-    drawRoadRoutes(tripLocs, trip.color || '#ffc144');
+    drawRoadRoutes(tripLocs, trip.color || '#ffc144', myVersion);
   }
 
   tripMap.fitBounds(bounds, { padding: [40, 40] });
@@ -4872,7 +4895,7 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function drawRoadRoutes(tripLocs, color) {
+async function drawRoadRoutes(tripLocs, color, version) {
   const MAX_ROAD_DISTANCE_KM = 500;
   const MAX_CONCURRENT = 8;
 
@@ -4906,6 +4929,9 @@ async function drawRoadRoutes(tripLocs, color) {
     }
   });
   await Promise.all(workers);
+  // If a newer selectTrip has started, abandon this render — preserves the
+  // current trip's polylines instead of drawing stale ones on top.
+  if (version !== undefined && version !== _selectTripVersion) return;
 
   for (const leg of results) {
     if (leg.isFlight) {
@@ -5487,19 +5513,36 @@ async function editCollection(id) {
 function deleteCollection(id) {
   const col = stateIndex.collectionById.get(id);
   showConfirm(`Delete collection "${col?.name}"?`, async () => {
-    const updates = [];
+    // Build per-location patches without mutating loc.collections. Apply on
+    // PUT success so a failed PUT leaves the in-memory list consistent with
+    // the server. Mirrors the rollback pattern in applyBulkEdit.
+    const items = [];
     state.locations.forEach(l => {
       if (l.collections && l.collections.includes(id)) {
-        l.collections = l.collections.filter(c => c !== id);
-        updates.push(api('PUT', '/locations/' + l.id, { collections: l.collections }));
+        items.push({ loc: l, newCols: l.collections.filter(c => c !== id) });
       }
     });
-    await Promise.all(updates);
-    await api('DELETE', '/collections/' + id);
-    state.collections = state.collections.filter(c => c.id !== id);
+    const results = await Promise.allSettled(items.map(it =>
+      api('PUT', '/locations/' + (it.loc.id || it.loc._id), { collections: it.newCols })
+    ));
+    let appliedLocations = 0, failedLocations = 0;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') { items[i].loc.collections = items[i].newCols; appliedLocations++; }
+      else failedLocations++;
+    });
+    try {
+      await api('DELETE', '/collections/' + id);
+      state.collections = state.collections.filter(c => c.id !== id);
+    } catch (err) {
+      showToast(`Collection delete failed: ${err.message}`, 'error');
+      rebuildIndexes();
+      renderCollections();
+      return;
+    }
     rebuildIndexes();
     renderCollections();
-    showToast(`Collection deleted`);
+    if (failedLocations > 0) showToast(`Collection deleted; ${failedLocations} locations could not be updated`, 'warn');
+    else showToast(`Collection deleted`);
   });
 }
 
@@ -6707,12 +6750,22 @@ async function enrichInBackground(locations, { onProgress } = {}) {
       const newCat = osmCat || inferCategory((data.name || '') + ' ' + (data.display_name || ''));
       if (newCat === 'location') return false;
       const locId = loc.id || loc._id;
+      const newAddress = !loc.address && data.display_name ? data.display_name : loc.address;
+      // Don't mutate loc until PUT succeeds — silent failures previously left
+      // UI/server diverged. On success apply to both `loc` (the worker's view)
+      // and `stateIndex.locationById` (the canonical reference, which is the
+      // same object in most cases but safer to update explicitly).
+      try {
+        await api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: newAddress || undefined });
+      } catch (err) {
+        log('warn', 'enrich_put_failed', { locId, error: err && err.message });
+        return false;
+      }
       loc.category = newCat;
       loc.suggestedCategory = newCat;
-      if (!loc.address && data.display_name) loc.address = data.display_name;
+      loc.address = newAddress;
       const stateLoc = stateIndex.locationById.get(locId);
-      if (stateLoc) Object.assign(stateLoc, { category: newCat, suggestedCategory: newCat, address: loc.address });
-      api('PUT', '/locations/' + locId, { category: newCat, suggestedCategory: newCat, address: loc.address || undefined }).catch(() => {});
+      if (stateLoc && stateLoc !== loc) Object.assign(stateLoc, { category: newCat, suggestedCategory: newCat, address: newAddress });
       return true;
     },
   }));

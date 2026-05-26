@@ -1037,7 +1037,7 @@ describe('Helmet / CORS hardening', () => {
   });
 });
 
-// ─── Frontend bug fixes (Phase B) ────────────────────────
+// ─── Frontend bug fixes (Phase B + C) ─────────────────────
 describe('Frontend correctness fixes', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
 
@@ -1053,6 +1053,29 @@ describe('Frontend correctness fixes', () => {
 
   test('logout resets _placesEnabled cache', () => {
     expect(html).toMatch(/function logout\(\)\s*\{[\s\S]*?_placesEnabled\s*=\s*null/);
+  });
+
+  test('applyBulkEdit uses Promise.allSettled (rollback-safe)', () => {
+    expect(html).toMatch(/applyBulkEdit[\s\S]{0,2000}Promise\.allSettled/);
+  });
+
+  test('deleteCollection uses Promise.allSettled (rollback-safe)', () => {
+    expect(html).toMatch(/deleteCollection[\s\S]{0,2000}Promise\.allSettled/);
+  });
+
+  test('drawRoadRoutes takes version arg for race protection', () => {
+    expect(html).toMatch(/async function drawRoadRoutes\(tripLocs, color, version\)/);
+    expect(html).toMatch(/version !== _selectTripVersion/);
+  });
+
+  test('seekReplay guards against null markersLayer', () => {
+    expect(html).toMatch(/function seekReplay\([\s\S]{0,500}!replayState\.markersLayer/);
+  });
+
+  test('enrichInBackground awaits PUT and only mutates on success', () => {
+    // Old code: `api('PUT', ...).catch(() => {})` — silent swallow with mutation
+    // before await. New code: try/catch around await, mutation after success.
+    expect(html).not.toMatch(/api\('PUT', '\/locations\/' \+ locId,[^)]+\)\.catch\(\(\) => \{\}\)/);
   });
 });
 
