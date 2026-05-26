@@ -55,6 +55,7 @@ const code = [
   extractFunction('computeTripStats'),
   extractFunction('computeChronologyMilestones'),
   extractFunction('computeMarkerSize'),
+  extractFunction('computeReplayFrames'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
@@ -1382,5 +1383,82 @@ describe('computeMarkerSize', () => {
         expect(px).toBeLessThanOrEqual(50);
       }
     }
+  });
+});
+
+describe('computeReplayFrames', () => {
+  const run = (locs, filters) => vm.runInContext(
+    `computeReplayFrames(${JSON.stringify(locs)}, ${JSON.stringify(filters || null)})`,
+    ctx
+  );
+
+  it('returns empty for no locations', () => {
+    expect(run([])).toEqual([]);
+  });
+
+  it('skips bucket locations', () => {
+    const out = run([{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'bucket', visits: [{ date: '2024-01-01' }] }]);
+    expect(out).toEqual([]);
+  });
+
+  it('skips needs-approval locations', () => {
+    const out = run([{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', needsApproval: true, visits: [{ date: '2024-01-01' }] }]);
+    expect(out).toEqual([]);
+  });
+
+  it('skips locations without valid coords', () => {
+    const out = run([{ id: 'a', name: 'A', lat: null, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] }]);
+    expect(out).toEqual([]);
+  });
+
+  it('skips visits without date', () => {
+    const out = run([{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '' }, { date: '2024-01-01' }] }]);
+    expect(out.length).toBe(1);
+    expect(out[0].date).toBe('2024-01-01');
+  });
+
+  it('emits one frame per visit', () => {
+    const out = run([{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }, { date: '2024-02-01' }] }]);
+    expect(out.length).toBe(2);
+  });
+
+  it('sorts chronologically ascending', () => {
+    const out = run([
+      { id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-03-01' }] },
+      { id: 'b', name: 'B', lat: 3, lng: 4, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] },
+      { id: 'c', name: 'C', lat: 5, lng: 6, category: 'cafe', status: 'been', visits: [{ date: '2024-02-01' }] },
+    ]);
+    expect(out.map(f => f.name)).toEqual(['B', 'C', 'A']);
+  });
+
+  it('respects year filter', () => {
+    const out = run([
+      { id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2023-01-01' }, { date: '2024-01-01' }] },
+    ], { year: '2024' });
+    expect(out.length).toBe(1);
+    expect(out[0].date).toBe('2024-01-01');
+  });
+
+  it('respects category filter', () => {
+    const out = run([
+      { id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] },
+      { id: 'b', name: 'B', lat: 1, lng: 2, category: 'monument', status: 'been', visits: [{ date: '2024-01-02' }] },
+    ], { category: 'cafe' });
+    expect(out.length).toBe(1);
+    expect(out[0].name).toBe('A');
+  });
+
+  it('respects trip filter', () => {
+    const out = run([
+      { id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-01-01' }] },
+      { id: 'b', name: 'B', lat: 1, lng: 2, category: 'cafe', status: 'been', tripId: 't2', visits: [{ date: '2024-01-02' }] },
+    ], { trip: 't1' });
+    expect(out.length).toBe(1);
+    expect(out[0].name).toBe('A');
+  });
+
+  it('falls back to _id when id is missing (legacy NeDB)', () => {
+    const out = run([{ _id: 'nedb1', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] }]);
+    expect(out[0].id).toBe('nedb1');
   });
 });

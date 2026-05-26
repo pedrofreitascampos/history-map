@@ -741,6 +741,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .timeline-milestone strong { color: var(--text-primary); font-weight: 600; }
 .timeline-milestone.tm-most { border-color: var(--accent-dim); }
 .timeline-milestone.tm-trip { border-color: var(--accent-dim); }
+
+.replay-panel { display: flex; flex-direction: column; margin: 0 20px 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-secondary); }
+#replay-map { height: 420px; background: var(--bg-primary); }
+.replay-controls { display: flex; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
+.replay-play-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--bg-primary); border: 0; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.replay-play-btn:hover { transform: scale(1.05); }
+.replay-scrubber-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.replay-scrubber-wrap input[type="range"] { width: 100%; cursor: pointer; }
+.replay-position-label { font-size: 11px; color: var(--text-muted); text-align: center; min-height: 14px; }
+.replay-speed-group { display: flex; gap: 4px; flex-shrink: 0; }
+.replay-speed-btn { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); border-radius: 4px; cursor: pointer; font-family: var(--font-body); }
+.replay-speed-btn.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
+.replay-speed-btn:hover:not(.active) { border-color: var(--border-strong); }
+
 .timeline-item .ti-firstvisit {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;
   background: rgba(245, 158, 11, 0.15); color: rgb(245, 158, 11);
@@ -1399,9 +1413,27 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="chrono-header">
       <h1>Chronology</h1>
       <div class="chrono-filters">
-        <select id="chrono-year" onchange="renderChronology()"><option value="">All Years</option></select>
-        <select id="chrono-cat" onchange="renderChronology()"><option value="">All Categories</option></select>
-        <select id="chrono-trip" onchange="renderChronology()"><option value="">All Trips</option></select>
+        <select id="chrono-year" onchange="onChronoFilterChange()"><option value="">All Years</option></select>
+        <select id="chrono-cat" onchange="onChronoFilterChange()"><option value="">All Categories</option></select>
+        <select id="chrono-trip" onchange="onChronoFilterChange()"><option value="">All Trips</option></select>
+      </div>
+    </div>
+    <button class="btn btn-secondary" id="replay-toggle-btn" onclick="toggleReplay()" style="margin: 0 20px 12px; align-self: flex-start;">▶ Replay</button>
+
+    <div id="replay-panel" class="replay-panel" style="display:none;">
+      <div id="replay-map"></div>
+      <div class="replay-controls">
+        <button class="replay-play-btn" id="replay-play-btn" onclick="toggleReplayPlay()" aria-label="Play or pause replay">▶</button>
+        <div class="replay-scrubber-wrap">
+          <input type="range" id="replay-scrubber" min="0" max="0" value="0" step="1" oninput="seekReplay(this.value)" aria-label="Replay position">
+          <div class="replay-position-label" id="replay-position-label">—</div>
+        </div>
+        <div class="replay-speed-group" role="group" aria-label="Playback speed">
+          <button class="replay-speed-btn" data-speed="1" onclick="setReplaySpeed(1)">1×</button>
+          <button class="replay-speed-btn active" data-speed="2" onclick="setReplaySpeed(2)">2×</button>
+          <button class="replay-speed-btn" data-speed="5" onclick="setReplaySpeed(5)">5×</button>
+          <button class="replay-speed-btn" data-speed="10" onclick="setReplaySpeed(10)">10×</button>
+        </div>
       </div>
     </div>
     <div class="timeline" id="timeline"></div>
@@ -4309,6 +4341,32 @@ function computeChronologyMilestones(locations, trips) {
   return { firstVisit, yearStats };
 }
 
+function computeReplayFrames(locations, filters) {
+  const { year, category, trip } = filters || {};
+  const frames = [];
+  for (const loc of locations) {
+    if (loc.status !== 'been' || loc.needsApproval) continue;
+    if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number') continue;
+    if (category && loc.category !== category) continue;
+    if (trip && loc.tripId !== trip) continue;
+    for (const v of (loc.visits || [])) {
+      if (!v.date) continue;
+      if (year && !v.date.startsWith(year)) continue;
+      frames.push({
+        id: loc.id || loc._id,
+        name: loc.name,
+        lat: loc.lat,
+        lng: loc.lng,
+        category: loc.category,
+        date: v.date,
+        tripId: loc.tripId || null,
+      });
+    }
+  }
+  frames.sort((a, b) => a.date.localeCompare(b.date));
+  return frames;
+}
+
 function renderChronology() {
   populateChronoFilters();
 
@@ -4398,6 +4456,192 @@ function populateChronoFilters() {
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* REPLAY (chronological animation)                                      */
+/* ═══════════════════════════════════════════════════════════════════════ */
+const replayState = {
+  frames: [],
+  currentIdx: -1,
+  isPlaying: false,
+  speed: 2,
+  baseDelayMs: 500,
+  timerId: null,
+  map: null,
+  markersLayer: null,
+  polylineLayer: null,
+  panelOpen: false,
+};
+const REPLAY_BUCKET_OPACITY = [0.2, 0.5, 0.9];
+const REPLAY_LINE_COLOR = '#ffc144';
+
+function toggleReplay() {
+  const panel = document.getElementById('replay-panel');
+  const btn = document.getElementById('replay-toggle-btn');
+  replayState.panelOpen = !replayState.panelOpen;
+  panel.style.display = replayState.panelOpen ? 'flex' : 'none';
+  btn.textContent = replayState.panelOpen ? '✕ Close Replay' : '▶ Replay';
+  if (replayState.panelOpen) {
+    initReplayMap();
+    rebuildReplayFrames();
+    setTimeout(() => replayState.map && replayState.map.invalidateSize(), 50);
+  } else {
+    pauseReplay();
+  }
+}
+
+function initReplayMap() {
+  if (replayState.map) return;
+  replayState.map = L.map('replay-map', { center: [30, 0], zoom: 3, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(replayState.map);
+  replayState.markersLayer = L.layerGroup().addTo(replayState.map);
+  replayState.polylineLayer = L.layerGroup().addTo(replayState.map);
+}
+
+function rebuildReplayFrames() {
+  const yearEl = document.getElementById('chrono-year');
+  const catEl = document.getElementById('chrono-cat');
+  const tripEl = document.getElementById('chrono-trip');
+  const filters = {
+    year: yearEl ? yearEl.value || null : null,
+    category: catEl ? catEl.value || null : null,
+    trip: tripEl ? tripEl.value || null : null,
+  };
+  replayState.frames = computeReplayFrames(state.locations, filters);
+  replayState.currentIdx = -1;
+  const scrubber = document.getElementById('replay-scrubber');
+  scrubber.max = Math.max(0, replayState.frames.length - 1);
+  scrubber.value = 0;
+  if (replayState.markersLayer) replayState.markersLayer.clearLayers();
+  if (replayState.polylineLayer) replayState.polylineLayer.clearLayers();
+  updateReplayPositionLabel();
+  if (replayState.frames.length && replayState.map) {
+    const bounds = L.latLngBounds(replayState.frames.map(f => [f.lat, f.lng]));
+    replayState.map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+function toggleReplayPlay() {
+  if (replayState.frames.length === 0) return;
+  if (replayState.isPlaying) pauseReplay();
+  else playReplay();
+}
+
+function playReplay() {
+  if (replayState.frames.length === 0) return;
+  if (replayState.currentIdx >= replayState.frames.length - 1) {
+    replayState.currentIdx = -1;
+    if (replayState.markersLayer) replayState.markersLayer.clearLayers();
+    if (replayState.polylineLayer) replayState.polylineLayer.clearLayers();
+  }
+  replayState.isPlaying = true;
+  const btn = document.getElementById('replay-play-btn');
+  if (btn) btn.textContent = '⏸';
+  scheduleNextReplayTick();
+}
+
+function pauseReplay() {
+  replayState.isPlaying = false;
+  if (replayState.timerId) { clearTimeout(replayState.timerId); replayState.timerId = null; }
+  const btn = document.getElementById('replay-play-btn');
+  if (btn) btn.textContent = '▶';
+}
+
+function scheduleNextReplayTick() {
+  if (!replayState.isPlaying) return;
+  const delay = Math.max(40, Math.round(replayState.baseDelayMs / replayState.speed));
+  replayState.timerId = setTimeout(replayTick, delay);
+}
+
+function replayTick() {
+  if (!replayState.isPlaying) return;
+  const next = replayState.currentIdx + 1;
+  if (next >= replayState.frames.length) { pauseReplay(); return; }
+  setReplayPosition(next);
+  scheduleNextReplayTick();
+}
+
+function buildReplayMarker(frame) {
+  const cat = CATEGORIES[frame.category] || CATEGORIES.location;
+  return L.marker([frame.lat, frame.lng], {
+    icon: L.divIcon({
+      className: '',
+      html: `<div class="marker-icon been" style="font-size:14px;width:28px;height:28px;margin-left:-14px;margin-top:-14px;">${cat.emoji}</div>`,
+      iconSize: [28, 28], iconAnchor: [14, 14],
+    }),
+    title: frame.name,
+  });
+}
+
+function setReplayPosition(idx) {
+  if (idx < 0 || idx >= replayState.frames.length) return;
+  replayState.currentIdx = idx;
+  replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[idx]));
+  renderReplayPath();
+  const scrubber = document.getElementById('replay-scrubber');
+  if (scrubber) scrubber.value = idx;
+  updateReplayPositionLabel();
+}
+
+function seekReplay(rawIdx) {
+  const idx = parseInt(rawIdx, 10);
+  if (!Number.isFinite(idx) || idx < 0) return;
+  pauseReplay();
+  replayState.markersLayer.clearLayers();
+  replayState.polylineLayer.clearLayers();
+  const upTo = Math.min(idx, replayState.frames.length - 1);
+  for (let i = 0; i <= upTo; i++) {
+    replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
+  }
+  replayState.currentIdx = upTo;
+  renderReplayPath();
+  updateReplayPositionLabel();
+}
+
+function renderReplayPath() {
+  if (!replayState.polylineLayer) return;
+  replayState.polylineLayer.clearLayers();
+  const idx = replayState.currentIdx;
+  if (idx <= 0) return;
+  const visited = replayState.frames.slice(0, idx + 1);
+  const total = visited.length;
+  const oldEnd = Math.floor(total * 0.5);
+  const midEnd = Math.floor(total * 0.75);
+  const oldPts = visited.slice(0, Math.max(0, oldEnd)).map(f => [f.lat, f.lng]);
+  // overlap by 1 point so segments connect visually
+  const midPts = visited.slice(Math.max(0, oldEnd - 1), Math.max(0, midEnd)).map(f => [f.lat, f.lng]);
+  const recentPts = visited.slice(Math.max(0, midEnd - 1)).map(f => [f.lat, f.lng]);
+  if (oldPts.length >= 2)    L.polyline(oldPts,    { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[0], weight: 2 }).addTo(replayState.polylineLayer);
+  if (midPts.length >= 2)    L.polyline(midPts,    { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[1], weight: 2 }).addTo(replayState.polylineLayer);
+  if (recentPts.length >= 2) L.polyline(recentPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[2], weight: 2.5 }).addTo(replayState.polylineLayer);
+}
+
+function setReplaySpeed(speed) {
+  replayState.speed = speed;
+  document.querySelectorAll('.replay-speed-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.speed, 10) === speed);
+  });
+}
+
+function updateReplayPositionLabel() {
+  const label = document.getElementById('replay-position-label');
+  if (!label) return;
+  if (replayState.frames.length === 0) { label.textContent = '— no visits in this filter —'; return; }
+  if (replayState.currentIdx < 0) {
+    label.textContent = `0 / ${replayState.frames.length}`;
+    return;
+  }
+  const frame = replayState.frames[replayState.currentIdx];
+  label.textContent = `${replayState.currentIdx + 1} / ${replayState.frames.length} · ${frame.date} · ${frame.name}`;
+}
+
+function onChronoFilterChange() {
+  renderChronology();
+  if (replayState.panelOpen) {
+    pauseReplay();
+    rebuildReplayFrames();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
