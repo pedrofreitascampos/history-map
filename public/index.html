@@ -139,6 +139,10 @@ body {
 .transit-card .meta .route { color: var(--text-primary); font-weight: 500; }
 .transit-card .meta .sub { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
 .transit-card .actions { display: flex; gap: 4px; }
+.fr24-preview-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+.fr24-preview-table th { text-align:left; padding:6px 8px; background:var(--bg-secondary); color:var(--text-secondary); border-bottom:1px solid var(--border); position:sticky; top:0; }
+.fr24-preview-table td { padding:6px 8px; border-bottom:1px solid var(--border); color:var(--text-primary); }
+.fr24-preview-table tr.unresolved td { color:#f87171; background:rgba(248,113,113,0.08); }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .btn-icon {
@@ -1693,6 +1697,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <h2 style="margin:0; color:var(--text-primary);">Transits</h2>
     <div style="display:flex; gap:8px;">
       <button class="btn btn-secondary" id="transit-view-toggle" onclick="toggleTransitViewMode()" aria-label="Toggle list/map view">🗺 Map</button>
+      <button class="btn btn-secondary" onclick="openFr24Import()">📥 Import FR24</button>
       <button class="btn btn-primary" onclick="openTransitModal()">+ Add Transit</button>
     </div>
   </div>
@@ -1962,6 +1967,32 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <div></div>
       <button class="btn btn-secondary" onclick="closeAccountModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- FR24 Import Modal -->
+<div id="fr24-modal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="fr24-modal-title">
+  <div class="modal" style="width:760px; max-width:96vw; max-height:90vh; display:flex; flex-direction:column;">
+    <div class="modal-header">
+      <h2 id="fr24-modal-title">Import Flightradar24 CSV</h2>
+      <button class="modal-close" onclick="closeFr24Import()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="overflow:auto; flex:1;">
+      <p style="color:var(--text-secondary); font-size:13px; margin-top:0;">
+        Export your flight history from Flightradar24 (MyFlightradar24 → Settings → Export Logbook as CSV) and drop the file here. Airports are auto-resolved using the OpenFlights database.
+      </p>
+      <div id="fr24-dropzone" style="border:2px dashed var(--border); border-radius:8px; padding:32px; text-align:center; color:var(--text-secondary); margin-bottom:12px; cursor:pointer;">
+        <div style="font-size:32px;">📥</div>
+        <div>Drop CSV here or <a href="#" onclick="document.getElementById('fr24-file').click(); return false;" style="color:var(--accent);">browse</a></div>
+        <input id="fr24-file" type="file" accept=".csv,text/csv" style="display:none;" onchange="handleFr24File(this.files[0])">
+      </div>
+      <div id="fr24-status" style="color:var(--text-secondary); font-size:13px;"></div>
+      <div id="fr24-preview" style="margin-top:12px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeFr24Import()">Cancel</button>
+      <button class="btn btn-primary" id="fr24-import-btn" onclick="submitFr24Import()" disabled>Import 0 flights</button>
     </div>
   </div>
 </div>
@@ -5128,6 +5159,133 @@ const TRANSIT_MODE_META = {
 };
 function transitMeta(mode) { return TRANSIT_MODE_META[mode] || { emoji: '•', color: '#888', label: mode }; }
 
+// ─── FR24 CSV Import Helpers ───────────────────────────────────────────────
+
+// Parse FR24 CSV into row objects. Defensive: handles quoted fields, header row optional.
+function parseFr24Csv(text) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim().length > 0);
+  if (lines.length === 0) return [];
+  const rows = lines.map(parseCsvLine);
+  // Detect header: first row has cells like "Date", "Flight number" (non-data words)
+  const first = rows[0].map(c => c.toLowerCase());
+  const looksLikeHeader = first.some(c => /date|flight|from|to|dep|arr|duration|aircraft|seat|note/.test(c));
+  const startIdx = looksLikeHeader ? 1 : 0;
+  return rows.slice(startIdx).map(cells => ({
+    date: normalizeDate(cells[0]),
+    flightNumber: (cells[1] || '').trim(),
+    from: cells[2] || '',
+    to: cells[3] || '',
+    depTime: cells[4] || '',
+    arrTime: cells[5] || '',
+    duration: cells[6] || '',
+    aircraft: (cells[7] || '').trim(),
+    registration: (cells[8] || '').trim(),
+    seat: (cells[9] || '').trim(),
+    note: (cells[10] || '').trim(),
+  }));
+}
+
+// CSV line parser handling quotes + escaped quotes. Returns string[].
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else { cur += ch; }
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// Extract IATA from "City Name (XXX)" or return as-is if 3-letter uppercase.
+function extractIata(field) {
+  if (!field) return null;
+  const m = field.match(/\(([A-Z]{3})\)\s*$/);
+  if (m) return m[1];
+  const trimmed = field.trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+// Normalize date string to YYYY-MM-DD. Returns '' if unparseable.
+function normalizeDate(s) {
+  if (!s) return '';
+  s = s.trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // DD/MM/YYYY or MM/DD/YYYY
+  const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+  if (m) {
+    const a = parseInt(m[1], 10), b = parseInt(m[2], 10), y = m[3];
+    // Heuristic: if first part > 12, must be day-first
+    if (a > 12) return `${y}-${String(b).padStart(2, '0')}-${String(a).padStart(2, '0')}`;
+    // Otherwise assume MM/DD (US format)
+    return `${y}-${String(a).padStart(2, '0')}-${String(b).padStart(2, '0')}`;
+  }
+  return s; // give up, hand back as-is
+}
+
+// Convert "HH:MM" duration string to minutes (number). Returns null if unparseable.
+function parseDurationMinutes(s) {
+  if (!s) return null;
+  const m = s.trim().match(/^(\d{1,3}):(\d{2})$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+// Build an IATA → airport-record map from the OpenFlights JSON (which is ICAO-keyed).
+function buildIataIndex(airportsObj) {
+  const out = {};
+  for (const k of Object.keys(airportsObj || {})) {
+    const a = airportsObj[k];
+    if (a && a.iata && typeof a.iata === 'string' && a.iata.length === 3) {
+      // Prefer first occurrence; OpenFlights has near-duplicates for some codes
+      if (!out[a.iata]) out[a.iata] = a;
+    }
+  }
+  return out;
+}
+
+// Resolve a parsed FR24 row to a transit payload. Returns { ok: true, transit } or { ok: false, reason }.
+function resolveFr24Row(row, iataIndex) {
+  const fromIata = extractIata(row.from);
+  const toIata = extractIata(row.to);
+  if (!fromIata) return { ok: false, reason: `Unknown origin airport: "${row.from}"` };
+  if (!toIata) return { ok: false, reason: `Unknown destination airport: "${row.to}"` };
+  const fromA = iataIndex[fromIata];
+  const toA = iataIndex[toIata];
+  if (!fromA) return { ok: false, reason: `IATA "${fromIata}" not in airports DB` };
+  if (!toA) return { ok: false, reason: `IATA "${toIata}" not in airports DB` };
+  const distanceKm = transitGreatCircleKm(fromA.lat, fromA.lon, toA.lat, toA.lon);
+  const durationMin = parseDurationMinutes(row.duration);
+  const notes = [row.note, row.registration ? `Reg: ${row.registration}` : ''].filter(Boolean).join(' · ');
+  const transit = {
+    mode: 'flight',
+    date: row.date || '',
+    fromName: fromA.name ? `${fromA.name}` : fromIata,
+    fromLat: fromA.lat, fromLng: fromA.lon, fromIata,
+    toName: toA.name ? `${toA.name}` : toIata,
+    toLat: toA.lat, toLng: toA.lon, toIata,
+    flightNumber: row.flightNumber,
+    aircraft: row.aircraft,
+    seat: row.seat,
+    distanceKm: Math.round(distanceKm),
+  };
+  if (durationMin != null) transit.durationMin = durationMin;
+  if (notes) transit.notes = notes;
+  return { ok: true, transit };
+}
+
 async function drawRoadRoutes(tripLocs, color, version) {
   const MAX_ROAD_DISTANCE_KM = 500;
   const MAX_CONCURRENT = 8;
@@ -7860,6 +8018,119 @@ async function saveTransit() {
     showToast('Transit saved', 'success');
   } catch (e) {
     showToast('Failed to save transit: ' + e.message, 'error');
+  }
+}
+
+// ─── FR24 Import Flow ──────────────────────────────────────────────────────
+
+let _fr24AirportsIndex = null;
+let _fr24ParsedRows = [];
+let _fr24ResolvedTransits = [];
+
+async function lazyLoadAirports() {
+  if (_fr24AirportsIndex) return _fr24AirportsIndex;
+  const statusEl = document.getElementById('fr24-status');
+  if (statusEl) statusEl.textContent = 'Loading airports database…';
+  const res = await fetch('https://raw.githubusercontent.com/mwgg/Airports/master/airports.json');
+  if (!res.ok) throw new Error('Failed to load airports DB: HTTP ' + res.status);
+  const data = await res.json();
+  _fr24AirportsIndex = buildIataIndex(data);
+  if (statusEl) statusEl.textContent = '';
+  return _fr24AirportsIndex;
+}
+
+function openFr24Import() {
+  _fr24ParsedRows = [];
+  _fr24ResolvedTransits = [];
+  document.getElementById('fr24-preview').innerHTML = '';
+  document.getElementById('fr24-status').textContent = '';
+  document.getElementById('fr24-file').value = '';
+  document.getElementById('fr24-import-btn').disabled = true;
+  document.getElementById('fr24-import-btn').textContent = 'Import 0 flights';
+  document.getElementById('fr24-modal').style.display = 'flex';
+  setupFr24Dropzone();
+}
+
+function closeFr24Import() {
+  document.getElementById('fr24-modal').style.display = 'none';
+}
+
+function setupFr24Dropzone() {
+  const zone = document.getElementById('fr24-dropzone');
+  if (!zone || zone._wired) return;
+  zone._wired = true;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--accent)'; });
+  zone.addEventListener('dragleave', () => { zone.style.borderColor = 'var(--border)'; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.borderColor = 'var(--border)';
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFr24File(e.dataTransfer.files[0]);
+  });
+}
+
+async function handleFr24File(file) {
+  if (!file) return;
+  const statusEl = document.getElementById('fr24-status');
+  try {
+    statusEl.textContent = 'Reading file…';
+    const text = await file.text();
+    _fr24ParsedRows = parseFr24Csv(text);
+    if (_fr24ParsedRows.length === 0) { statusEl.textContent = 'No rows found in CSV'; return; }
+    const iataIndex = await lazyLoadAirports();
+    _fr24ResolvedTransits = [];
+    const resolved = _fr24ParsedRows.map(row => resolveFr24Row(row, iataIndex));
+    resolved.forEach(r => { if (r.ok) _fr24ResolvedTransits.push(r.transit); });
+    renderFr24Preview(resolved);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+function renderFr24Preview(resolved) {
+  const okCount = resolved.filter(r => r.ok).length;
+  const failCount = resolved.length - okCount;
+  document.getElementById('fr24-status').textContent =
+    `${resolved.length} rows · ${okCount} resolved · ${failCount} unresolved`;
+  const rows = resolved.map((r, i) => {
+    const raw = _fr24ParsedRows[i];
+    if (r.ok) {
+      const t = r.transit;
+      return `<tr><td>${esc(t.date)}</td><td>${esc(t.flightNumber)}</td><td>${esc(t.fromIata)} → ${esc(t.toIata)}</td><td>${esc(t.aircraft || '')}</td><td>${Math.round(t.distanceKm).toLocaleString()} km</td><td style="color:#4ade80;">✓</td></tr>`;
+    }
+    return `<tr class="unresolved"><td>${esc(raw.date)}</td><td>${esc(raw.flightNumber)}</td><td>${esc(raw.from)} → ${esc(raw.to)}</td><td colspan="2">${esc(r.reason)}</td><td>✗</td></tr>`;
+  }).join('');
+  document.getElementById('fr24-preview').innerHTML = `
+    <table class="fr24-preview-table">
+      <thead><tr><th>Date</th><th>Flight</th><th>Route</th><th>Aircraft</th><th>Distance</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  const btn = document.getElementById('fr24-import-btn');
+  btn.disabled = okCount === 0;
+  btn.textContent = `Import ${okCount} flight${okCount === 1 ? '' : 's'}`;
+}
+
+async function submitFr24Import() {
+  if (_fr24ResolvedTransits.length === 0) return;
+  const btn = document.getElementById('fr24-import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  try {
+    // Chunk by MAX_TRANSITS_PER_BULK (1000) — most users will be well under
+    const CHUNK = 1000;
+    for (let i = 0; i < _fr24ResolvedTransits.length; i += CHUNK) {
+      const chunk = _fr24ResolvedTransits.slice(i, i + CHUNK);
+      const saved = await api('POST', '/transits/bulk', { transits: chunk });
+      saved.forEach(t => state.transits.push(mapId(t)));
+    }
+    rebuildIndexes();
+    renderTransitsView();
+    closeFr24Import();
+    showToast(`Imported ${_fr24ResolvedTransits.length} flight${_fr24ResolvedTransits.length === 1 ? '' : 's'}`, 'success');
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = `Import ${_fr24ResolvedTransits.length} flights`;
+    showToast('Import failed: ' + err.message, 'error');
   }
 }
 </script>

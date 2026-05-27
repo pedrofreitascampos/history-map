@@ -73,6 +73,13 @@ const code = [
   extractFunction('transitGreatCircleKm'),
   extractConst('TRANSIT_MODE_META'),
   extractFunction('transitMeta'),
+  extractFunction('parseFr24Csv'),
+  extractFunction('parseCsvLine'),
+  extractFunction('extractIata'),
+  extractFunction('normalizeDate'),
+  extractFunction('parseDurationMinutes'),
+  extractFunction('buildIataIndex'),
+  extractFunction('resolveFr24Row'),
 ].join('\n');
 
 // Provide DOMParser stub for parseKML
@@ -1684,4 +1691,126 @@ describe('haversineKm', () => {
   });
   test('NaN args return NaN', () => expect(run(NaN, 0, 0, 0)).toBeNaN());
   test('undefined args return NaN', () => expect(run(undefined, 0, 0, 0)).toBeNaN());
+});
+
+// ═══════════════════════════════════════════════════════════
+// FR24 CSV IMPORT UNIT TESTS
+// ═══════════════════════════════════════════════════════════
+
+describe('parseFr24Csv', () => {
+  test('parses standard FR24 export with header', () => {
+    const csv = `Date,Flight number,From,To,Dep time,Arr time,Duration,Aircraft,Registration,Seat,Note
+2024-07-10,TP201,"Lisbon (LIS)","New York (JFK)",13:30,16:45,07:15,A330-900,CS-TUB,12A,Test`;
+    const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].flightNumber).toBe('TP201');
+    expect(rows[0].from).toBe('Lisbon (LIS)');
+    expect(rows[0].to).toBe('New York (JFK)');
+    expect(rows[0].duration).toBe('07:15');
+    expect(rows[0].seat).toBe('12A');
+    expect(rows[0].note).toBe('Test');
+  });
+
+  test('handles CSV without header row', () => {
+    const csv = `2024-07-10,TP201,LIS,JFK,13:30,16:45,07:15,A330,,,`;
+    const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].flightNumber).toBe('TP201');
+  });
+
+  test('handles quoted fields containing commas', () => {
+    const csv = `Date,Flight number,From,To,Dep time,Arr time,Duration,Aircraft,Registration,Seat,Note
+2024-07-10,TP201,"Lisbon, PT (LIS)","JFK",13:30,16:45,07:15,A330,,,"Note, with comma"`;
+    const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
+    expect(rows[0].from).toBe('Lisbon, PT (LIS)');
+    expect(rows[0].note).toBe('Note, with comma');
+  });
+
+  test('skips blank lines', () => {
+    const csv = `Date,Flight number,From,To,Dep time,Arr time,Duration,Aircraft,Registration,Seat,Note
+
+2024-07-10,TP201,LIS,JFK,13:30,16:45,07:15,A330,,,
+
+`;
+    const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe('extractIata', () => {
+  const ex = (s) => vm.runInContext(`extractIata(${JSON.stringify(s)})`, ctx);
+  test('extracts from parens', () => { expect(ex('Lisbon (LIS)')).toBe('LIS'); });
+  test('extracts from bare 3-letter', () => { expect(ex('JFK')).toBe('JFK'); });
+  test('extracts from bare 3-letter lowercase', () => { expect(ex('jfk')).toBe('JFK'); });
+  test('returns null for unmatchable', () => { expect(ex('Some Place')).toBe(null); });
+  test('returns null for empty', () => { expect(ex('')).toBe(null); });
+});
+
+describe('normalizeDate', () => {
+  const nd = (s) => vm.runInContext(`normalizeDate(${JSON.stringify(s)})`, ctx);
+  test('passes through YYYY-MM-DD', () => { expect(nd('2024-07-10')).toBe('2024-07-10'); });
+  test('converts DD/MM/YYYY (day > 12)', () => { expect(nd('15/07/2024')).toBe('2024-07-15'); });
+  test('assumes MM/DD/YYYY when ambiguous', () => { expect(nd('07/10/2024')).toBe('2024-07-10'); });
+  test('handles DD-MM-YYYY', () => { expect(nd('15-07-2024')).toBe('2024-07-15'); });
+  test('returns empty for empty', () => { expect(nd('')).toBe(''); });
+});
+
+describe('parseDurationMinutes', () => {
+  const pd = (s) => vm.runInContext(`parseDurationMinutes(${JSON.stringify(s)})`, ctx);
+  test('07:15 → 435', () => { expect(pd('07:15')).toBe(435); });
+  test('00:45 → 45', () => { expect(pd('00:45')).toBe(45); });
+  test('12:00 → 720', () => { expect(pd('12:00')).toBe(720); });
+  test('returns null for garbage', () => { expect(pd('garbage')).toBe(null); });
+  test('returns null for empty', () => { expect(pd('')).toBe(null); });
+});
+
+describe('buildIataIndex', () => {
+  const build = (obj) => vm.runInContext(`buildIataIndex(${JSON.stringify(obj)})`, ctx);
+  test('keys by iata', () => {
+    const idx = build({
+      LPPT: { iata: 'LIS', name: 'Humberto Delgado', lat: 38.7, lon: -9.1 },
+      KJFK: { iata: 'JFK', name: 'John F. Kennedy', lat: 40.6, lon: -73.7 },
+    });
+    expect(idx.LIS.lat).toBe(38.7);
+    expect(idx.JFK.lat).toBe(40.6);
+  });
+  test('skips entries with no iata', () => {
+    const idx = build({
+      LPPT: { iata: 'LIS', name: 'X', lat: 0, lon: 0 },
+      ZZZZ: { iata: '', name: 'Empty', lat: 0, lon: 0 },
+      YYYY: { name: 'No IATA', lat: 0, lon: 0 },
+    });
+    expect(idx.LIS).toBeDefined();
+    expect(Object.keys(idx)).toHaveLength(1);
+  });
+});
+
+describe('resolveFr24Row', () => {
+  const idx = { LIS: { iata: 'LIS', name: 'Humberto Delgado', lat: 38.78, lon: -9.13 },
+                JFK: { iata: 'JFK', name: 'John F. Kennedy', lat: 40.64, lon: -73.78 } };
+  const resolve = (row) => vm.runInContext(`resolveFr24Row(${JSON.stringify(row)}, ${JSON.stringify(idx)})`, ctx);
+
+  test('resolves a known route', () => {
+    const r = resolve({ date: '2024-07-10', flightNumber: 'TP201', from: 'Lisbon (LIS)', to: 'JFK', duration: '07:15', aircraft: 'A330', seat: '12A', note: '', registration: 'CS-TUB' });
+    expect(r.ok).toBe(true);
+    expect(r.transit.mode).toBe('flight');
+    expect(r.transit.fromIata).toBe('LIS');
+    expect(r.transit.toIata).toBe('JFK');
+    expect(r.transit.distanceKm).toBeGreaterThan(5000);
+    expect(r.transit.distanceKm).toBeLessThan(5600);
+    expect(r.transit.durationMin).toBe(435);
+    expect(r.transit.notes).toMatch(/CS-TUB/);
+  });
+
+  test('rejects unknown origin', () => {
+    const r = resolve({ from: 'Atlantis (ATL)', to: 'JFK' });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/ATL/);
+  });
+
+  test('rejects unparseable origin string', () => {
+    const r = resolve({ from: 'Some Place', to: 'JFK' });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/origin/i);
+  });
 });
