@@ -20,6 +20,7 @@ beforeAll(async () => {
   await db.locations.remove({}, { multi: true });
   await db.trips.remove({}, { multi: true });
   await db.collections.remove({}, { multi: true });
+  await db.transits.remove({}, { multi: true });
   await db.auditLog.remove({}, { multi: true });
 });
 
@@ -1159,5 +1160,148 @@ describe('Replay play button disabled invariant', () => {
 
   test('rebuildReplayFrames sets disabled based on frames.length', () => {
     expect(html).toMatch(/rebuildReplayFrames[\s\S]{0,2000}playBtn\.disabled\s*=\s*replayState\.frames\.length\s*===\s*0/);
+  });
+});
+
+// ─── Transits ────────────────────────────────────────────
+describe('Transits', () => {
+  let transitToken;
+  let createdTransitId;
+
+  beforeAll(async () => {
+    // Reuse the global testuser token (set in Auth describe block)
+    transitToken = token;
+  });
+
+  test('reject without auth', async () => {
+    const res = await request(app).get('/api/transits');
+    expect(res.status).toBe(401);
+  });
+
+  test('reject invalid mode', async () => {
+    const res = await request(app).post('/api/transits')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ mode: 'teleport', fromLat: 0, fromLng: 0, toLat: 1, toLng: 1 });
+    expect(res.status).toBe(400);
+  });
+
+  test('reject missing coordinates', async () => {
+    const res = await request(app).post('/api/transits')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ mode: 'flight' });
+    expect(res.status).toBe(400);
+  });
+
+  test('reject out-of-range lat', async () => {
+    const res = await request(app).post('/api/transits')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ mode: 'flight', fromLat: 999, fromLng: 0, toLat: 0, toLng: 0 });
+    expect(res.status).toBe(400); // sanitize drops fromLat, then 400 because coords missing
+  });
+
+  test('create valid flight transit', async () => {
+    const res = await request(app).post('/api/transits')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({
+        mode: 'flight',
+        date: '2024-07-10',
+        fromName: 'Lisbon (LIS)', fromLat: 38.7813, fromLng: -9.1359, fromIata: 'LIS',
+        toName: 'New York (JFK)', toLat: 40.6413, toLng: -73.7781, toIata: 'JFK',
+        flightNumber: 'TP201', airline: 'TAP',
+        distanceKm: 5418,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body._id).toBeDefined();
+    expect(res.body.mode).toBe('flight');
+    expect(res.body.fromLat).toBe(38.7813);
+    createdTransitId = res.body._id;
+  });
+
+  test('list returns created transit', async () => {
+    const res = await request(app).get('/api/transits')
+      .set('Authorization', `Bearer ${transitToken}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.find(t => t._id === createdTransitId)).toBeDefined();
+  });
+
+  test('update transit', async () => {
+    const res = await request(app).put(`/api/transits/${createdTransitId}`)
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ notes: 'Red-eye, full flight' });
+    expect(res.status).toBe(200);
+    expect(res.body.notes).toBe('Red-eye, full flight');
+  });
+
+  test('sanitize drops bad fields on update', async () => {
+    const res = await request(app).put(`/api/transits/${createdTransitId}`)
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ fromLat: 999, mode: 'spaceship' });
+    expect(res.status).toBe(200);
+    // mode untouched (still 'flight'), fromLat untouched (still 38.7813)
+    const get = await request(app).get('/api/transits').set('Authorization', `Bearer ${transitToken}`);
+    const t = get.body.find(x => x._id === createdTransitId);
+    expect(t.mode).toBe('flight');
+    expect(t.fromLat).toBe(38.7813);
+  });
+
+  test('bulk insert', async () => {
+    const res = await request(app).post('/api/transits/bulk')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ transits: [
+        { mode: 'car', date: '2024-07-12', fromName: 'A', fromLat: 38.7, fromLng: -9.1, toName: 'B', toLat: 38.8, toLng: -9.2 },
+        { mode: 'train', date: '2024-07-13', fromName: 'C', fromLat: 38.7, fromLng: -9.1, toName: 'D', toLat: 41.1, toLng: -8.6 },
+        { mode: 'invalid', fromLat: 0, fromLng: 0, toLat: 0, toLng: 0 }, // filtered out
+      ]});
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(2);
+  });
+
+  test('bulk rejects non-array', async () => {
+    const res = await request(app).post('/api/transits/bulk')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ transits: 'nope' });
+    expect(res.status).toBe(400);
+  });
+
+  test('bulk rejects oversize', async () => {
+    const arr = new Array(1001).fill({ mode: 'flight', fromLat: 0, fromLng: 0, toLat: 1, toLng: 1 });
+    const res = await request(app).post('/api/transits/bulk')
+      .set('Authorization', `Bearer ${transitToken}`)
+      .send({ transits: arr });
+    expect(res.status).toBe(400);
+  });
+
+  test('cross-user isolation', async () => {
+    // Log in as user2 (registered in the User data isolation block above)
+    const login = await request(app).post('/api/auth/login').send({ username: 'user2', password: 'pass1234' });
+    expect(login.status).toBe(200);
+    const otherToken = login.body.token;
+    expect(otherToken).toBeDefined();
+    // 2nd user cannot see first user's transits
+    const list = await request(app).get('/api/transits').set('Authorization', `Bearer ${otherToken}`);
+    expect(list.status).toBe(200);
+    expect(Array.isArray(list.body)).toBe(true);
+    expect(list.body.find(t => t._id === createdTransitId)).toBeUndefined();
+    // 2nd user cannot update first user's transit
+    const upd = await request(app).put(`/api/transits/${createdTransitId}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ notes: 'hijack' });
+    expect(upd.status).toBe(404);
+  });
+
+  test('delete transit', async () => {
+    const res = await request(app).delete(`/api/transits/${createdTransitId}`)
+      .set('Authorization', `Bearer ${transitToken}`);
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─── Transits source-grep invariants ─────────────────────
+describe('Input validation hardening (transits)', () => {
+  test('MAX_TRANSITS_PER_BULK exists in server source', () => {
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    expect(serverSrc).toContain('MAX_TRANSITS_PER_BULK');
   });
 });

@@ -8,6 +8,7 @@ const users = Datastore.create({ filename: path.join(dataDir, 'users.db'), autol
 const locations = Datastore.create({ filename: path.join(dataDir, 'locations.db'), autoload: true });
 const trips = Datastore.create({ filename: path.join(dataDir, 'trips.db'), autoload: true });
 const collections = Datastore.create({ filename: path.join(dataDir, 'collections.db'), autoload: true });
+const transits = Datastore.create({ filename: path.join(dataDir, 'transits.db'), autoload: true });
 
 const auditLog = Datastore.create({ filename: path.join(dataDir, 'audit.db'), autoload: true });
 
@@ -16,6 +17,7 @@ users.ensureIndex({ fieldName: 'googleId', sparse: true });
 locations.ensureIndex({ fieldName: 'userId' });
 trips.ensureIndex({ fieldName: 'userId' });
 collections.ensureIndex({ fieldName: 'userId' });
+transits.ensureIndex({ fieldName: 'userId' });
 auditLog.ensureIndex({ fieldName: 'timestamp' });
 
-module.exports = { users, locations, trips, collections, auditLog };
+module.exports = { users, locations, trips, collections, transits, auditLog };

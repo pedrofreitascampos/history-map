@@ -97,10 +97,11 @@ const corsAllowed = process.env.ALLOWED_ORIGINS
 app.use(cors({ origin: corsAllowed, credentials: false }));
 app.use(express.json({ limit: '10mb' }));
 
-// Rate limiting
-app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 15 }));
-app.use('/api/admin', rateLimit({ windowMs: 60 * 60 * 1000, max: 30 }));
-app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 200 }));
+// Rate limiting — disabled in test environment to allow full test suite runs
+const isTest = process.env.NODE_ENV === 'test';
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: isTest ? 10000 : 15 }));
+app.use('/api/admin', rateLimit({ windowMs: 60 * 60 * 1000, max: isTest ? 10000 : 30 }));
+app.use('/api', rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 200 }));
 
 // Request logging
 app.use('/api', (req, res, next) => {
@@ -252,6 +253,7 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
     const locCount = await db.locations.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
     const tripCount = await db.trips.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
     const colCount = await db.collections.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
+    const transitCount = await db.transits.update({ userId: fromId }, { $set: { userId: toId } }, { multi: true });
 
     // Copy googleId to target if source had one
     if (fromUser.googleId && !toUser.googleId) {
@@ -261,8 +263,8 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
     // Delete source user
     await db.users.remove({ _id: fromId });
 
-    audit('account_merge', { from: fromUsername, to: toUsername, locations: locCount, trips: tripCount, collections: colCount }, req);
-    res.json({ ok: true, merged: { locations: locCount, trips: tripCount, collections: colCount } });
+    audit('account_merge', { from: fromUsername, to: toUsername, locations: locCount, trips: tripCount, collections: colCount, transits: transitCount }, req);
+    res.json({ ok: true, merged: { locations: locCount, trips: tripCount, collections: colCount, transits: transitCount } });
   } catch (err) {
     log('error', 'merge_accounts_failed', { error: err.message });
     res.status(500).json({ error: 'Merge failed' });
@@ -482,6 +484,88 @@ app.post('/api/collections/bulk', auth, async (req, res) => {
   const saved = await db.collections.insert(toInsert);
   log('info', 'db_bulk_insert', { table: 'collections', count: saved.length, userId: req.user.id });
   res.json(saved);
+});
+
+// ── Transits ─────────────────────────────────────────────
+const TRANSIT_MODES = ['flight', 'car', 'train', 'ferry'];
+const TRANSIT_STRING_FIELDS = ['date', 'fromName', 'fromLocationId', 'fromIata', 'toName', 'toLocationId', 'toIata', 'flightNumber', 'airline', 'aircraft', 'seat', 'tripId', 'notes'];
+const MAX_TRANSITS_PER_BULK = 1000;
+
+function sanitizeTransitUpdate(body) {
+  const out = {};
+  if (TRANSIT_MODES.includes(body.mode)) out.mode = body.mode;
+  for (const k of ['fromLat', 'toLat']) {
+    if (body[k] !== undefined && body[k] !== null) {
+      const n = parseFloat(body[k]);
+      if (Number.isFinite(n) && Math.abs(n) <= 90) out[k] = n;
+    }
+  }
+  for (const k of ['fromLng', 'toLng']) {
+    if (body[k] !== undefined && body[k] !== null) {
+      const n = parseFloat(body[k]);
+      if (Number.isFinite(n) && Math.abs(n) <= 180) out[k] = n;
+    }
+  }
+  for (const k of ['distanceKm', 'durationMin']) {
+    if (body[k] !== undefined && body[k] !== null) {
+      const n = parseFloat(body[k]);
+      if (Number.isFinite(n) && n >= 0 && n <= 1e6) out[k] = n;
+    }
+  }
+  for (const k of TRANSIT_STRING_FIELDS) {
+    const v = body[k];
+    if (typeof v === 'string' && v.length > 0 && v.length <= 5000) out[k] = v;
+  }
+  return out;
+}
+
+app.get('/api/transits', auth, async (req, res) => {
+  const transits = await db.transits.find({ userId: req.user.id });
+  res.json(transits);
+});
+
+app.post('/api/transits', auth, async (req, res) => {
+  try {
+    const t = { ...sanitizeTransitUpdate(req.body), userId: req.user.id };
+    if (!t.mode) return res.status(400).json({ error: 'mode required (flight|car|train|ferry)' });
+    if (typeof t.fromLat !== 'number' || typeof t.fromLng !== 'number' || typeof t.toLat !== 'number' || typeof t.toLng !== 'number') {
+      return res.status(400).json({ error: 'from/to coordinates required and must be valid' });
+    }
+    const saved = await db.transits.insert(t);
+    log('info', 'db_insert', { table: 'transits', id: saved._id, mode: saved.mode, userId: req.user.id });
+    res.json(saved);
+  } catch (err) {
+    log('error', 'db_insert_error', { table: 'transits', error: err.message, userId: req.user.id });
+    res.status(500).json({ error: 'Failed to create transit' });
+  }
+});
+
+app.put('/api/transits/:id', auth, async (req, res) => {
+  const updates = sanitizeTransitUpdate(req.body);
+  const count = await db.transits.update({ _id: req.params.id, userId: req.user.id }, { $set: updates });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
+  const updated = await db.transits.findOne({ _id: req.params.id });
+  log('info', 'db_update', { table: 'transits', id: req.params.id, fields: Object.keys(updates), userId: req.user.id });
+  res.json(updated);
+});
+
+app.delete('/api/transits/:id', auth, async (req, res) => {
+  const count = await db.transits.remove({ _id: req.params.id, userId: req.user.id });
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
+  log('info', 'db_remove', { table: 'transits', id: req.params.id, userId: req.user.id });
+  res.json({ ok: true });
+});
+
+app.post('/api/transits/bulk', auth, async (req, res) => {
+  const { transits } = req.body;
+  if (!Array.isArray(transits)) return res.status(400).json({ error: 'Expected array' });
+  if (transits.length > MAX_TRANSITS_PER_BULK) return res.status(400).json({ error: `Too many transits (max ${MAX_TRANSITS_PER_BULK})` });
+  const toInsert = transits
+    .map(t => ({ ...sanitizeTransitUpdate(t), userId: req.user.id }))
+    .filter(t => t.mode && typeof t.fromLat === 'number' && typeof t.fromLng === 'number' && typeof t.toLat === 'number' && typeof t.toLng === 'number');
+  const saved = toInsert.length ? await db.transits.insert(toInsert) : [];
+  log('info', 'db_bulk_insert', { table: 'transits', count: Array.isArray(saved) ? saved.length : 0, userId: req.user.id });
+  res.json(Array.isArray(saved) ? saved : [saved]);
 });
 
 // ── Admin-1 boundaries proxy (Natural Earth, cached) ─────
@@ -800,20 +884,21 @@ async function runBackup() {
       // Skip if today's backup already exists
       if (fs.existsSync(backupFile)) continue;
 
-      const [locations, trips, collections] = await Promise.all([
+      const [locations, trips, collections, transits] = await Promise.all([
         db.locations.find({ userId }),
         db.trips.find({ userId }),
         db.collections.find({ userId }),
+        db.transits.find({ userId }),
       ]);
 
       const backup = {
         exportDate: new Date().toISOString(),
         username: user.username,
-        locations, trips, collections,
+        locations, trips, collections, transits,
       };
 
       fs.writeFileSync(backupFile, JSON.stringify(backup));
-      log('info', 'backup_created', { username, locations: locations.length, trips: trips.length, collections: collections.length });
+      log('info', 'backup_created', { username, locations: locations.length, trips: trips.length, collections: collections.length, transits: transits.length });
 
       // Prune old backups for this user
       const userBackups = fs.readdirSync(BACKUP_DIR)
