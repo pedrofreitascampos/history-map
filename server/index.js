@@ -493,6 +493,8 @@ const MAX_TRANSITS_PER_BULK = 1000;
 
 function sanitizeTransitUpdate(body) {
   const out = {};
+  // Allow explicit clearing of tripId (empty string or null → null)
+  if (body && (body.tripId === '' || body.tripId === null)) out.tripId = null;
   if (TRANSIT_MODES.includes(body.mode)) out.mode = body.mode;
   for (const k of ['fromLat', 'toLat']) {
     if (body[k] !== undefined && body[k] !== null) {

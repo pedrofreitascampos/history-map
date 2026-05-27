@@ -1066,6 +1066,46 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .trip-people-section { margin-top: 16px; }
 .trip-people-section h4 { font-family: var(--font-display); font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 
+/* ── Transit chips in trip detail ── */
+.trip-transit-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px 6px 26px; margin: 4px 0 4px 18px; position: relative;
+  background: var(--bg-tertiary); border-radius: 6px;
+  font-size: 12px; color: var(--text-secondary);
+}
+.trip-transit-chip .ttc-rail { position: absolute; left: 8px; top: -8px; bottom: -8px; width: 2px; opacity: 0.4; }
+.trip-transit-chip .ttc-icon { font-size: 16px; }
+.trip-transit-chip .ttc-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-transit-chip .ttc-action { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 4px; font-size: 14px; }
+.trip-transit-chip .ttc-action:hover { color: var(--text-primary); }
+.trip-transit-chip.loose { opacity: 0.7; border-left: 2px dashed var(--border); }
+
+/* ── Attach picker modal ── */
+.attach-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.attach-row:hover { background: var(--bg-tertiary); }
+.attach-row .attach-route { flex: 1; color: var(--text-primary); font-size: 13px; }
+.attach-row .attach-date { color: var(--text-secondary); font-size: 11px; min-width: 80px; text-align: right; }
+
+/* ── Transit stats strip (Transits view) ── */
+.transit-stat-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+.transit-stat-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.transit-stat-card.total { background: var(--bg-tertiary); border-color: var(--accent-dim); }
+.transit-stat-card .tsc-mode { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.transit-stat-card .tsc-km { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.transit-stat-card .tsc-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+@media (max-width: 768px) {
+  .transit-stat-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Stats tab transit section ── */
+.stats-transit-mode-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.stats-transit-mode-card .stm-head { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.stats-transit-mode-card .stm-figures { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.stats-transit-mode-card .stm-figures strong { color: var(--text-primary); font-size: 15px; }
+.stats-transit-mode-card .stm-routes-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; margin-bottom: 4px; }
+.stats-transit-mode-card .stm-routes { padding-left: 18px; margin: 0; font-size: 12px; color: var(--text-primary); }
+.stats-transit-mode-card .stm-routes li { margin: 1px 0; }
+
 #trips-view { flex-direction: row; }
 #trips-view #trip-sidebar { width: 360px; flex-shrink: 0; }
 @media (max-width: 768px) {
@@ -1462,6 +1502,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h3 style="font-family:var(--font-display);margin-bottom:16px;">Collections Progress</h3>
       <div class="category-stats-grid" id="stats-collections"></div>
     </div>
+
+    <div id="stats-transits" style="margin-top:24px;"></div>
   </div>
 
   <!-- CHRONOLOGY VIEW -->
@@ -1701,6 +1743,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="btn btn-primary" onclick="openTransitModal()">+ Add Transit</button>
     </div>
   </div>
+
+  <!-- Stats strip -->
+  <div id="transit-stats-strip"></div>
 
   <!-- Filters -->
   <div id="transit-filters" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
@@ -2005,6 +2050,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="modal-close" onclick="closeTransitModal()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
+      <div class="form-row"><label for="transit-trip">Trip (optional)</label>
+        <select id="transit-trip"><option value="">— None —</option></select>
+      </div>
       <div class="form-row"><label for="transit-mode">Mode</label>
         <select id="transit-mode">
           <option value="flight">✈ Flight</option>
@@ -2043,6 +2091,24 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeTransitModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveTransit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Attach Transits Modal -->
+<div id="attach-modal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="attach-modal-title">
+  <div class="modal" style="width:640px; max-width:96vw; max-height:90vh; display:flex; flex-direction:column;">
+    <div class="modal-header">
+      <h2 id="attach-modal-title">Attach transits</h2>
+      <button class="modal-close" onclick="closeAttachPicker()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="overflow:auto;flex:1;">
+      <input type="text" placeholder="Search transits…" oninput="setAttachSearch(this.value)" style="width:100%;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;margin-bottom:12px;">
+      <div id="attach-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAttachPicker()">Cancel</button>
+      <button class="btn btn-primary" id="attach-submit-btn" onclick="submitAttachPicker()" disabled>Attach 0 transits</button>
     </div>
   </div>
 </div>
@@ -4454,6 +4520,37 @@ function renderStats() {
 
   // Charts
   renderCharts(s.beenLocs);
+
+  // Transit stats section
+  const transitStats = computeTransitStats(state.transits);
+  const transitsEl = document.getElementById('stats-transits');
+  if (transitsEl) {
+    if (transitStats.totalCount === 0) {
+      transitsEl.innerHTML = '';
+    } else {
+      const sections = ['flight', 'car', 'train', 'ferry'].filter(mode => transitStats.byMode[mode].count > 0).map(mode => {
+        const m = transitMeta(mode);
+        const s = transitStats.byMode[mode];
+        const routes = s.topRoutes.map(r => `<li>${esc(r.route)} <span style="color:var(--text-muted);">× ${r.count}</span></li>`).join('');
+        return `<div class="stats-transit-mode-card">
+          <div class="stm-head" style="color:${m.color}">${m.emoji} ${m.label}</div>
+          <div class="stm-figures">
+            <div><strong>${Math.round(s.km).toLocaleString()}</strong> km</div>
+            <div><strong>${formatTransitMinutes(s.min)}</strong> time</div>
+            <div><strong>${s.count}</strong> segment${s.count === 1 ? '' : 's'}</div>
+          </div>
+          ${routes ? `<div class="stm-routes-title">Top routes</div><ol class="stm-routes">${routes}</ol>` : ''}
+        </div>`;
+      }).join('');
+      transitsEl.innerHTML = `
+        <h2 style="font-family:var(--font-display);font-size:22px;margin-bottom:16px;">Transits</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;">${sections}</div>
+        <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;font-size:13px;color:var(--text-secondary);">
+          Lifetime: <strong style="color:var(--text-primary);">${Math.round(transitStats.totalKm).toLocaleString()} km</strong> across <strong>${transitStats.totalCount}</strong> segment${transitStats.totalCount === 1 ? '' : 's'} (${formatTransitMinutes(transitStats.totalMin)})
+        </div>
+      `;
+    }
+  }
 }
 
 function renderCharts(been) {
@@ -5364,6 +5461,70 @@ function sortTripLocations(locs) {
   });
 }
 
+// Interleave trip stops and transits for the timeline view.
+// Returns flat array of {type:'stop', loc} or {type:'transit', transit, gap:n} or {type:'transit', transit, loose:true}.
+function interleaveStopsAndTransits(tripLocs, tripTransits) {
+  const stopDate = (loc) => (loc.visits || []).map(v => v.date).filter(Boolean).sort()[0] || '';
+  const dates = tripLocs.map(stopDate);
+  const sorted = [...tripTransits].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const buckets = [];
+  for (let i = 0; i < Math.max(0, tripLocs.length - 1); i++) buckets.push([]);
+  const loose = [];
+  for (const t of sorted) {
+    let placed = false;
+    if (t.date) {
+      for (let i = 0; i < tripLocs.length - 1; i++) {
+        const a = dates[i], b = dates[i + 1];
+        if (a && b && t.date >= a && t.date <= b) { buckets[i].push(t); placed = true; break; }
+      }
+    }
+    if (!placed) loose.push(t);
+  }
+  const out = [];
+  tripLocs.forEach((loc, i) => {
+    out.push({ type: 'stop', loc });
+    if (i < tripLocs.length - 1) {
+      for (const t of buckets[i]) out.push({ type: 'transit', transit: t, gap: i });
+    }
+  });
+  for (const t of loose) out.push({ type: 'transit', transit: t, loose: true });
+  return out;
+}
+
+// Compute aggregate transit statistics across all transits.
+function computeTransitStats(transits) {
+  const MODES = ['flight', 'car', 'train', 'ferry'];
+  const byMode = {};
+  for (const m of MODES) byMode[m] = { km: 0, min: 0, count: 0, routes: new Map() };
+  let totalKm = 0, totalMin = 0;
+  for (const t of transits) {
+    const m = byMode[t.mode];
+    if (!m) continue;
+    const km = Number(t.distanceKm) || 0;
+    const min = Number(t.durationMin) || 0;
+    m.km += km; m.min += min; m.count++;
+    totalKm += km; totalMin += min;
+    const key = `${t.fromIata || t.fromName || '?'} → ${t.toIata || t.toName || '?'}`;
+    m.routes.set(key, (m.routes.get(key) || 0) + 1);
+  }
+  const out = { byMode: {}, totalKm, totalMin, totalCount: transits.length };
+  for (const m of MODES) {
+    const b = byMode[m];
+    out.byMode[m] = {
+      km: b.km, min: b.min, count: b.count,
+      topRoutes: [...b.routes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([route, count]) => ({ route, count })),
+    };
+  }
+  return out;
+}
+
+function formatTransitMinutes(min) {
+  if (!min) return '—';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h}h${m ? ' ' + m + 'm' : ''}`;
+}
+
 // Category groupings for the per-trip quality breakdown. Hotels excluded
 // (they're tracked as "stays", not "quality of place") — same for airport/event
 // neutral categories. Adjust here if a category should land in a different bucket.
@@ -5497,29 +5658,56 @@ function renderTripDetail(trip, tripLocs) {
     html += `</div></div>`;
   }
 
-  // Ordered location list
+  // Ordered location list with inline transit chips
   html += `<h4 style="font-family:var(--font-display);font-size:13px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;">Route</h4>`;
   html += `<p style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Ordered by visit date. Use arrows to reorder same-day stops.</p>`;
   html += `<div class="trip-loc-list">`;
-  tripLocs.forEach((loc, i) => {
-    const cat = CATEGORIES[loc.category] || CATEGORIES.location;
-    const visitDate = (loc.visits || []).map(v => v.date).filter(Boolean).sort()[0];
-    const price = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
-    const rating = loc.myRating ? ' · ★' + loc.myRating : '';
-    html += `<div class="trip-loc-item" onclick="openEditModal('${loc.id}')">
-      <div class="tl-num">${i + 1}</div>
-      <span style="font-size:16px;">${cat.emoji}</span>
-      <div class="tl-info">
-        <div class="tl-name">${esc(loc.name)}</div>
-        <div class="tl-meta">${visitDate ? formatDate(visitDate) : 'No date'}${price}${rating}</div>
-      </div>
-      <div class="tl-move" onclick="event.stopPropagation()">
-        <button onclick="moveTripLoc('${loc.id}', -1)" ${i === 0 ? 'disabled style="opacity:0.2"' : ''}>▲</button>
-        <button onclick="moveTripLoc('${loc.id}', 1)" ${i === tripLocs.length - 1 ? 'disabled style="opacity:0.2"' : ''}>▼</button>
-      </div>
-    </div>`;
+  const tripTransits = [...(stateIndex.transitsByTrip ? (stateIndex.transitsByTrip.get(trip.id) || []) : [])];
+  const timeline = interleaveStopsAndTransits(tripLocs, tripTransits);
+  let stopNum = 0;
+  timeline.forEach(entry => {
+    if (entry.type === 'stop') {
+      stopNum++;
+      const loc = entry.loc;
+      const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+      const visitDate = (loc.visits || []).map(v => v.date).filter(Boolean).sort()[0];
+      const price = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
+      const rating = loc.myRating ? ' · ★' + loc.myRating : '';
+      const isFirst = stopNum === 1;
+      const isLast = stopNum === tripLocs.length;
+      html += `<div class="trip-loc-item" onclick="openEditModal('${esc(loc.id)}')">
+        <div class="tl-num">${stopNum}</div>
+        <span style="font-size:16px;">${cat.emoji}</span>
+        <div class="tl-info">
+          <div class="tl-name">${esc(loc.name)}</div>
+          <div class="tl-meta">${visitDate ? formatDate(visitDate) : 'No date'}${price}${rating}</div>
+        </div>
+        <div class="tl-move" onclick="event.stopPropagation()">
+          <button onclick="moveTripLoc('${esc(loc.id)}', -1)" ${isFirst ? 'disabled style="opacity:0.2"' : ''}>▲</button>
+          <button onclick="moveTripLoc('${esc(loc.id)}', 1)" ${isLast ? 'disabled style="opacity:0.2"' : ''}>▼</button>
+        </div>
+      </div>`;
+    } else {
+      const t = entry.transit;
+      const m = transitMeta(t.mode);
+      const dist = t.distanceKm ? `${Math.round(t.distanceKm).toLocaleString()} km` : '';
+      const dur = t.durationMin ? `${Math.floor(t.durationMin/60)}h${(t.durationMin%60) ? ' ' + (t.durationMin%60) + 'm' : ''}` : '';
+      const flight = t.flightNumber ? esc(t.flightNumber) + ' · ' : '';
+      const tagClass = entry.loose ? 'trip-transit-chip loose' : 'trip-transit-chip';
+      html += `<div class="${tagClass}" title="${esc(t.fromName || '')} → ${esc(t.toName || '')}">
+        <span class="ttc-rail" style="background:${m.color}"></span>
+        <span class="ttc-icon" style="color:${m.color}">${m.emoji}</span>
+        <span class="ttc-meta">${flight}${dist}${dur ? ' · ' + dur : ''}${entry.loose ? ' · <em style="color:var(--text-muted);">date outside trip range</em>' : ''}</span>
+        <button class="ttc-action" onclick="openTransitModal('${esc(t.id)}')" aria-label="Edit transit" title="Edit">✎</button>
+        <button class="ttc-action" onclick="detachTransitFromTrip('${esc(t.id)}')" aria-label="Detach from trip" title="Detach from trip">⊘</button>
+      </div>`;
+    }
   });
   html += `</div>`;
+  html += `<div style="display:flex;gap:8px;margin-top:10px;">
+    <button class="btn btn-secondary" style="flex:1;font-size:12px;" onclick="openAddTransportFromTrip('${esc(trip.id)}')">+ Add transport</button>
+    <button class="btn btn-secondary" style="flex:1;font-size:12px;" onclick="openAttachTransitsPicker('${esc(trip.id)}')">📎 Attach existing</button>
+  </div>`;
 
   document.getElementById('trip-detail').innerHTML = html;
 }
@@ -5567,6 +5755,145 @@ async function moveTripLoc(locId, direction) {
   ]);
 
   selectTrip(tripId); // re-render
+}
+
+// ─── Trip ↔ Transit integration ───────────────────────────────────────────────
+
+function openAddTransportFromTrip(tripId) {
+  openTransitModal(null);
+  // Set the trip selector to this trip
+  const tripSel = document.getElementById('transit-trip');
+  if (tripSel) tripSel.value = tripId;
+  // Find the first unfilled gap to prefill from/to coords
+  const tripLocs = sortTripLocations([...(stateIndex.locationsByTrip.get(tripId) || [])]);
+  const existing = [...(stateIndex.transitsByTrip ? (stateIndex.transitsByTrip.get(tripId) || []) : [])];
+  const tt = interleaveStopsAndTransits(tripLocs, existing);
+  const filledGaps = new Set();
+  for (const e of tt) {
+    if (e.type === 'transit' && !e.loose) filledGaps.add(e.gap);
+  }
+  let prefilledFrom = null, prefilledTo = null;
+  for (let i = 0; i < tripLocs.length - 1; i++) {
+    if (!filledGaps.has(i)) { prefilledFrom = tripLocs[i]; prefilledTo = tripLocs[i + 1]; break; }
+  }
+  if (!prefilledFrom && tripLocs.length >= 2) { prefilledFrom = tripLocs[0]; prefilledTo = tripLocs[tripLocs.length - 1]; }
+  if (prefilledFrom && prefilledTo) {
+    document.getElementById('transit-from-name').value = prefilledFrom.name || '';
+    document.getElementById('transit-from-lat').value = prefilledFrom.lat;
+    document.getElementById('transit-from-lng').value = prefilledFrom.lng;
+    document.getElementById('transit-to-name').value = prefilledTo.name || '';
+    document.getElementById('transit-to-lat').value = prefilledTo.lat;
+    document.getElementById('transit-to-lng').value = prefilledTo.lng;
+  }
+}
+
+async function detachTransitFromTrip(transitId) {
+  try {
+    const saved = await api('PUT', '/transits/' + transitId, { tripId: '' });
+    const i = state.transits.findIndex(t => t.id === transitId);
+    if (i >= 0) { state.transits[i] = mapId(saved); }
+    rebuildIndexes();
+    const tripSel = document.getElementById('trip-selector');
+    if (tripSel && tripSel.value) selectTrip(tripSel.value);
+    renderTransitsView();
+    showToast('Transit detached from trip', 'success');
+  } catch (e) {
+    showToast('Failed to detach: ' + e.message, 'error');
+  }
+}
+
+// ─── Attach picker ────────────────────────────────────────────────────────────
+let _attachTripId = null;
+let _attachSelected = new Set();
+let _attachSearchQ = '';
+
+function openAttachTransitsPicker(tripId) {
+  _attachTripId = tripId;
+  _attachSelected = new Set();
+  _attachSearchQ = '';
+  const trip = stateIndex.tripById ? stateIndex.tripById.get(tripId) : null;
+  document.getElementById('attach-modal-title').textContent = trip ? `Attach transits to "${trip.name}"` : 'Attach transits';
+  document.getElementById('attach-submit-btn').textContent = 'Attach 0 transits';
+  document.getElementById('attach-submit-btn').disabled = true;
+  document.getElementById('attach-modal').style.display = 'flex';
+  const searchInput = document.querySelector('#attach-modal input[type="text"]');
+  if (searchInput) searchInput.value = '';
+  renderAttachPickerList();
+}
+
+function closeAttachPicker() {
+  document.getElementById('attach-modal').style.display = 'none';
+  _attachTripId = null;
+  _attachSelected = new Set();
+  _attachSearchQ = '';
+}
+
+function setAttachSearch(v) {
+  _attachSearchQ = (v || '').toLowerCase();
+  renderAttachPickerList();
+}
+
+function toggleAttachSelect(id, on) {
+  if (on) _attachSelected.add(id); else _attachSelected.delete(id);
+  const n = _attachSelected.size;
+  document.getElementById('attach-submit-btn').textContent = `Attach ${n} transit${n === 1 ? '' : 's'}`;
+  document.getElementById('attach-submit-btn').disabled = n === 0;
+}
+
+function renderAttachPickerList() {
+  const all = state.transits
+    .filter(t => t.tripId !== _attachTripId)
+    .filter(t => {
+      if (!_attachSearchQ) return true;
+      const hay = [t.fromName, t.toName, t.flightNumber, t.airline, t.fromIata, t.toIata].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(_attachSearchQ);
+    })
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const el = document.getElementById('attach-list');
+  if (!el) return;
+  if (all.length === 0) {
+    el.innerHTML = `<div style="text-align:center;color:var(--text-secondary);padding:24px;">No transits available.</div>`;
+    return;
+  }
+  el.innerHTML = all.map(t => {
+    const m = transitMeta(t.mode);
+    const currentTrip = t.tripId ? (stateIndex.tripById ? stateIndex.tripById.get(t.tripId) : null) : null;
+    const tripLabel = currentTrip ? `<span style="font-size:11px;color:var(--accent);margin-left:6px;">in: ${esc(currentTrip.name)}</span>` : '';
+    return `<label class="attach-row">
+      <input type="checkbox" onchange="toggleAttachSelect('${esc(t.id)}', this.checked)" ${_attachSelected.has(t.id) ? 'checked' : ''}>
+      <span style="color:${m.color};font-size:18px;">${m.emoji}</span>
+      <span class="attach-route">${esc(t.fromName || '?')} → ${esc(t.toName || '?')}</span>
+      <span class="attach-date">${esc(t.date || '')}</span>
+      ${tripLabel}
+    </label>`;
+  }).join('');
+}
+
+async function submitAttachPicker() {
+  if (_attachSelected.size === 0) return;
+  const ids = [..._attachSelected];
+  const btn = document.getElementById('attach-submit-btn');
+  btn.disabled = true; btn.textContent = 'Attaching…';
+  try {
+    const results = await Promise.allSettled(ids.map(id => api('PUT', '/transits/' + id, { tripId: _attachTripId })));
+    const ok = results.filter(r => r.status === 'fulfilled').length;
+    const fail = results.length - ok;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        const idx = state.transits.findIndex(t => t.id === ids[i]);
+        if (idx >= 0) state.transits[idx].tripId = _attachTripId;
+      }
+    });
+    rebuildIndexes();
+    const tripSel = document.getElementById('trip-selector');
+    if (tripSel && tripSel.value) selectTrip(tripSel.value);
+    renderTransitsView();
+    closeAttachPicker();
+    showToast(`Attached ${ok} transit${ok === 1 ? '' : 's'}${fail ? ` · ${fail} failed` : ''}`, fail ? 'error' : 'success');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = `Attach ${_attachSelected.size} transit(s)`;
+    showToast('Attach failed: ' + e.message, 'error');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -7846,10 +8173,31 @@ function filterTransits() {
   }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+function renderTransitsStatsStrip() {
+  const stats = computeTransitStats(state.transits);
+  const cards = ['flight', 'car', 'train', 'ferry'].map(mode => {
+    const m = transitMeta(mode);
+    const s = stats.byMode[mode];
+    return `<div class="transit-stat-card">
+      <div class="tsc-mode" style="color:${m.color}">${m.emoji} ${m.label}</div>
+      <div class="tsc-km">${Math.round(s.km).toLocaleString()} km</div>
+      <div class="tsc-sub">${formatTransitMinutes(s.min)} · ${s.count} segment${s.count === 1 ? '' : 's'}</div>
+    </div>`;
+  }).join('');
+  const totalCard = `<div class="transit-stat-card total">
+    <div class="tsc-mode">Σ Total</div>
+    <div class="tsc-km">${Math.round(stats.totalKm).toLocaleString()} km</div>
+    <div class="tsc-sub">${formatTransitMinutes(stats.totalMin)} · ${stats.totalCount} segment${stats.totalCount === 1 ? '' : 's'}</div>
+  </div>`;
+  return `<div class="transit-stat-strip">${cards}${totalCard}</div>`;
+}
+
 function renderTransitsView() {
   const filtered = filterTransits();
   const countEl = document.getElementById('transit-count-label');
   if (countEl) countEl.textContent = `${filtered.length} of ${state.transits.length}`;
+  const stripEl = document.getElementById('transit-stats-strip');
+  if (stripEl) stripEl.innerHTML = renderTransitsStatsStrip();
   if (_transitViewMode === 'list') renderTransitsList(filtered);
   else renderTransitsMap(filtered);
 }
@@ -7952,6 +8300,10 @@ function openTransitModal(id) {
   _editingTransitId = id || null;
   const t = id ? state.transits.find(x => x.id === id) : {};
   document.getElementById('transit-modal-title').textContent = id ? 'Edit Transit' : 'Add Transit';
+  // Populate trip selector
+  const tripSelect = document.getElementById('transit-trip');
+  tripSelect.innerHTML = '<option value="">— None —</option>' + state.trips.map(tr => `<option value="${esc(tr.id)}">${esc(tr.name)}</option>`).join('');
+  tripSelect.value = t.tripId || '';
   document.getElementById('transit-mode').value = t.mode || 'flight';
   document.getElementById('transit-date').value = t.date || '';
   document.getElementById('transit-from-name').value = t.fromName || '';
@@ -7996,8 +8348,11 @@ async function saveTransit() {
     durationMin: num('transit-duration'),
     notes: get('transit-notes'),
   };
-  // Strip nulls and empty strings
-  Object.keys(payload).forEach(k => { if (payload[k] === null || payload[k] === '') delete payload[k]; });
+  // Handle tripId: always send it (empty string = explicit clear on server)
+  const tripVal = get('transit-trip');
+  payload.tripId = tripVal; // '' or a real tripId
+  // Strip nulls and other empty strings (but keep tripId='' for explicit clear)
+  Object.keys(payload).forEach(k => { if (k !== 'tripId' && (payload[k] === null || payload[k] === '')) delete payload[k]; });
   if (!payload.mode || payload.fromLat == null || payload.fromLng == null || payload.toLat == null || payload.toLng == null) {
     showToast('Mode and from/to coordinates required', 'error');
     return;
@@ -8015,6 +8370,9 @@ async function saveTransit() {
     rebuildIndexes();
     closeTransitModal();
     renderTransitsView();
+    // Re-render trip detail if a trip is currently selected
+    const tripSel = document.getElementById('trip-selector');
+    if (tripSel && tripSel.value) selectTrip(tripSel.value);
     showToast('Transit saved', 'success');
   } catch (e) {
     showToast('Failed to save transit: ' + e.message, 'error');

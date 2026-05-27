@@ -80,6 +80,9 @@ const code = [
   extractFunction('parseDurationMinutes'),
   extractFunction('buildIataIndex'),
   extractFunction('resolveFr24Row'),
+  extractFunction('interleaveStopsAndTransits'),
+  extractFunction('computeTransitStats'),
+  extractFunction('formatTransitMinutes'),
 ].join('\n');
 
 // Provide DOMParser stub for parseKML
@@ -1813,4 +1816,174 @@ describe('resolveFr24Row', () => {
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/origin/i);
   });
+});
+
+// ═══════════════════════════════════════════════════════════
+// TRIP ↔ TRANSIT INTEGRATION TESTS
+// ═══════════════════════════════════════════════════════════
+
+describe('interleaveStopsAndTransits', () => {
+  const interleave = (locs, transits) =>
+    vm.runInContext(`interleaveStopsAndTransits(${JSON.stringify(locs)}, ${JSON.stringify(transits)})`, ctx);
+
+  // helper: build a loc with a single visit date
+  const loc = (name, date) => ({ id: name, name, visits: date ? [{ date }] : [], category: 'location', lat: 0, lng: 0 });
+  const transit = (id, date) => ({ id, mode: 'flight', date, fromLat: 0, fromLng: 0, toLat: 1, toLng: 1 });
+
+  test('empty inputs return empty array', () => {
+    expect(interleave([], [])).toEqual([]);
+  });
+
+  test('stops only, no transits', () => {
+    const out = interleave([loc('A', '2024-01-01'), loc('B', '2024-01-05')], []);
+    expect(out).toHaveLength(2);
+    expect(out.every(e => e.type === 'stop')).toBe(true);
+  });
+
+  test('single stop, no transits', () => {
+    const out = interleave([loc('A', '2024-01-01')], []);
+    expect(out).toHaveLength(1);
+    expect(out[0].type).toBe('stop');
+  });
+
+  test('transit between two stops is placed in gap', () => {
+    const stops = [loc('A', '2024-01-01'), loc('B', '2024-01-10')];
+    const transits = [transit('T1', '2024-01-05')];
+    const out = interleave(stops, transits);
+    // A, T1, B
+    expect(out).toHaveLength(3);
+    expect(out[0].type).toBe('stop');
+    expect(out[1].type).toBe('transit');
+    expect(out[1].gap).toBe(0);
+    expect(out[2].type).toBe('stop');
+  });
+
+  test('transit with date before first stop is loose', () => {
+    const stops = [loc('A', '2024-06-01'), loc('B', '2024-06-10')];
+    const transits = [transit('T1', '2024-01-01')]; // way before trip
+    const out = interleave(stops, transits);
+    const t = out.find(e => e.type === 'transit');
+    expect(t).toBeDefined();
+    expect(t.loose).toBe(true);
+  });
+
+  test('transit with date after last stop is loose', () => {
+    const stops = [loc('A', '2024-06-01'), loc('B', '2024-06-10')];
+    const transits = [transit('T1', '2024-12-31')];
+    const out = interleave(stops, transits);
+    const t = out.find(e => e.type === 'transit');
+    expect(t).toBeDefined();
+    expect(t.loose).toBe(true);
+  });
+
+  test('undated transit is loose', () => {
+    const stops = [loc('A', '2024-01-01'), loc('B', '2024-01-10')];
+    const transits = [{ id: 'T1', mode: 'car', date: null, fromLat: 0, fromLng: 0, toLat: 1, toLng: 1 }];
+    const out = interleave(stops, transits);
+    const t = out.find(e => e.type === 'transit');
+    expect(t.loose).toBe(true);
+  });
+
+  test('multiple transits in same gap are all placed', () => {
+    const stops = [loc('A', '2024-01-01'), loc('B', '2024-01-15')];
+    const transits = [transit('T1', '2024-01-05'), transit('T2', '2024-01-10')];
+    const out = interleave(stops, transits);
+    const transitEntries = out.filter(e => e.type === 'transit');
+    expect(transitEntries).toHaveLength(2);
+    expect(transitEntries.every(e => e.gap === 0)).toBe(true);
+  });
+
+  test('transits with no stops are all loose', () => {
+    const transits = [transit('T1', '2024-01-05'), transit('T2', '2024-01-10')];
+    const out = interleave([], transits);
+    expect(out).toHaveLength(2);
+    expect(out.every(e => e.loose === true)).toBe(true);
+  });
+});
+
+describe('computeTransitStats', () => {
+  const compute = (transits) =>
+    vm.runInContext(`computeTransitStats(${JSON.stringify(transits)})`, ctx);
+
+  test('empty input returns zero totals', () => {
+    const s = compute([]);
+    expect(s.totalCount).toBe(0);
+    expect(s.totalKm).toBe(0);
+    expect(s.totalMin).toBe(0);
+  });
+
+  test('single flight is counted in flight bucket', () => {
+    const s = compute([{ mode: 'flight', distanceKm: 5418, durationMin: 435 }]);
+    expect(s.byMode.flight.count).toBe(1);
+    expect(s.byMode.flight.km).toBe(5418);
+    expect(s.byMode.flight.min).toBe(435);
+    expect(s.totalKm).toBe(5418);
+    expect(s.totalMin).toBe(435);
+  });
+
+  test('unknown mode is skipped', () => {
+    const s = compute([{ mode: 'teleport', distanceKm: 100, durationMin: 1 }]);
+    expect(s.totalCount).toBe(1); // totalCount counts all transits
+    expect(s.totalKm).toBe(0);   // but km is only summed for known modes
+  });
+
+  test('mixed modes sum correctly', () => {
+    const s = compute([
+      { mode: 'flight', distanceKm: 1000, durationMin: 120 },
+      { mode: 'car',   distanceKm: 500,  durationMin: 360 },
+      { mode: 'train', distanceKm: 300,  durationMin: 180 },
+    ]);
+    expect(s.byMode.flight.count).toBe(1);
+    expect(s.byMode.car.count).toBe(1);
+    expect(s.byMode.train.count).toBe(1);
+    expect(s.totalKm).toBe(1800);
+    expect(s.totalMin).toBe(660);
+  });
+
+  test('route count aggregation: same route twice counts 2', () => {
+    const s = compute([
+      { mode: 'flight', fromIata: 'LIS', toIata: 'JFK', distanceKm: 5418 },
+      { mode: 'flight', fromIata: 'LIS', toIata: 'JFK', distanceKm: 5418 },
+    ]);
+    const topRoute = s.byMode.flight.topRoutes[0];
+    expect(topRoute.route).toBe('LIS → JFK');
+    expect(topRoute.count).toBe(2);
+  });
+
+  test('topRoutes is capped at 5', () => {
+    const transits = ['A→B','A→C','A→D','A→E','A→F','A→G'].map(r => {
+      const [from, to] = r.split('→');
+      return { mode: 'flight', fromName: from, toName: to, distanceKm: 100 };
+    });
+    const s = compute(transits);
+    expect(s.byMode.flight.topRoutes.length).toBeLessThanOrEqual(5);
+  });
+
+  test('totalKm and totalMin match sums', () => {
+    const s = compute([
+      { mode: 'flight', distanceKm: 1000, durationMin: 100 },
+      { mode: 'car',   distanceKm: 200,  durationMin: 200 },
+    ]);
+    expect(s.totalKm).toBe(1200);
+    expect(s.totalMin).toBe(300);
+  });
+
+  test('missing distanceKm / durationMin treated as 0', () => {
+    const s = compute([{ mode: 'flight' }]);
+    expect(s.byMode.flight.km).toBe(0);
+    expect(s.byMode.flight.min).toBe(0);
+    expect(s.totalKm).toBe(0);
+  });
+});
+
+describe('formatTransitMinutes', () => {
+  const fmt = (min) => vm.runInContext(`formatTransitMinutes(${JSON.stringify(min)})`, ctx);
+
+  test('0 returns —', () => expect(fmt(0)).toBe('—'));
+  test('null returns —', () => expect(fmt(null)).toBe('—'));
+  test('undefined returns —', () => expect(fmt(undefined)).toBe('—'));
+  test('60 returns 1h', () => expect(fmt(60)).toBe('1h'));
+  test('75 returns 1h 15m', () => expect(fmt(75)).toBe('1h 15m'));
+  test('600 returns 10h', () => expect(fmt(600)).toBe('10h'));
+  test('90 returns 1h 30m', () => expect(fmt(90)).toBe('1h 30m'));
 });

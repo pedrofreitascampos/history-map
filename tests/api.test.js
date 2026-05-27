@@ -1296,6 +1296,26 @@ describe('Transits', () => {
       .set('Authorization', `Bearer ${transitToken}`);
     expect(res.status).toBe(200);
   });
+
+  test('detach trip with empty-string tripId', async () => {
+    // Create a trip
+    const trip = await request(app).post('/api/trips').set('Authorization', `Bearer ${transitToken}`).send({ name: 'Test trip for detach' });
+    expect(trip.status).toBe(200);
+    const tripId = trip.body._id;
+    // Create transit with tripId
+    const create = await request(app).post('/api/transits').set('Authorization', `Bearer ${transitToken}`).send({
+      mode: 'flight', fromLat: 0, fromLng: 0, toLat: 1, toLng: 1, tripId,
+    });
+    expect(create.status).toBe(200);
+    expect(create.body.tripId).toBe(tripId);
+    // Detach via empty string
+    const upd = await request(app).put('/api/transits/' + create.body._id).set('Authorization', `Bearer ${transitToken}`).send({ tripId: '' });
+    expect(upd.status).toBe(200);
+    expect(upd.body.tripId === null || upd.body.tripId === undefined).toBe(true);
+    // Cleanup
+    await request(app).delete('/api/transits/' + create.body._id).set('Authorization', `Bearer ${transitToken}`);
+    await request(app).delete('/api/trips/' + tripId).set('Authorization', `Bearer ${transitToken}`);
+  });
 });
 
 // ─── Transits source-grep invariants ─────────────────────
