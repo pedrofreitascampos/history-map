@@ -68,6 +68,11 @@ const code = [
   extractFunction('parseGoogleRawLocations'),
   extractFunction('parseGeoJSON'),
   extractFunction('findDuplicate'),
+  extractFunction('greatCircleArc'),
+  extractFunction('splitAntiMeridian'),
+  extractFunction('transitGreatCircleKm'),
+  extractConst('TRANSIT_MODE_META'),
+  extractFunction('transitMeta'),
 ].join('\n');
 
 // Provide DOMParser stub for parseKML
@@ -895,6 +900,151 @@ describe('findDuplicate', () => {
       })()
     `, ctx);
     expect(result).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// TRANSITS UNIT TESTS
+// ═══════════════════════════════════════════════════════════
+
+describe('greatCircleArc', () => {
+  const arc = (lat1, lng1, lat2, lng2, steps) =>
+    vm.runInContext(`greatCircleArc(${lat1}, ${lng1}, ${lat2}, ${lng2}${steps !== undefined ? ', ' + steps : ''})`, ctx);
+
+  test('returns steps+1 points for normal route', () => {
+    const result = arc(38.78, -9.13, 40.64, -73.78, 64);
+    // steps=64 → 65 points
+    expect(result).toHaveLength(65);
+  });
+
+  test('first point matches origin (LIS)', () => {
+    const result = arc(38.78, -9.13, 40.64, -73.78, 64);
+    expect(result[0][0]).toBeCloseTo(38.78, 2);
+    expect(result[0][1]).toBeCloseTo(-9.13, 2);
+  });
+
+  test('last point matches destination (JFK)', () => {
+    const result = arc(38.78, -9.13, 40.64, -73.78, 64);
+    const last = result[result.length - 1];
+    expect(last[0]).toBeCloseTo(40.64, 2);
+    expect(last[1]).toBeCloseTo(-73.78, 2);
+  });
+
+  test('LIS→JFK midpoint is over the North Atlantic (lat > 0)', () => {
+    const result = arc(38.78, -9.13, 40.64, -73.78, 64);
+    const mid = result[Math.floor(result.length / 2)];
+    // Great-circle arc between two northern-hemisphere points peaks northward
+    expect(mid[0]).toBeGreaterThan(0);
+  });
+
+  test('same-point returns 2-point degenerate path', () => {
+    const result = arc(48.85, 2.35, 48.85, 2.35, 10);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(result[1]);
+  });
+
+  test('default steps is 64 (returns 65 points)', () => {
+    const result = arc(0, 0, 10, 10);
+    expect(result).toHaveLength(65);
+  });
+});
+
+describe('splitAntiMeridian', () => {
+  const split = (pts) =>
+    vm.runInContext(`splitAntiMeridian(${JSON.stringify(pts)})`, ctx);
+
+  test('splits across anti-meridian into 2 segments', () => {
+    const result = split([[35, 175], [35, -175]]);
+    expect(result).toHaveLength(2);
+  });
+
+  test('non-wrapping route stays as 1 segment', () => {
+    const result = split([[38.78, -9.13], [50, 10], [48.85, 2.35]]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toHaveLength(3);
+  });
+
+  test('single point returns empty', () => {
+    // points.length < 2 → returns []; caller must skip degenerate segments.
+    expect(split([[35, 175]])).toHaveLength(0);
+  });
+
+  test('empty array returns empty', () => {
+    expect(split([])).toHaveLength(0);
+  });
+
+  test('mid-Pacific crossing splits correctly', () => {
+    // Simulate points that jump >180° in longitude
+    const result = split([[40, 170], [40, -170], [40, -160]]);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toHaveLength(1);
+    expect(result[1]).toHaveLength(2);
+  });
+});
+
+describe('transitGreatCircleKm', () => {
+  const dist = (lat1, lng1, lat2, lng2) =>
+    vm.runInContext(`transitGreatCircleKm(${lat1}, ${lng1}, ${lat2}, ${lng2})`, ctx);
+
+  test('LIS→JFK is approximately 5400 km (±200 km)', () => {
+    const km = dist(38.78, -9.13, 40.64, -73.78);
+    expect(km).toBeGreaterThan(5200);
+    expect(km).toBeLessThan(5600);
+  });
+
+  test('same point returns 0', () => {
+    expect(dist(48.85, 2.35, 48.85, 2.35)).toBeCloseTo(0, 2);
+  });
+
+  test('opposite poles is approximately 20015 km', () => {
+    const km = dist(90, 0, -90, 0);
+    expect(km).toBeGreaterThan(19900);
+    expect(km).toBeLessThan(20200);
+  });
+
+  test('symmetric: A→B equals B→A', () => {
+    const ab = dist(38.78, -9.13, 40.64, -73.78);
+    const ba = dist(40.64, -73.78, 38.78, -9.13);
+    expect(ab).toBeCloseTo(ba, 1);
+  });
+});
+
+describe('transitMeta', () => {
+  const meta = (mode) => vm.runInContext(`transitMeta(${JSON.stringify(mode)})`, ctx);
+
+  test('flight returns correct emoji/color/label', () => {
+    const m = meta('flight');
+    expect(m.emoji).toBe('✈');
+    expect(m.color).toBe('#60a5fa');
+    expect(m.label).toBe('Flight');
+  });
+
+  test('car returns correct emoji/color/label', () => {
+    const m = meta('car');
+    expect(m.emoji).toBe('🚗');
+    expect(m.color).toBe('#4ade80');
+    expect(m.label).toBe('Car');
+  });
+
+  test('train returns correct emoji/color/label', () => {
+    const m = meta('train');
+    expect(m.emoji).toBe('🚆');
+    expect(m.color).toBe('#f472b6');
+    expect(m.label).toBe('Train');
+  });
+
+  test('ferry returns correct emoji/color/label', () => {
+    const m = meta('ferry');
+    expect(m.emoji).toBe('⛴');
+    expect(m.color).toBe('#22d3ee');
+    expect(m.label).toBe('Ferry');
+  });
+
+  test('unknown mode returns fallback with neutral color', () => {
+    const m = meta('bicycle');
+    expect(m.emoji).toBe('•');
+    expect(m.color).toBe('#888');
+    expect(m.label).toBe('bicycle');
   });
 });
 
