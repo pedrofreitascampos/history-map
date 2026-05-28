@@ -2717,21 +2717,37 @@ function showToast(msg, level = 'info') {
 }
 
 // ── Confirm modal (replaces browser confirm()) ──
+// Dual-mode: returns a Promise<boolean> (resolves true on confirm, false on cancel)
+// AND still fires the optional onConfirm callback. Both call styles are supported:
+//   showConfirm(msg, () => {...})            // callback
+//   if (await showConfirm(msg)) {...}        // promise
 function showConfirm(message, onConfirm, confirmLabel = 'Delete') {
-  const overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.innerHTML = `<div class="confirm-box">
-    <p>${esc(message)}</p>
-    <div class="confirm-actions">
-      <button class="confirm-cancel">Cancel</button>
-      <button class="confirm-danger">${esc(confirmLabel)}</button>
-    </div>
-  </div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('.confirm-cancel').onclick = () => overlay.remove();
-  overlay.querySelector('.confirm-danger').onclick = () => { overlay.remove(); onConfirm(); };
-  overlay.querySelector('.confirm-cancel').focus();
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `<div class="confirm-box">
+      <p>${esc(message)}</p>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="confirm-danger">${esc(confirmLabel)}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    let settled = false;
+    const close = result => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      resolve(result);
+    };
+    overlay.querySelector('.confirm-cancel').onclick = () => close(false);
+    overlay.querySelector('.confirm-danger').onclick = () => {
+      close(true);
+      if (typeof onConfirm === 'function') onConfirm();
+    };
+    overlay.querySelector('.confirm-cancel').focus();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+  });
 }
 
 // ── Prompt modal (replaces browser prompt()) ──
@@ -4241,24 +4257,38 @@ function deleteTrip(id) {
   const trip = stateIndex.tripById.get(id);
   if (!trip) return;
   const locCount = (stateIndex.locationsByTrip.get(id) || []).length;
+  // Capture whether the trip-detail view is currently showing this trip,
+  // before the selector is repopulated below.
+  const selector = document.getElementById('trip-selector');
+  const wasViewing = !!(selector && selector.value === id);
   showConfirm(`Delete trip "${trip.name}"? ${locCount} location${locCount!==1?'s':''} will be unlinked (not deleted).`, async () => {
-  // Unlink locations
-  const updates = [];
-  state.locations.forEach(l => {
-    if (l.tripId === id) {
-      l.tripId = null;
-      updates.push(api('PUT', '/locations/' + l.id, { tripId: null }));
+    try {
+      // Server does not cascade — persist each location's unlink, then delete the trip.
+      const updates = [];
+      state.locations.forEach(l => {
+        if (l.tripId === id) {
+          l.tripId = null;
+          updates.push(api('PUT', '/locations/' + l.id, { tripId: null }));
+        }
+      });
+      await Promise.all(updates);
+      await api('DELETE', '/trips/' + id);
+      state.trips = state.trips.filter(t => t.id !== id);
+      rebuildIndexes();
+      // Refresh both entry points: trips-manager modal and trip-detail view.
+      renderTripManager();
+      populateTripSelector();
+      populateModalTrips();
+      populateFilterDropdowns();
+      renderMarkers();
+      if (wasViewing) {
+        document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+        if (tripPathLayer) tripPathLayer.clearLayers();
+      }
+      showToast(`Trip "${trip.name}" deleted`);
+    } catch (err) {
+      showToast('Failed to delete trip: ' + err.message, 'error');
     }
-  });
-  await Promise.all(updates);
-  await api('DELETE', '/trips/' + id);
-  state.trips = state.trips.filter(t => t.id !== id);
-  rebuildIndexes();
-  renderTripManager();
-  populateFilterDropdowns();
-  populateModalTrips();
-  renderMarkers();
-    showToast(`Trip "${trip.name}" deleted`);
   });
 }
 
@@ -5710,25 +5740,6 @@ function renderTripDetail(trip, tripLocs) {
   </div>`;
 
   document.getElementById('trip-detail').innerHTML = html;
-}
-
-async function deleteTrip(tripId) {
-  const trip = state.trips.find(t => t.id === tripId);
-  if (!trip) return;
-  const confirmed = await showConfirm(`Delete trip "${trip.name}"? Locations won't be deleted, just unlinked from this trip.`);
-  if (!confirmed) return;
-  try {
-    await api('DELETE', '/trips/' + tripId);
-    // Unlink locations from this trip in state
-    state.locations.forEach(l => { if (l.tripId === tripId) l.tripId = null; });
-    state.trips = state.trips.filter(t => t.id !== tripId);
-    rebuildIndexes();
-    populateTripSelector();
-    populateFilterDropdowns();
-    document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
-    if (tripPathLayer) tripPathLayer.clearLayers();
-    showToast('Trip deleted');
-  } catch (err) { showToast('Failed to delete trip: ' + err.message, 'error'); }
 }
 
 async function moveTripLoc(locId, direction) {

@@ -2003,3 +2003,58 @@ describe('index.html inline script', () => {
     }
   });
 });
+
+// Regression (P0, 2026-05-29): there used to be TWO `deleteTrip` declarations — a
+// correct callback-style one and a broken `async` one that `await`ed showConfirm.
+// The later shadowed the former, so every trip-delete button ran the broken one
+// (silent no-op + it never persisted the location unlink). Guard the dedup.
+describe('deleteTrip single declaration (regression)', () => {
+  test('exactly one deleteTrip function declaration (no shadowing duplicate)', () => {
+    const matches = indexHtml.match(/function deleteTrip\s*\(/g) || [];
+    expect(matches.length).toBe(1);
+  });
+});
+
+// Regression (P0, 2026-05-29): showConfirm must return a Promise<boolean>. It was
+// callback-only, so `await showConfirm(...)` in deleteFromPopup/deleteTrip resolved
+// to undefined → those deletes silently no-opped and clicking "Delete" threw
+// `onConfirm is not a function`. These tests pin the dual-mode contract.
+const describeDom = JSDOM ? describe : describe.skip;
+describeDom('showConfirm contract (regression)', () => {
+  const src = extractFunction('showConfirm');
+
+  function mount(onConfirm) {
+    const dom = new JSDOM('<!DOCTYPE html><body></body>');
+    const ctx = { document: dom.window.document, esc: s => String(s) };
+    vm.createContext(ctx);
+    vm.runInContext(src + '\nthis.showConfirm = showConfirm;', ctx);
+    const promise = ctx.showConfirm('Delete this?', onConfirm);
+    return { dom, promise };
+  }
+
+  test('returns a thenable (Promise), not undefined', () => {
+    const { promise } = mount();
+    expect(promise).toBeDefined();
+    expect(typeof promise.then).toBe('function');
+  });
+
+  test('resolves true when the danger button is clicked', async () => {
+    const { dom, promise } = mount();
+    dom.window.document.querySelector('.confirm-danger').click();
+    await expect(promise).resolves.toBe(true);
+  });
+
+  test('resolves false when the cancel button is clicked', async () => {
+    const { dom, promise } = mount();
+    dom.window.document.querySelector('.confirm-cancel').click();
+    await expect(promise).resolves.toBe(false);
+  });
+
+  test('still fires the optional onConfirm callback (back-compat)', async () => {
+    let called = false;
+    const { dom, promise } = mount(() => { called = true; });
+    dom.window.document.querySelector('.confirm-danger').click();
+    await promise;
+    expect(called).toBe(true);
+  });
+});
