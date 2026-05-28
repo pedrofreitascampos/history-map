@@ -7462,7 +7462,7 @@ async function enrichInBackground(locations, { onProgress } = {}) {
 
   const tasks = toEnrich.map(loc => ({
     url: `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
-    onResult(data) {
+    async onResult(data) {
       if (!data) return false;
       const osmCat = osmToCategory(data.class, data.type);
       const newCat = osmCat || inferCategory((data.name || '') + ' ' + (data.display_name || ''));

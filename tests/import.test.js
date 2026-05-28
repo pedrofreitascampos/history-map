@@ -1987,3 +1987,19 @@ describe('formatTransitMinutes', () => {
   test('600 returns 10h', () => expect(fmt(600)).toBe('10h'));
   test('90 returns 1h 30m', () => expect(fmt(90)).toBe('1h 30m'));
 });
+
+// Regression: the entire app is one inline <script>. A single syntax error
+// (e.g. `await` inside a non-async function) aborts the whole script, so NO
+// functions get defined and the login button silently no-ops. This compiles
+// the inline script to catch that class of error before it ships.
+// See: enrichInBackground's onResult was missing `async` (broke Sign In).
+describe('index.html inline script', () => {
+  test('parses without syntax errors', () => {
+    const scripts = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const src of scripts) {
+      // new vm.Script compiles (parses) without executing — throws SyntaxError if invalid.
+      expect(() => new vm.Script(src)).not.toThrow();
+    }
+  });
+});
