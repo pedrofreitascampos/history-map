@@ -318,12 +318,27 @@ function validateLocation(body) {
 app.post('/api/locations', auth, async (req, res) => {
   const err = validateLocation(req.body);
   if (err) return res.status(400).json({ error: err });
-  const loc = { ...req.body, userId: req.user.id, updatedAt: new Date().toISOString() };
-  delete loc._id; // let nedb assign
+  const loc = sanitizeLocationUpdate(pickLocationFields(req.body));
+  loc.userId = req.user.id;
+  loc.updatedAt = new Date().toISOString();
   const saved = await db.locations.insert(loc);
   log('info', 'db_insert', { table: 'locations', id: saved._id, name: saved.name, userId: req.user.id });
   res.json(saved);
 });
+
+// Allowlist of writable location fields — single source of truth for PUT and bulk POST
+// so client- or third-party-supplied (e.g. Nominatim) keys can't write unexpected fields.
+// Excludes _id/userId (ownership) and updatedAt (server-stamped). Also blocks __proto__.
+const LOCATION_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
+  'priceLevel','tripId','tripOrder','collections','people','tags','notes','visits','needsApproval',
+  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength'];
+
+function pickLocationFields(body) {
+  const clean = {};
+  if (!body || typeof body !== 'object') return clean;
+  LOCATION_FIELDS.forEach(f => { if (body[f] !== undefined) clean[f] = body[f]; });
+  return clean;
+}
 
 // Clamp/validate fields on a location update payload. Shared between POST and PUT
 // so a stored value can't bypass the rules set during bulk import.
@@ -336,9 +351,8 @@ function sanitizeLocationUpdate(updates) {
 }
 
 app.put('/api/locations/:id', auth, async (req, res) => {
-  const updates = sanitizeLocationUpdate({ ...req.body, updatedAt: new Date().toISOString() });
-  delete updates._id;
-  delete updates.userId;
+  const updates = sanitizeLocationUpdate(pickLocationFields(req.body));
+  updates.updatedAt = new Date().toISOString();
   const count = await db.locations.update(
     { _id: req.params.id, userId: req.user.id },
     { $set: updates }
@@ -360,15 +374,10 @@ app.delete('/api/locations/:id', auth, async (req, res) => {
 app.post('/api/locations/bulk', auth, async (req, res) => {
   const { locations: locs } = req.body;
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
-  const ALLOWED_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
-    'priceLevel','tripId','collections','people','tags','notes','visits','needsApproval',
-    'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength'];
   const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
   if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
   const toInsert = valid.map(l => {
-    const clean = {};
-    ALLOWED_FIELDS.forEach(f => { if (l[f] !== undefined) clean[f] = l[f]; });
-    sanitizeLocationUpdate(clean);
+    const clean = sanitizeLocationUpdate(pickLocationFields(l));
     clean.userId = req.user.id;
     clean.updatedAt = new Date().toISOString();
     return clean;

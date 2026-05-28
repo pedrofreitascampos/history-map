@@ -111,6 +111,16 @@ describe('Locations', () => {
     expect(res.status).toBe(404);
   });
 
+  test('PUT allowlists fields: keeps tripOrder, drops unknown keys, ignores userId override', async () => {
+    const res = await request(app).put(`/api/locations/${locationId}`).set('Authorization', `Bearer ${token}`)
+      .send({ tripOrder: 3, address: '5 Main St', evilField: 'nope', userId: 'someone-else' });
+    expect(res.status).toBe(200);
+    expect(res.body.tripOrder).toBe(3);       // tripOrder is allowlisted (reorder feature)
+    expect(res.body.address).toBe('5 Main St');
+    expect(res.body.evilField).toBeUndefined(); // unknown key dropped
+    expect(res.body.userId).not.toBe('someone-else'); // ownership cannot be reassigned
+  });
+
   test('bulk import', async () => {
     const res = await request(app).post('/api/locations/bulk').set('Authorization', `Bearer ${token}`)
       .send({ locations: [
