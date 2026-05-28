@@ -1335,3 +1335,102 @@ describe('Input validation hardening (transits)', () => {
     expect(serverSrc).toContain('MAX_TRANSITS_PER_BULK');
   });
 });
+
+// ─── Security hardening (2026-05-29 easy-wins batch) ─────
+describe('NoSQL operator-injection guards on username', () => {
+  test('login rejects object username (no $ne bypass)', async () => {
+    const res = await request(app).post('/api/auth/login')
+      .send({ username: { $ne: null }, password: { $ne: null } });
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  test('register rejects object username', async () => {
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: { $gt: '' }, password: 'longenough123' });
+    expect(res.status).toBe(400);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  test('reset-password rejects object username (never bypasses or crashes)', async () => {
+    const res = await request(app).post('/api/admin/reset-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: { $ne: null }, newPassword: 'longenough123' });
+    // 403 if blocked by requireAdmin, 400 if it reaches the input guard — never 200 (bypass) or 500 (crash).
+    expect([400, 403]).toContain(res.status);
+  });
+});
+
+describe('Collection emoji validation (stored-XSS defense)', () => {
+  test('drops emoji containing angle brackets', async () => {
+    const res = await request(app).post('/api/collections')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'EvilEmoji', emoji: '<img src=x onerror=alert(1)>' });
+    expect(res.status).toBe(200);
+    expect(res.body.emoji).toBeUndefined();
+  });
+
+  test('drops over-long emoji (>16 chars)', async () => {
+    const res = await request(app).post('/api/collections')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'LongEmoji', emoji: 'x'.repeat(20) });
+    expect(res.status).toBe(200);
+    expect(res.body.emoji).toBeUndefined();
+  });
+
+  test('keeps a valid emoji', async () => {
+    const res = await request(app).post('/api/collections')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'GoodEmoji', emoji: '🎯' });
+    expect(res.status).toBe(200);
+    expect(res.body.emoji).toBe('🎯');
+  });
+});
+
+describe('Bulk locations item cap', () => {
+  test('rejects payloads over MAX_LOCATIONS_PER_BULK', async () => {
+    const overflow = Array.from({ length: 10001 }, () => ({ name: 'x', lat: 0, lng: 0 }));
+    const res = await request(app).post('/api/locations/bulk')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ locations: overflow });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('sanitizeTransitUpdate handles non-object items (no 500)', () => {
+  test('bulk transit with null/garbage items does not crash', async () => {
+    const res = await request(app).post('/api/transits/bulk')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ transits: [null, 'string', 42] });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(0);
+  });
+});
+
+// ─── Client esc() invariants for emoji + region tooltips ──
+describe('XSS escape invariants (emoji + regions)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('marker emoji override is escaped', () => {
+    expect(html).toContain('${esc(pickMarkerEmoji(loc, opts))}');
+  });
+
+  test('user-editable col.emoji is escaped on render', () => {
+    expect(html).toContain("${esc(col.emoji || '📋')}");
+    expect(html).toContain("${esc(c.emoji || '📋')}");
+    // No remaining raw col.emoji renders
+    expect(html).not.toMatch(/\$\{col\.emoji \|\| '📋'\}/);
+  });
+
+  test('region tooltip escapes Natural Earth name/country', () => {
+    expect(html).toContain('${esc(p.name)}');
+    expect(html).toContain('${esc(p.country)}');
+    expect(html).not.toMatch(/<strong>\$\{p\.name\}<\/strong>/);
+  });
+
+  test('region popup escapes regionName/country', () => {
+    expect(html).toContain('<h3>${esc(regionName)}</h3>');
+    expect(html).toContain('${esc(country)} ·');
+  });
+});

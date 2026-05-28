@@ -2610,7 +2610,7 @@ function createMarkerIcon(loc, opts) {
 
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${pickMarkerEmoji(loc, opts)}</div>`,
+    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${esc(pickMarkerEmoji(loc, opts))}</div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
     popupAnchor: [0, -half - 3],
@@ -3176,7 +3176,7 @@ function initBulkView() {
       state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
     const colAction = document.getElementById('bulk-collection');
     colAction.innerHTML = '<option value="">Collection →</option>' +
-      state.collections.map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
+      state.collections.map(c => `<option value="${c.id}">${esc(c.emoji || '📋')} ${esc(c.name)}</option>`).join('');
     const tagFilter = document.getElementById('bulk-filter-tag');
     const sortedTags = [...stateIndex.tagCounts.entries()].sort((a,b) => b[1]-a[1]);
     tagFilter.innerHTML = '<option value="">All tags</option>' +
@@ -4506,7 +4506,7 @@ function renderStats() {
       const total = col.totalItems || cs.total;
       const pct = total > 0 ? Math.round(cs.visited / total * 100) : 0;
       return `<div class="cat-stat-card">
-        <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
+        <span class="cat-stat-emoji">${esc(col.emoji || '📋')}</span>
         <div class="cat-stat-info">
           <div class="cat-stat-name">${esc(col.name)}</div>
           <div class="cat-stat-counts">${cs.visited} / ${total} · ${pct}%</div>
@@ -5927,7 +5927,7 @@ function renderCollections() {
     const total = col.totalItems || locs.length;
     const pct = total > 0 ? Math.round(visited / total * 100) : 0;
     return `<div class="cat-stat-card" style="cursor:pointer;" onclick="viewCollection('${col.id}')">
-      <span class="cat-stat-emoji">${col.emoji || '📋'}</span>
+      <span class="cat-stat-emoji">${esc(col.emoji || '📋')}</span>
       <div class="cat-stat-info" style="flex:1;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div class="cat-stat-name">${esc(col.name)}</div>
@@ -5954,7 +5954,7 @@ function viewCollection(colId) {
   let html = `<div style="grid-column:1/-1;margin-bottom:16px;">
     <button class="add-small-btn" onclick="renderCollections()" style="margin-bottom:12px;">← Back to all collections</button>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-      <span style="font-size:32px;">${col.emoji || '📋'}</span>
+      <span style="font-size:32px;">${esc(col.emoji || '📋')}</span>
       <div>
         <h2 style="font-family:var(--font-display);font-size:22px;margin:0;">${esc(col.name)}</h2>
         <p style="font-size:13px;color:var(--text-muted);">${esc(col.description || '')}</p>
@@ -6281,13 +6281,13 @@ function renderModalCollections() {
   container.innerHTML = locCols.map((colId, i) => {
     const col = stateIndex.collectionById.get(colId);
     if (!col) return '';
-    return `<span class="people-tag">${col.emoji || '📋'} ${esc(col.name)}<button class="remove-tag" onclick="removeCollectionFromLoc(${i})" aria-label="Remove ${esc(col.name)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`;
+    return `<span class="people-tag">${esc(col.emoji || '📋')} ${esc(col.name)}<button class="remove-tag" onclick="removeCollectionFromLoc(${i})" aria-label="Remove ${esc(col.name)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`;
   }).join('');
 
   const sel = document.getElementById('loc-collection-select');
   sel.innerHTML = '<option value="">Add to collection...</option>' +
     state.collections.filter(c => !locCols.includes(c.id))
-      .map(c => `<option value="${c.id}">${c.emoji || '📋'} ${esc(c.name)}</option>`).join('');
+      .map(c => `<option value="${c.id}">${esc(c.emoji || '📋')} ${esc(c.name)}</option>`).join('');
 }
 
 async function createCollectionFromModal() {
@@ -6499,7 +6499,7 @@ async function renderRegionsMap() {
       if (count > 0) {
         const p = feature.properties;
         layer.bindTooltip(
-          `<strong>${p.name}</strong><br>${p.country}<br>${count} location${count > 1 ? 's' : ''}`,
+          `<strong>${esc(p.name)}</strong><br>${esc(p.country)}<br>${count} location${count > 1 ? 's' : ''}`,
           { sticky: true, direction: 'top' }
         );
         layer.on('click', () => showRegionLocations(idx, p.name, p.country));
@@ -6529,8 +6529,8 @@ function showRegionLocations(idx, regionName, country) {
   L.popup({ maxWidth: 320, maxHeight: 300 })
     .setLatLng(regionsMap.getCenter())
     .setContent(`<div class="popup-inner">
-      <h3>${regionName}</h3>
-      <div class="popup-cat">${country} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
+      <h3>${esc(regionName)}</h3>
+      <div class="popup-cat">${esc(country)} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${content}</div>
     </div>`)
     .openOn(regionsMap);

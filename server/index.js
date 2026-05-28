@@ -146,7 +146,9 @@ function auth(req, res, next) {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username.toLowerCase())) {
       audit('register_blocked', { username, reason: 'not_in_allowlist' }, req);
@@ -172,6 +174,10 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    if (typeof username !== 'string' || typeof password !== 'string') {
+      audit('login_failed', { reason: 'invalid_input' }, req);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     const user = await db.users.findOne({ username });
     if (!user || !(await bcrypt.compare(password, user.password))) {
       audit('login_failed', { username, reason: 'invalid_credentials' }, req);
@@ -239,7 +245,9 @@ app.post('/api/auth/google', async (req, res) => {
 app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
   try {
     const { fromUsername, toUsername } = req.body;
-    if (!fromUsername || !toUsername) return res.status(400).json({ error: 'fromUsername and toUsername required' });
+    if (typeof fromUsername !== 'string' || typeof toUsername !== 'string' || !fromUsername || !toUsername) {
+      return res.status(400).json({ error: 'fromUsername and toUsername required' });
+    }
 
     const fromUser = await db.users.findOne({ username: fromUsername });
     const toUser = await db.users.findOne({ username: toUsername });
@@ -275,7 +283,9 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
 app.post('/api/admin/reset-password', auth, requireAdmin, async (req, res) => {
   try {
     const { username, newPassword } = req.body;
-    if (!username || !newPassword) return res.status(400).json({ error: 'username and newPassword required' });
+    if (typeof username !== 'string' || typeof newPassword !== 'string' || !username || !newPassword) {
+      return res.status(400).json({ error: 'username and newPassword required' });
+    }
     const user = await db.users.findOne({ username });
     if (!user) return res.status(404).json({ error: `User "${username}" not found` });
     const hash = await bcrypt.hash(newPassword, 10);
@@ -371,9 +381,11 @@ app.delete('/api/locations/:id', auth, async (req, res) => {
 });
 
 // Bulk import
+const MAX_LOCATIONS_PER_BULK = 10000;
 app.post('/api/locations/bulk', auth, async (req, res) => {
   const { locations: locs } = req.body;
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
+  if (locs.length > MAX_LOCATIONS_PER_BULK) return res.status(400).json({ error: `Too many locations (max ${MAX_LOCATIONS_PER_BULK})` });
   const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
   if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
   const toInsert = valid.map(l => {
@@ -442,6 +454,7 @@ const COLLECTION_FIELDS = ['name', 'emoji', 'description', 'totalItems'];
 const MAX_COLLECTIONS_PER_BULK = 500;
 function sanitizeCollectionUpdate(body) {
   const out = {};
+  if (!body || typeof body !== 'object') return out;
   for (const k of COLLECTION_FIELDS) {
     if (body[k] === undefined) continue;
     if (typeof body[k] === 'string' && body[k].length > 5000) continue;
@@ -449,6 +462,10 @@ function sanitizeCollectionUpdate(body) {
       const n = parseInt(body[k], 10);
       if (Number.isFinite(n) && n >= 0 && n <= 1e6) out[k] = n;
       continue;
+    }
+    if (k === 'emoji') {
+      // Rendered into client HTML — keep short and free of angle brackets (defense-in-depth with client esc()).
+      if (typeof body[k] !== 'string' || body[k].length > 16 || /[<>]/.test(body[k])) continue;
     }
     out[k] = body[k];
   }
@@ -502,6 +519,7 @@ const MAX_TRANSITS_PER_BULK = 1000;
 
 function sanitizeTransitUpdate(body) {
   const out = {};
+  if (!body || typeof body !== 'object') return out;
   // Allow explicit clearing of tripId (empty string or null → null)
   if (body && (body.tripId === '' || body.tripId === null)) out.tripId = null;
   if (TRANSIT_MODES.includes(body.mode)) out.mode = body.mode;
