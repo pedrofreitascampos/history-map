@@ -1434,3 +1434,73 @@ describe('XSS escape invariants (emoji + regions)', () => {
     expect(html).toContain('${esc(country)} ·');
   });
 });
+
+// ─── Transits UX HIGHs (2026-05-29 batch) ────────────────
+describe('Transits view layout + modal infra invariants', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('#transits-view scrolls as a column (no inline display:none)', () => {
+    const m = html.match(/<div id="transits-view"[^>]*>/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toContain('flex-direction:column');
+    expect(m[0]).toContain('overflow-y:auto');
+    expect(m[0]).not.toContain('display:none');
+  });
+
+  test('transit map height is viewport-relative, not fixed 600px', () => {
+    const m = html.match(/<div id="transit-map-container"[^>]*>/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toContain('calc(100vh');
+    expect(m[0]).not.toContain('height:600px');
+  });
+
+  test('transit/fr24/attach modals have no inline display:none (class-controlled)', () => {
+    ['transit-modal', 'fr24-modal', 'attach-modal'].forEach(id => {
+      const m = html.match(new RegExp(`<div id="${id}"[^>]*>`));
+      expect(m).not.toBeNull();
+      expect(m[0]).toContain('modal-overlay');
+      expect(m[0]).not.toContain('display:none');
+    });
+  });
+
+  test('modal open/close routes through .open class + focus helpers', () => {
+    // all three opens build modalEl, add the class, and focus it
+    expect((html.match(/modalEl\.classList\.add\('open'\)/g) || []).length).toBeGreaterThanOrEqual(3);
+    expect((html.match(/focusModal\(modalEl\)/g) || []).length).toBeGreaterThanOrEqual(3);
+    // close functions remove the class + restoreFocus
+    expect(html).toMatch(/closeTransitModal\(\)\s*\{[\s\S]{0,160}classList\.remove\('open'\)[\s\S]{0,60}restoreFocus/);
+    expect(html).toMatch(/closeFr24Import\(\)\s*\{[\s\S]{0,160}classList\.remove\('open'\)[\s\S]{0,60}restoreFocus/);
+    expect(html).toMatch(/closeAttachPicker\(\)\s*\{[\s\S]{0,160}classList\.remove\('open'\)[\s\S]{0,60}restoreFocus/);
+    // no surviving inline-display toggles for these modals
+    expect(html).not.toMatch(/getElementById\('(transit|fr24|attach)-modal'\)\.style\.display/);
+  });
+
+  test('Escape handler closes the three transit modals', () => {
+    const m = html.match(/const modals = \[[^\]]*\];/);
+    expect(m).not.toBeNull();
+    expect(m[0]).toContain("'transit-modal'");
+    expect(m[0]).toContain("'fr24-modal'");
+    expect(m[0]).toContain("'attach-modal'");
+  });
+});
+
+describe('Transits a11y + empty-state invariants', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('mode chips expose aria-pressed and a labelled group', () => {
+    expect(html).toContain('role="group" aria-label="Filter by transport mode"');
+    expect(html).toMatch(/data-mode="all" aria-pressed="true"/);
+    // setTransitModeFilter keeps aria-pressed in sync
+    expect(html).toMatch(/setTransitModeFilter[\s\S]{0,300}setAttribute\('aria-pressed'/);
+  });
+
+  test('transit search inputs are labelled', () => {
+    expect(html).toContain('aria-label="Search transits"');
+  });
+
+  test('list empty-state distinguishes filtered-to-zero from truly empty', () => {
+    expect(html).toMatch(/const filtersActive = _transitModeFilter !== 'all'/);
+    expect(html).toContain('No transits match your filters');
+    expect(html).toMatch(/function clearTransitFilters\(\)/);
+  });
+});
