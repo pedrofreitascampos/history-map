@@ -2314,6 +2314,14 @@ async function doAuth() {
 }
 
 function logout() {
+  // Fire-and-forget server-side revocation. Direct fetch (not api()) so a 401
+  // can't trigger a recursive logout call. Local logout proceeds regardless.
+  if (authToken) {
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + authToken },
+    }).catch(() => {});
+  }
   authToken = null;
   localStorage.removeItem('hm_token');
   _placesEnabled = null;

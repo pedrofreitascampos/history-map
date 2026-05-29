@@ -76,6 +76,59 @@ describe('Auth', () => {
     const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer bad');
     expect(res.status).toBe(401);
   });
+
+  test('issued token has a jti and 30d (not 90d) expiry', async () => {
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.decode(token);
+    expect(decoded.jti).toBeTruthy();
+    expect(typeof decoded.jti).toBe('string');
+    // 30 days in seconds, with a small tolerance window.
+    const ttl = decoded.exp - decoded.iat;
+    expect(ttl).toBeGreaterThan(29 * 24 * 3600);
+    expect(ttl).toBeLessThan(31 * 24 * 3600);
+  });
+});
+
+// ─── Logout / revocation ─────────────────────────────────
+describe('Logout revocation', () => {
+  let liveToken;
+
+  beforeAll(async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'revokeuser', password: 'revokepass123' });
+    expect(res.status).toBe(200);
+    liveToken = res.body.token;
+  });
+
+  test('logout requires a valid token', async () => {
+    const res = await request(app).post('/api/auth/logout');
+    expect(res.status).toBe(401);
+  });
+
+  test('logout revokes the token (subsequent /me returns 401)', async () => {
+    const meBefore = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${liveToken}`);
+    expect(meBefore.status).toBe(200);
+
+    const out = await request(app).post('/api/auth/logout').set('Authorization', `Bearer ${liveToken}`);
+    expect(out.status).toBe(200);
+    expect(out.body.ok).toBe(true);
+
+    const meAfter = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${liveToken}`);
+    expect(meAfter.status).toBe(401);
+    expect(meAfter.body.error).toBe('Token revoked');
+  });
+
+  test('revocation is scoped to the token, not the user', async () => {
+    // A fresh login for the SAME user must work — we revoked the prior token,
+    // not the underlying identity.
+    const login = await request(app).post('/api/auth/login').send({ username: 'revokeuser', password: 'revokepass123' });
+    expect(login.status).toBe(200);
+    const newToken = login.body.token;
+    expect(newToken).not.toBe(liveToken);
+    const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${newToken}`);
+    expect(me.status).toBe(200);
+  });
 });
 
 // ─── Locations ───────────────────────────────────────────
@@ -1187,6 +1240,13 @@ describe('Frontend correctness fixes', () => {
 
   test('FR24 error path offers a retry button (no dead-end)', () => {
     expect(html).toMatch(/handleFr24File[\s\S]{0,2500}Retry/);
+  });
+
+  test('logout fires server-side revocation (best-effort, not via api())', () => {
+    // Must hit /api/auth/logout so the server can blocklist the jti.
+    expect(html).toMatch(/function logout\(\)[\s\S]{0,800}fetch\('\/api\/auth\/logout'/);
+    // Must NOT use api() — a 401 there would recursively trigger logout().
+    expect(html).not.toMatch(/function logout\(\)[\s\S]{0,800}api\('POST', '\/auth\/logout'/);
   });
 });
 

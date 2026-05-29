@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -122,6 +123,39 @@ app.use('/api', (req, res, next) => {
 // Static files
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// ── JWT lifecycle ────────────────────────────────────────
+// Shortened from 90d to 30d after the 4-domain audit (any XSS hands an
+// attacker a long-lived full-account token; revocation cuts that window).
+const JWT_EXPIRY = '30d';
+
+// In-memory revocation list keyed by jti → exp (seconds). Cleared on restart,
+// which is fine: tokens signed under the prior process were anyway tied to a
+// secret that may rotate. Pruned every 6h so the set can't grow unbounded
+// over a long uptime.
+const revokedJtis = new Map();
+function isRevoked(jti) {
+  if (!jti) return false;
+  const exp = revokedJtis.get(jti);
+  if (!exp) return false;
+  if (Date.now() >= exp * 1000) { revokedJtis.delete(jti); return false; }
+  return true;
+}
+function revokeJti(jti, exp) {
+  if (!jti || !exp) return;
+  revokedJtis.set(jti, exp);
+}
+function pruneRevoked() {
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const [jti, exp] of revokedJtis) if (exp <= nowSec) revokedJtis.delete(jti);
+}
+if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'test') {
+  setInterval(pruneRevoked, 6 * 60 * 60 * 1000).unref();
+}
+
+function signToken(payload) {
+  return jwt.sign({ ...payload, jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+}
+
 // ── Auth middleware ──────────────────────────────────────
 function requireAdmin(req, res, next) {
   if (!ADMIN_EMAIL || !req.user?.username || req.user.username.toLowerCase() !== ADMIN_EMAIL) {
@@ -135,7 +169,9 @@ function auth(req, res, next) {
   const token = m && m[1];
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (isRevoked(decoded.jti)) return res.status(401).json({ error: 'Token revoked' });
+    req.user = decoded;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -163,7 +199,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const user = await db.users.insert({ username, password: hash, createdAt: new Date().toISOString() });
-    const token = jwt.sign({ id: user._id, username }, JWT_SECRET, { expiresIn: '90d' });
+    const token = signToken({ id: user._id, username });
     audit('register_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
@@ -183,7 +219,7 @@ app.post('/api/auth/login', async (req, res) => {
       audit('login_failed', { username, reason: 'invalid_credentials' }, req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user._id, username }, JWT_SECRET, { expiresIn: '90d' });
+    const token = signToken({ id: user._id, username });
     audit('login_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
@@ -193,6 +229,16 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => {
   res.json({ username: req.user.username });
+});
+
+// Revoke the current token (server-side blocklist). Best-effort — frontend
+// drops localStorage regardless, but this kills the bearer for the rest of
+// its TTL on the server. Returns 401 if the token was already invalid/expired
+// (auth middleware handles that), 200 on successful revocation.
+app.post('/api/auth/logout', auth, (req, res) => {
+  revokeJti(req.user.jti, req.user.exp);
+  audit('logout', { username: req.user.username }, req);
+  res.json({ ok: true });
 });
 
 // Google OAuth client ID (for frontend)
@@ -231,7 +277,7 @@ app.post('/api/auth/google', async (req, res) => {
         });
       }
     }
-    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '90d' });
+    const token = signToken({ id: user._id, username: user.username });
     audit('google_login_success', { email: user.username }, req);
     res.json({ token, username: user.username, picture: user.picture });
   } catch (err) {
