@@ -660,6 +660,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px; margin-bottom: 24px;
 }
+.flags-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px; margin-bottom: 24px;
+}
+.flag-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+}
+.flag-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.flag-card .flag-emoji { font-size: 32px; line-height: 1; }
+.flag-card .flag-name { font-size: 12px; color: var(--text-primary); text-align: center; font-weight: 500; }
+.flag-card .flag-count { font-size: 11px; color: var(--text-muted); }
+.flag-card.flag-unknown .flag-emoji { opacity: 0.55; }
 .cat-stat-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 16px;
@@ -1478,6 +1493,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <h3 style="font-family:var(--font-display);margin-bottom:16px;">Per Category</h3>
     <div class="category-stats-grid stagger" id="category-stats"></div>
 
+    <h3 style="font-family:var(--font-display);margin-bottom:16px;">🌍 Countries Visited <span id="countries-count" style="font-family:var(--font-body); font-size:14px; color:var(--text-muted); font-weight:400;"></span></h3>
+    <div class="flags-grid stagger" id="countries-flags"></div>
+
     <div class="stats-grid">
       <div class="stats-panel">
         <h3>Rating Distribution</h3>
@@ -2162,6 +2180,41 @@ const COLOR_HEX = {
   'var(--cat-shopping)':'#fb7185','var(--cat-cafe)':'#a3866a',
 };
 const DEFAULT_HEX = '#94a3b8';
+
+// Country name → ISO-2 code. Covers ~120 common English country names + variants.
+// Keys are lowercased; lookups must lowercase the input. Unknown → falls into
+// the "🌍 Other" bucket. Add aliases (USA / United States / U.S.) as separate keys.
+const COUNTRY_CODES = {
+  'portugal':'PT','spain':'ES','france':'FR','germany':'DE','italy':'IT','united kingdom':'GB','uk':'GB','great britain':'GB','england':'GB','scotland':'GB','wales':'GB','northern ireland':'GB',
+  'ireland':'IE','netherlands':'NL','holland':'NL','belgium':'BE','luxembourg':'LU','switzerland':'CH','austria':'AT','denmark':'DK','sweden':'SE','norway':'NO','finland':'FI','iceland':'IS',
+  'poland':'PL','czech republic':'CZ','czechia':'CZ','slovakia':'SK','hungary':'HU','romania':'RO','bulgaria':'BG','greece':'GR','croatia':'HR','slovenia':'SI','serbia':'RS','bosnia and herzegovina':'BA','montenegro':'ME','albania':'AL','north macedonia':'MK','macedonia':'MK','kosovo':'XK','moldova':'MD','ukraine':'UA','belarus':'BY','russia':'RU','russian federation':'RU','estonia':'EE','latvia':'LV','lithuania':'LT','malta':'MT','cyprus':'CY',
+  'united states':'US','united states of america':'US','usa':'US','u.s.':'US','u.s.a.':'US','america':'US','canada':'CA','mexico':'MX','cuba':'CU','dominican republic':'DO','jamaica':'JM','haiti':'HT','puerto rico':'PR','bahamas':'BS','barbados':'BB','trinidad and tobago':'TT',
+  'brazil':'BR','argentina':'AR','chile':'CL','peru':'PE','colombia':'CO','venezuela':'VE','ecuador':'EC','bolivia':'BO','uruguay':'UY','paraguay':'PY','guatemala':'GT','honduras':'HN','el salvador':'SV','nicaragua':'NI','costa rica':'CR','panama':'PA',
+  'morocco':'MA','algeria':'DZ','tunisia':'TN','libya':'LY','egypt':'EG','sudan':'SD','ethiopia':'ET','kenya':'KE','tanzania':'TZ','uganda':'UG','rwanda':'RW','ghana':'GH','nigeria':'NG','senegal':'SN','south africa':'ZA','botswana':'BW','namibia':'NA','zimbabwe':'ZW','mozambique':'MZ','angola':'AO','cape verde':'CV','cabo verde':'CV','madagascar':'MG','mauritius':'MU','seychelles':'SC',
+  'turkey':'TR','türkiye':'TR','israel':'IL','palestine':'PS','jordan':'JO','lebanon':'LB','syria':'SY','iraq':'IQ','iran':'IR','saudi arabia':'SA','united arab emirates':'AE','uae':'AE','qatar':'QA','bahrain':'BH','kuwait':'KW','oman':'OM','yemen':'YE',
+  'china':'CN','hong kong':'HK','macau':'MO','macao':'MO','taiwan':'TW','japan':'JP','south korea':'KR','korea':'KR','north korea':'KP','mongolia':'MN','vietnam':'VN','thailand':'TH','cambodia':'KH','laos':'LA','myanmar':'MM','burma':'MM','malaysia':'MY','singapore':'SG','indonesia':'ID','philippines':'PH','brunei':'BN','timor-leste':'TL','east timor':'TL',
+  'india':'IN','pakistan':'PK','bangladesh':'BD','sri lanka':'LK','nepal':'NP','bhutan':'BT','maldives':'MV','afghanistan':'AF','kazakhstan':'KZ','uzbekistan':'UZ','turkmenistan':'TM','tajikistan':'TJ','kyrgyzstan':'KG','azerbaijan':'AZ','armenia':'AM','georgia':'GE',
+  'australia':'AU','new zealand':'NZ','fiji':'FJ','papua new guinea':'PG','samoa':'WS','tonga':'TO','vanuatu':'VU','solomon islands':'SB',
+};
+function regionToCountryCode(region) {
+  if (!region || typeof region !== 'string') return null;
+  const norm = region.trim().toLowerCase();
+  if (!norm) return null;
+  if (COUNTRY_CODES[norm]) return COUNTRY_CODES[norm];
+  // Try common compound separators: "Lisbon, Portugal" → "portugal"
+  const lastSeg = norm.split(/,\s*/).pop().trim();
+  if (COUNTRY_CODES[lastSeg]) return COUNTRY_CODES[lastSeg];
+  return null;
+}
+function countryCodeToFlag(iso2) {
+  if (!iso2 || iso2.length !== 2) return '';
+  const up = iso2.toUpperCase();
+  // Only A-Z map to regional indicators; reject anything else (XK / unknown)
+  // is handled by callers using the fallback emoji.
+  if (!/^[A-Z]{2}$/.test(up)) return '🏳';
+  return String.fromCodePoint(0x1F1E6 + up.charCodeAt(0) - 65) +
+         String.fromCodePoint(0x1F1E6 + up.charCodeAt(1) - 65);
+}
 
 const PRICE_LEVELS = [
   { value: 1, label: '€', desc: 'Budget' },
@@ -3072,6 +3125,21 @@ function viewCategoryOnMap(category) {
   });
   switchView('map-view');
   applyFilters();
+}
+
+// Pan/zoom the map to fit every visited location belonging to the given ISO-2
+// country code. Used by the Countries-visited flag grid on the stats page.
+function viewCountryOnMap(iso2) {
+  const points = [];
+  for (const l of state.locations) {
+    if (l.needsApproval || l.status !== 'been' || !l._region) continue;
+    if (regionToCountryCode(l._region) !== iso2) continue;
+    if (Number.isFinite(l.lat) && Number.isFinite(l.lng)) points.push([l.lat, l.lng]);
+  }
+  switchView('map-view');
+  if (points.length === 0 || !window.map) return;
+  if (points.length === 1) { map.setView(points[0], 8); return; }
+  map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 9 });
 }
 
 function clearCategoryFilter() {
@@ -4509,6 +4577,53 @@ function renderStats() {
       </div>
     </div>`;
   }).join('');
+
+  // Countries visited — flag grid, derived from loc._region with name→ISO-2 lookup.
+  // Group only `been` locations (visiting != wishlisting). Unknown regions land in
+  // a single "🌍 Other" bucket whose hover-title lists the raw region names.
+  const byCountry = {};
+  const unknownRegions = {};
+  for (const l of state.locations) {
+    if (l.needsApproval || l.status !== 'been' || !l._region) continue;
+    const iso = regionToCountryCode(l._region);
+    if (iso) {
+      if (!byCountry[iso]) byCountry[iso] = { code: iso, name: l._region, count: 0 };
+      byCountry[iso].count++;
+    } else {
+      unknownRegions[l._region] = (unknownRegions[l._region] || 0) + 1;
+    }
+  }
+  const countryRanked = Object.values(byCountry).sort((a, b) => b.count - a.count);
+  const flagsEl = document.getElementById('countries-flags');
+  const countEl = document.getElementById('countries-count');
+  if (flagsEl) {
+    if (countryRanked.length === 0 && Object.keys(unknownRegions).length === 0) {
+      flagsEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;grid-column:1/-1;">No countries visited yet. Mark places as Been to fill your map.</p>';
+      if (countEl) countEl.textContent = '';
+    } else {
+      const cards = countryRanked.map(c =>
+        `<div class="flag-card" onclick="viewCountryOnMap('${esc(c.code)}')" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
+          <span class="flag-emoji" aria-label="${esc(c.name)} flag">${countryCodeToFlag(c.code)}</span>
+          <span class="flag-name">${esc(c.name)}</span>
+          <span class="flag-count">${c.count} place${c.count === 1 ? '' : 's'}</span>
+        </div>`
+      );
+      const unknownEntries = Object.entries(unknownRegions);
+      if (unknownEntries.length > 0) {
+        const totalUnknown = unknownEntries.reduce((sum, [, n]) => sum + n, 0);
+        const titleList = unknownEntries.map(([r, n]) => `${r} (${n})`).join(', ');
+        cards.push(
+          `<div class="flag-card flag-unknown" title="${esc(titleList)}">
+            <span class="flag-emoji">🌍</span>
+            <span class="flag-name">Other</span>
+            <span class="flag-count">${unknownEntries.length} region${unknownEntries.length === 1 ? '' : 's'} · ${totalUnknown} place${totalUnknown === 1 ? '' : 's'}</span>
+          </div>`
+        );
+      }
+      flagsEl.innerHTML = cards.join('');
+      if (countEl) countEl.textContent = `· ${countryRanked.length} countr${countryRanked.length === 1 ? 'y' : 'ies'}`;
+    }
+  }
 
   // Nights by Place — hotel visits aggregated by region
   const nightsRanked = Object.entries(s.nightsByPlace).sort((a,b) => b[1] - a[1]).slice(0, 10);

@@ -57,6 +57,9 @@ const code = [
   extractFunction('computeChronologyMilestones'),
   extractFunction('computeMarkerSize'),
   extractFunction('inferTransitMode'),
+  extractConst('COUNTRY_CODES'),
+  extractFunction('regionToCountryCode'),
+  extractFunction('countryCodeToFlag'),
   extractFunction('computeReplayFrames'),
   extractFunction('pickMarkerEmoji'),
   extractFunction('parseCSVLine'),
@@ -2143,6 +2146,97 @@ describe('deleteTrip single declaration (regression)', () => {
   test('exactly one deleteTrip function declaration (no shadowing duplicate)', () => {
     const matches = indexHtml.match(/function deleteTrip\s*\(/g) || [];
     expect(matches.length).toBe(1);
+  });
+});
+
+// Stats: Countries-visited flag section (2026-05-30)
+describe('regionToCountryCode / countryCodeToFlag', () => {
+  const r2c = (s) => vm.runInContext(`regionToCountryCode(${JSON.stringify(s)})`, ctx);
+  const c2f = (s) => vm.runInContext(`countryCodeToFlag(${JSON.stringify(s)})`, ctx);
+  const codes = vm.runInContext('JSON.stringify(COUNTRY_CODES)', ctx);
+  const COUNTRY_CODES = JSON.parse(codes);
+
+  test('canonical names map to expected ISO-2', () => {
+    expect(r2c('Portugal')).toBe('PT');
+    expect(r2c('Germany')).toBe('DE');
+    expect(r2c('Japan')).toBe('JP');
+    expect(r2c('United States')).toBe('US');
+  });
+
+  test('aliases resolve to the same code', () => {
+    expect(r2c('USA')).toBe('US');
+    expect(r2c('UK')).toBe('GB');
+    expect(r2c('England')).toBe('GB');
+    expect(r2c('Holland')).toBe('NL');
+    expect(r2c('Czechia')).toBe('CZ');
+  });
+
+  test('case-insensitive + trims whitespace', () => {
+    expect(r2c('  portugal  ')).toBe('PT');
+    expect(r2c('PORTUGAL')).toBe('PT');
+    expect(r2c('PoRtUgAl')).toBe('PT');
+  });
+
+  test('compound "City, Country" picks the country', () => {
+    expect(r2c('Lisbon, Portugal')).toBe('PT');
+    expect(r2c('Berlin, Germany')).toBe('DE');
+  });
+
+  test('unknown / empty / non-string returns null (graceful fallback)', () => {
+    expect(r2c('Atlantis')).toBeNull();
+    expect(r2c('')).toBeNull();
+    expect(r2c(null)).toBeNull();
+    expect(r2c(undefined)).toBeNull();
+    expect(r2c(42)).toBeNull();
+  });
+
+  test('countryCodeToFlag produces the regional-indicator flag emoji', () => {
+    expect(c2f('PT')).toBe('🇵🇹');
+    expect(c2f('US')).toBe('🇺🇸');
+    expect(c2f('JP')).toBe('🇯🇵');
+    expect(c2f('pt')).toBe('🇵🇹'); // case-insensitive
+  });
+
+  test('countryCodeToFlag rejects bad input', () => {
+    expect(c2f('')).toBe('');
+    expect(c2f(null)).toBe('');
+    expect(c2f('XYZ')).toBe(''); // wrong length
+    expect(c2f('X1')).toBe('🏳'); // non-letter → white flag fallback
+  });
+
+  test('COUNTRY_CODES covers ≥ 100 entries (sanity)', () => {
+    expect(Object.keys(COUNTRY_CODES).length).toBeGreaterThanOrEqual(100);
+  });
+
+  test('every COUNTRY_CODES value is a 2-letter A-Z code', () => {
+    const bad = Object.entries(COUNTRY_CODES).filter(([, v]) => !/^[A-Z]{2}$/.test(v));
+    expect(bad).toEqual([]);
+  });
+
+  test('all keys are lowercased (so .toLowerCase() lookups always hit)', () => {
+    const wrong = Object.keys(COUNTRY_CODES).filter(k => k !== k.toLowerCase());
+    expect(wrong).toEqual([]);
+  });
+});
+
+// Source-grep invariants for the stats render path
+describe('Countries-visited stats section (source invariants)', () => {
+  test('stats-view has the #countries-flags container right after #category-stats', () => {
+    expect(indexHtml).toMatch(/id="category-stats"[\s\S]{0,500}id="countries-flags"/);
+  });
+
+  test('renderStats writes into #countries-flags and #countries-count', () => {
+    expect(indexHtml).toMatch(/getElementById\(['"]countries-flags['"]\)/);
+    expect(indexHtml).toMatch(/getElementById\(['"]countries-count['"]\)/);
+  });
+
+  test('viewCountryOnMap exists and switches to map-view', () => {
+    expect(indexHtml).toMatch(/function viewCountryOnMap\([\s\S]{0,400}switchView\(['"]map-view['"]\)/);
+  });
+
+  test('flag cards include onclick + aria-label (a11y)', () => {
+    expect(indexHtml).toMatch(/flag-card[\s\S]{0,300}onclick="viewCountryOnMap/);
+    expect(indexHtml).toMatch(/flag-emoji[^>]*aria-label/);
   });
 });
 
