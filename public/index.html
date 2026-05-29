@@ -8506,7 +8506,43 @@ async function submitFr24Import() {
   btn.disabled = true;
   btn.textContent = 'Importing…';
   try {
-    // Chunk by MAX_TRANSITS_PER_BULK (1000) — most users will be well under
+    // 1) Collect unique airports referenced by the resolved transits
+    const airportsByIata = new Map();
+    _fr24ResolvedTransits.forEach(t => {
+      if (t.fromIata && t.fromLat != null && t.fromLng != null) {
+        airportsByIata.set(t.fromIata, { iata: t.fromIata, name: t.fromName || t.fromIata, lat: t.fromLat, lng: t.fromLng });
+      }
+      if (t.toIata && t.toLat != null && t.toLng != null) {
+        airportsByIata.set(t.toIata, { iata: t.toIata, name: t.toName || t.toIata, lat: t.toLat, lng: t.toLng });
+      }
+    });
+    // 2) Dedupe against existing airport locations by IATA
+    const existingByIata = new Map();
+    state.locations.forEach(l => {
+      if (l.category === 'airport' && l.iata) existingByIata.set(String(l.iata).toUpperCase(), l);
+    });
+    const newAirports = [];
+    airportsByIata.forEach((info, iata) => {
+      if (!existingByIata.has(iata)) {
+        newAirports.push({ name: info.name, lat: info.lat, lng: info.lng, iata, category: 'airport', status: 'been' });
+      }
+    });
+    // 3) Bulk-POST new airport stubs (one POST; well under MAX_LOCATIONS_PER_BULK)
+    const iataToLocId = new Map();
+    existingByIata.forEach((l, iata) => iataToLocId.set(iata, l.id || l._id));
+    if (newAirports.length > 0) {
+      const savedLocs = await api('POST', '/locations/bulk', { locations: newAirports });
+      savedLocs.forEach(l => {
+        state.locations.push(mapId(l));
+        if (l.iata) iataToLocId.set(String(l.iata).toUpperCase(), l._id);
+      });
+    }
+    // 4) Attach fromLocationId/toLocationId to each transit before persisting
+    _fr24ResolvedTransits.forEach(t => {
+      if (t.fromIata && iataToLocId.has(t.fromIata)) t.fromLocationId = iataToLocId.get(t.fromIata);
+      if (t.toIata && iataToLocId.has(t.toIata)) t.toLocationId = iataToLocId.get(t.toIata);
+    });
+    // 5) Bulk-POST transits chunked by MAX_TRANSITS_PER_BULK
     const CHUNK = 1000;
     for (let i = 0; i < _fr24ResolvedTransits.length; i += CHUNK) {
       const chunk = _fr24ResolvedTransits.slice(i, i + CHUNK);
@@ -8514,9 +8550,13 @@ async function submitFr24Import() {
       saved.forEach(t => state.transits.push(mapId(t)));
     }
     rebuildIndexes();
+    _renderMarkersPending = true;
     renderTransitsView();
     closeFr24Import();
-    showToast(`Imported ${_fr24ResolvedTransits.length} flight${_fr24ResolvedTransits.length === 1 ? '' : 's'}`, 'success');
+    const flightCount = _fr24ResolvedTransits.length;
+    const newCount = newAirports.length;
+    const airportSuffix = newCount > 0 ? ` · ${newCount} new airport${newCount === 1 ? '' : 's'} added` : '';
+    showToast(`Imported ${flightCount} flight${flightCount === 1 ? '' : 's'}${airportSuffix}`, 'success');
   } catch (err) {
     btn.disabled = false;
     btn.textContent = `Import ${_fr24ResolvedTransits.length} flights`;

@@ -1504,3 +1504,59 @@ describe('Transits a11y + empty-state invariants', () => {
     expect(html).toMatch(/function clearTransitFilters\(\)/);
   });
 });
+
+// ─── Airport stops on FR24 import (2026-05-29 feature) ───
+describe('iata field on locations (allowlist + validation)', () => {
+  test('POST /api/locations accepts valid IATA and uppercases', async () => {
+    const res = await request(app).post('/api/locations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Lisbon Airport', lat: 38.77, lng: -9.13, category: 'airport', iata: 'lis' });
+    expect(res.status).toBe(200);
+    expect(res.body.iata).toBe('LIS');
+  });
+
+  test('POST /api/locations drops malformed IATA', async () => {
+    const res = await request(app).post('/api/locations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Bad', lat: 0, lng: 0, category: 'airport', iata: '<script>alert(1)</script>' });
+    expect(res.status).toBe(200);
+    expect(res.body.iata).toBeUndefined();
+  });
+
+  test('POST /api/locations drops non-string IATA', async () => {
+    const res = await request(app).post('/api/locations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'BadType', lat: 0, lng: 0, category: 'airport', iata: 42 });
+    expect(res.status).toBe(200);
+    expect(res.body.iata).toBeUndefined();
+  });
+
+  test('POST /api/locations drops over-long IATA', async () => {
+    const res = await request(app).post('/api/locations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'TooLong', lat: 0, lng: 0, category: 'airport', iata: 'ABCDEF' });
+    expect(res.status).toBe(200);
+    expect(res.body.iata).toBeUndefined();
+  });
+});
+
+describe('FR24 import auto-creates airport stubs', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+
+  test('submitFr24Import builds airport stubs from resolved transits', () => {
+    // collects unique airports, dedupes by IATA, posts new stubs, links transits
+    expect(html).toMatch(/airportsByIata = new Map\(\)/);
+    expect(html).toMatch(/existingByIata\.has\(iata\)/);
+    expect(html).toMatch(/category: 'airport', status: 'been'/);
+  });
+
+  test('submitFr24Import POSTs to /locations/bulk and sets fromLocationId/toLocationId', () => {
+    expect(html).toMatch(/api\('POST', '\/locations\/bulk', \{ locations: newAirports \}\)/);
+    expect(html).toMatch(/t\.fromLocationId = iataToLocId\.get\(t\.fromIata\)/);
+    expect(html).toMatch(/t\.toLocationId = iataToLocId\.get\(t\.toIata\)/);
+  });
+
+  test('toast reports both flight and new-airport counts', () => {
+    expect(html).toContain('new airport');
+  });
+});

@@ -341,7 +341,7 @@ app.post('/api/locations', auth, async (req, res) => {
 // Excludes _id/userId (ownership) and updatedAt (server-stamped). Also blocks __proto__.
 const LOCATION_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
   'priceLevel','tripId','tripOrder','collections','people','tags','notes','visits','needsApproval',
-  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength'];
+  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength','iata'];
 
 function pickLocationFields(body) {
   const clean = {};
@@ -356,6 +356,15 @@ function sanitizeLocationUpdate(updates) {
   if (updates.bucketStrength !== undefined) {
     const n = parseInt(updates.bucketStrength, 10);
     updates.bucketStrength = isNaN(n) ? 0 : Math.max(0, Math.min(5, n));
+  }
+  if (updates.iata !== undefined) {
+    if (typeof updates.iata === 'string') {
+      const v = updates.iata.toUpperCase();
+      if (/^[A-Z0-9]{2,4}$/.test(v)) updates.iata = v;
+      else delete updates.iata;
+    } else {
+      delete updates.iata;
+    }
   }
   return updates;
 }
