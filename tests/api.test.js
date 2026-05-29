@@ -1147,6 +1147,47 @@ describe('Frontend correctness fixes', () => {
     expect(html).toMatch(/async function deleteTransit[\s\S]{0,300}showConfirm/);
     expect(html).not.toMatch(/async function deleteTransit[\s\S]{0,300}if\s*\(!confirm\(/);
   });
+
+  test('all pinned CDN scripts and styles carry SRI integrity + crossorigin', () => {
+    // The head is small; pin every <script src="https://..."> and
+    // <link rel="stylesheet" href="https://..."> that resolves to a versioned
+    // resource. Google fonts + accounts.google.com rotate, so they're exempt.
+    const head = html.slice(0, html.indexOf('</head>'));
+    const tags = [...head.matchAll(/<(script|link)\b[^>]*\b(src|href)="(https:\/\/[^"]+)"[^>]*>/g)];
+    const pinned = tags.filter(([, , , url]) =>
+      !/fonts\.googleapis\.com|accounts\.google\.com/.test(url)
+    );
+    expect(pinned.length).toBeGreaterThanOrEqual(9);
+    pinned.forEach(([tag]) => {
+      expect(tag).toMatch(/integrity="sha384-/);
+      expect(tag).toMatch(/crossorigin="anonymous"/);
+    });
+  });
+
+  test('transit map re-tiles on theme switch (applyTheme touches _transitBaseTile)', () => {
+    // Init-once singleton would otherwise leave a stale dark tile when the
+    // user switches to parchment mid-session.
+    expect(html).toMatch(/function applyTheme[\s\S]{0,2000}_transitBaseTile/);
+    expect(html).toMatch(/_transitBaseTile\s*=\s*L\.tileLayer\(currentBaseTileUrl\(\)/);
+  });
+
+  test('FR24 preview uses theme-aware color vars, not hardcoded hex', () => {
+    // #4ade80/#f87171 had insufficient contrast on the parchment theme.
+    expect(html).not.toMatch(/\.fr24-preview-table tr\.unresolved td \{ color:#f87171/);
+    expect(html).not.toMatch(/<td style="color:#4ade80;">/);
+    expect(html).toMatch(/<td style="color:var\(--success\);">/);
+  });
+
+  test('FR24 loader shows a spinner and disables file input', () => {
+    expect(html).toMatch(/lazyLoadAirports[\s\S]{0,1500}fr24-spinner/);
+    expect(html).toMatch(/lazyLoadAirports[\s\S]{0,1500}fileInput\.disabled\s*=\s*true/);
+    // Re-enable in a finally so a failed fetch doesn't leave the input locked.
+    expect(html).toMatch(/lazyLoadAirports[\s\S]{0,1500}finally\s*\{[\s\S]{0,200}fileInput\.disabled\s*=\s*false/);
+  });
+
+  test('FR24 error path offers a retry button (no dead-end)', () => {
+    expect(html).toMatch(/handleFr24File[\s\S]{0,2500}Retry/);
+  });
 });
 
 // ─── XSS regression checks ───────────────────────────────

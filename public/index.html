@@ -5,16 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Oikumene — Your Inhabited World</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" integrity="sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+" crossorigin="anonymous" />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" integrity="sha384-Ukv1p/xTma6P4/2bY5KzWBw+ydSpXmhCMtyciIQVDJ1RmOxtCYNMF1uXT9T63H67" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ═══════════════════════════════════════════════════════════ */
@@ -142,7 +142,9 @@ body {
 .fr24-preview-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
 .fr24-preview-table th { text-align:left; padding:6px 8px; background:var(--bg-secondary); color:var(--text-secondary); border-bottom:1px solid var(--border); position:sticky; top:0; }
 .fr24-preview-table td { padding:6px 8px; border-bottom:1px solid var(--border); color:var(--text-primary); }
-.fr24-preview-table tr.unresolved td { color:#f87171; background:rgba(248,113,113,0.08); }
+.fr24-preview-table tr.unresolved td { color:var(--danger); background:rgba(239,68,68,0.08); }
+.fr24-spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation: fr24-spin 0.8s linear infinite; vertical-align:-2px; margin-right:6px; }
+@keyframes fr24-spin { to { transform: rotate(360deg); } }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .btn-icon {
@@ -2066,18 +2068,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-row"><label for="transit-date">Date</label><input id="transit-date" type="date"></div>
       <fieldset style="border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px;"><legend style="color:var(--text-secondary); font-size:12px; padding:0 6px;">From</legend>
         <div class="form-row"><label for="transit-from-name">Name</label><input id="transit-from-name" type="text" placeholder="Lisbon (LIS)"></div>
-        <div class="form-row" style="display:flex; gap:8px;">
-          <label style="flex:1">Lat<input id="transit-from-lat" type="number" step="any"></label>
-          <label style="flex:1">Lng<input id="transit-from-lng" type="number" step="any"></label>
-          <label style="flex:0 0 80px">IATA<input id="transit-from-iata" type="text" maxlength="3" style="text-transform:uppercase;"></label>
+        <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <label style="flex:1 1 110px">Lat<input id="transit-from-lat" type="number" step="any"></label>
+          <label style="flex:1 1 110px">Lng<input id="transit-from-lng" type="number" step="any"></label>
+          <label style="flex:1 1 80px">IATA<input id="transit-from-iata" type="text" maxlength="3" style="text-transform:uppercase;"></label>
         </div>
       </fieldset>
       <fieldset style="border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px;"><legend style="color:var(--text-secondary); font-size:12px; padding:0 6px;">To</legend>
         <div class="form-row"><label for="transit-to-name">Name</label><input id="transit-to-name" type="text" placeholder="New York (JFK)"></div>
-        <div class="form-row" style="display:flex; gap:8px;">
-          <label style="flex:1">Lat<input id="transit-to-lat" type="number" step="any"></label>
-          <label style="flex:1">Lng<input id="transit-to-lng" type="number" step="any"></label>
-          <label style="flex:0 0 80px">IATA<input id="transit-to-iata" type="text" maxlength="3" style="text-transform:uppercase;"></label>
+        <div class="form-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <label style="flex:1 1 110px">Lat<input id="transit-to-lat" type="number" step="any"></label>
+          <label style="flex:1 1 110px">Lng<input id="transit-to-lng" type="number" step="any"></label>
+          <label style="flex:1 1 80px">IATA<input id="transit-to-iata" type="text" maxlength="3" style="text-transform:uppercase;"></label>
         </div>
       </fieldset>
       <div class="form-row" style="display:flex; gap:8px;">
@@ -8091,6 +8093,14 @@ function applyTheme(name) {
       window._activeBaseLayer = target;
     }
   }
+  // Sub-maps are init-once / re-created on view-open; the transit map is the
+  // only one that can be alive across a mid-session theme switch. Re-tile it
+  // to match. (Replay/Trip/Collection sub-maps are re-created on each open
+  // and already use currentBaseTileUrl() at init — no live retile needed.)
+  if (_transitMap && _transitBaseTile) {
+    _transitMap.removeLayer(_transitBaseTile);
+    _transitBaseTile = L.tileLayer(currentBaseTileUrl(), { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_transitMap);
+  }
 }
 
 function cycleTheme() {
@@ -8178,6 +8188,7 @@ let _transitModeFilter = 'all';
 let _transitViewMode = 'list'; // or 'map'
 let _transitMap = null;
 let _transitMapLayers = [];
+let _transitBaseTile = null;
 
 function setTransitModeFilter(mode) {
   _transitModeFilter = mode;
@@ -8281,7 +8292,7 @@ function renderTransitsList(transits) {
 function initTransitMap() {
   if (_transitMap) return;
   _transitMap = L.map('transit-map-container', { zoomControl: true }).setView([30, 0], 2);
-  L.tileLayer(currentBaseTileUrl(), { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_transitMap);
+  _transitBaseTile = L.tileLayer(currentBaseTileUrl(), { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_transitMap);
 }
 
 function clearTransitMapLayers() {
@@ -8437,13 +8448,19 @@ let _fr24ResolvedTransits = [];
 async function lazyLoadAirports() {
   if (_fr24AirportsIndex) return _fr24AirportsIndex;
   const statusEl = document.getElementById('fr24-status');
-  if (statusEl) statusEl.textContent = 'Loading airports database…';
-  const res = await fetch('https://raw.githubusercontent.com/mwgg/Airports/master/airports.json');
-  if (!res.ok) throw new Error('Failed to load airports DB: HTTP ' + res.status);
-  const data = await res.json();
-  _fr24AirportsIndex = buildIataIndex(data);
-  if (statusEl) statusEl.textContent = '';
-  return _fr24AirportsIndex;
+  const fileInput = document.getElementById('fr24-file');
+  if (statusEl) statusEl.innerHTML = '<span class="fr24-spinner" aria-hidden="true"></span>Loading airports database (~3MB)…';
+  if (fileInput) fileInput.disabled = true;
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/mwgg/Airports/master/airports.json');
+    if (!res.ok) throw new Error('Failed to load airports DB: HTTP ' + res.status);
+    const data = await res.json();
+    _fr24AirportsIndex = buildIataIndex(data);
+    if (statusEl) statusEl.textContent = '';
+    return _fr24AirportsIndex;
+  } finally {
+    if (fileInput) fileInput.disabled = false;
+  }
 }
 
 function openFr24Import() {
@@ -8481,18 +8498,24 @@ function setupFr24Dropzone() {
 async function handleFr24File(file) {
   if (!file) return;
   const statusEl = document.getElementById('fr24-status');
+  // Clear any stale preview from a previous attempt so the user isn't
+  // looking at the last successful run while a new file errors out.
+  document.getElementById('fr24-preview').innerHTML = '';
   try {
-    statusEl.textContent = 'Reading file…';
+    statusEl.innerHTML = '<span class="fr24-spinner" aria-hidden="true"></span>Reading file…';
     const text = await file.text();
     _fr24ParsedRows = parseFr24Csv(text);
-    if (_fr24ParsedRows.length === 0) { statusEl.textContent = 'No rows found in CSV'; return; }
+    if (_fr24ParsedRows.length === 0) {
+      statusEl.innerHTML = `No rows found in CSV. <button type="button" class="add-small-btn" onclick="document.getElementById('fr24-file').click()" style="margin-left:6px;">Try another file</button>`;
+      return;
+    }
     const iataIndex = await lazyLoadAirports();
     _fr24ResolvedTransits = [];
     const resolved = _fr24ParsedRows.map(row => resolveFr24Row(row, iataIndex));
     resolved.forEach(r => { if (r.ok) _fr24ResolvedTransits.push(r.transit); });
     renderFr24Preview(resolved);
   } catch (err) {
-    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.innerHTML = `<span style="color:var(--danger);">Error: ${esc(err.message)}.</span> <button type="button" class="add-small-btn" onclick="document.getElementById('fr24-file').click()" style="margin-left:6px;">Retry</button>`;
   }
 }
 
@@ -8505,7 +8528,7 @@ function renderFr24Preview(resolved) {
     const raw = _fr24ParsedRows[i];
     if (r.ok) {
       const t = r.transit;
-      return `<tr><td>${esc(t.date)}</td><td>${esc(t.flightNumber)}</td><td>${esc(t.fromIata)} → ${esc(t.toIata)}</td><td>${esc(t.aircraft || '')}</td><td>${Math.round(t.distanceKm).toLocaleString()} km</td><td style="color:#4ade80;">✓</td></tr>`;
+      return `<tr><td>${esc(t.date)}</td><td>${esc(t.flightNumber)}</td><td>${esc(t.fromIata)} → ${esc(t.toIata)}</td><td>${esc(t.aircraft || '')}</td><td>${Math.round(t.distanceKm).toLocaleString()} km</td><td style="color:var(--success);">✓</td></tr>`;
     }
     return `<tr class="unresolved"><td>${esc(raw.date)}</td><td>${esc(raw.flightNumber)}</td><td>${esc(raw.from)} → ${esc(raw.to)}</td><td colspan="2">${esc(r.reason)}</td><td>✗</td></tr>`;
   }).join('');
