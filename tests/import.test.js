@@ -60,6 +60,7 @@ const code = [
   extractConst('COUNTRY_CODES'),
   extractFunction('regionToCountryCode'),
   extractFunction('countryCodeToFlag'),
+  extractFunction('markerHash'),
   extractFunction('computeReplayFrames'),
   extractFunction('pickMarkerEmoji'),
   extractFunction('parseCSVLine'),
@@ -2216,6 +2217,82 @@ describe('regionToCountryCode / countryCodeToFlag', () => {
   test('all keys are lowercased (so .toLowerCase() lookups always hit)', () => {
     const wrong = Object.keys(COUNTRY_CODES).filter(k => k !== k.toLowerCase());
     expect(wrong).toEqual([]);
+  });
+});
+
+// Marker layer-diff perf (2026-05-30)
+describe('markerHash + incremental renderMarkers', () => {
+  const hash = (loc) => vm.runInContext(`markerHash(${JSON.stringify(loc)})`, ctx);
+
+  test('identical loc produces identical hash', () => {
+    const loc = { lat: 38.71, lng: -9.14, status: 'been', category: 'restaurant', myRating: 4 };
+    expect(hash(loc)).toBe(hash(loc));
+  });
+
+  test('status flip invalidates hash (been ↔ bucket)', () => {
+    const a = { lat: 1, lng: 2, status: 'been', category: 'cafe' };
+    const b = { ...a, status: 'bucket' };
+    expect(hash(a)).not.toBe(hash(b));
+  });
+
+  test('category change invalidates hash', () => {
+    const a = { lat: 1, lng: 2, status: 'been', category: 'restaurant' };
+    const b = { ...a, category: 'hotel' };
+    expect(hash(a)).not.toBe(hash(b));
+  });
+
+  test('lat/lng move invalidates hash', () => {
+    const a = { lat: 1, lng: 2, status: 'been', category: 'park' };
+    const b = { ...a, lat: 1.0001 };
+    expect(hash(a)).not.toBe(hash(b));
+  });
+
+  test('myRating / googleRating / visits affect hash (icon-size inputs)', () => {
+    const base = { lat: 0, lng: 0, status: 'been', category: 'restaurant' };
+    expect(hash(base)).not.toBe(hash({ ...base, myRating: 4 }));
+    expect(hash(base)).not.toBe(hash({ ...base, googleRating: 4.5 }));
+    expect(hash(base)).not.toBe(hash({ ...base, visits: [{}, {}] }));
+  });
+
+  test('needsApproval flips hash', () => {
+    const a = { lat: 0, lng: 0, status: 'been', category: 'restaurant' };
+    expect(hash(a)).not.toBe(hash({ ...a, needsApproval: true }));
+  });
+
+  test('unrelated edits do NOT change hash (description, address, notes)', () => {
+    const a = { lat: 0, lng: 0, status: 'been', category: 'restaurant', myRating: 4 };
+    const b = { ...a, description: 'updated', address: 'new addr', notes: 'edit' };
+    expect(hash(a)).toBe(hash(b));
+  });
+});
+
+// Source-grep invariants for the incremental marker diff
+describe('renderMarkers incremental diff (source invariants)', () => {
+  test('_renderState registry exists with markerById Map', () => {
+    expect(indexHtml).toMatch(/_renderState\s*=\s*\{[\s\S]{0,200}markerById:\s*new Map\(\)/);
+  });
+
+  test('diff path uses markersLayer.removeLayers / addLayers (not clearLayers)', () => {
+    // renderMarkers contains both: a diff branch and a teardown branch with clearLayers
+    const fn = indexHtml.match(/function renderMarkers\(\)[\s\S]*?\n\}/);
+    expect(fn).not.toBeNull();
+    expect(fn[0]).toMatch(/markersLayer\.removeLayers\(/);
+    expect(fn[0]).toMatch(/markersLayer\.addLayers\(/);
+    expect(fn[0]).toMatch(/markersLayer\.clearLayers\(\)/); // teardown branch still uses it
+  });
+
+  test('diff is skipped when mapStyle changes (heat ↔ cluster forces teardown)', () => {
+    expect(indexHtml).toMatch(/styleChanged\s*=\s*state\.mapStyle\s*!==\s*_renderState\.mapStyle/);
+  });
+
+  test('diff is skipped when markerSizeMode changes (all markers must resize)', () => {
+    expect(indexHtml).toMatch(/sizeChanged\s*=\s*state\.markerSizeMode\s*!==\s*_renderState\.markerSizeMode/);
+  });
+
+  test('registry is cleared in teardown branch (no stale entries when switching to heat)', () => {
+    const fn = indexHtml.match(/function renderMarkers\(\)[\s\S]*?\n\}/)[0];
+    // Both clearLayers() and registry.clear() must appear in the teardown path
+    expect(fn).toMatch(/markersLayer\.clearLayers\(\);\s*\n\s*_renderState\.markerById\.clear\(\)/);
   });
 });
 

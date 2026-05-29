@@ -584,8 +584,10 @@ describe('Frontend invariants (code checks)', () => {
     expect(indexHtml).toContain('heatLayer = null;');
   });
 
-  test('renderMarkers has full teardown comment documenting invariants', () => {
-    expect(indexHtml).toContain('INVARIANT (regression fix): renderMarkers MUST fully tear down');
+  test('renderMarkers has teardown invariant comment (cluster ↔ heat / size flip)', () => {
+    // Reworded 2026-05-30 when the incremental diff was added: teardown is now
+    // conditional, but the comment still documents WHEN teardown is required.
+    expect(indexHtml).toContain('MUST fully tear down ALL layers and listeners before rebuilding');
   });
 
   test('renderMarkers defers when map tab is not active', () => {
@@ -596,10 +598,11 @@ describe('Frontend invariants (code checks)', () => {
   });
 
   test('renderMarkers wraps heat operations in try/catch', () => {
-    // Regression: Leaflet.heat throws on _animating when map not visible
+    // Regression: Leaflet.heat throws on _animating when map not visible.
+    // After the diff refactor (2026-05-30) the function grew; widen the window.
     const renderBody = indexHtml.substring(
       indexHtml.indexOf('function renderMarkers()'),
-      indexHtml.indexOf('function renderMarkers()') + 4000
+      indexHtml.indexOf('function renderMarkers()') + 8000
     );
     expect(renderBody).toContain("catch (err)");
     expect(renderBody).toContain("map may not be visible");

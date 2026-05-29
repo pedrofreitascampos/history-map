@@ -2988,14 +2988,38 @@ function _heatZoomHandler() {
   if (z < 10 && map.hasLayer(_individualMarkersLayer)) map.removeLayer(_individualMarkersLayer);
 }
 
-// INVARIANT (regression fix): renderMarkers MUST fully tear down ALL layers and listeners
-// before rebuilding. Every code path must: (1) remove heatLayer, (2) remove _individualMarkersLayer,
-// (3) clear markersLayer, (4) remove zoomend listener. Then rebuild only what's needed.
-// This prevents ghost layers when switching filters or toggling map style.
+// INVARIANT: when switching map style (cluster ↔ heat) OR marker size mode, renderMarkers
+// MUST fully tear down ALL layers and listeners before rebuilding. Required cleanups:
+// (1) remove heatLayer, (2) remove _individualMarkersLayer, (3) clear markersLayer + the
+// _markerById registry, (4) remove zoomend listener. Otherwise ghost layers persist when
+// toggling map style.
 // INVARIANT: heatLayer must be recreated fresh each render (no setOptions/setLatLngs).
 // INVARIANT: all heat/layer operations wrapped in try/catch — map may not be visible
 // when called from Import tab, causing Leaflet.heat _animating null errors.
+// PERF (2026-05-30): when neither mapStyle nor markerSizeMode changed AND we're in cluster
+// mode, do an INCREMENTAL diff: keep already-rendered markers untouched, only add the new
+// IDs and remove the gone IDs. Avoids the O(N) clear-and-rebuild on every filter tweak.
+// Per-loc icon hash detects content changes (status flip, rating edit, etc.) so the marker
+// is rebuilt when its visual depends on changed data.
 let _renderMarkersPending = false;
+const _renderState = { markerById: new Map(), mapStyle: null, markerSizeMode: null };
+// e2e hook: expose registry so Playwright specs can assert that diff updates
+// the live set (no side effects in normal use; the rest of the app reads the
+// const directly).
+if (typeof window !== 'undefined') window._renderState = _renderState;
+
+function markerHash(loc) {
+  return [
+    loc.lat, loc.lng,
+    loc.status, loc.category, loc.needsApproval ? 1 : 0,
+    loc.bucketStrength || 0,
+    loc.myRating || 0,
+    loc.googleRating || 0,
+    loc.userRatingsTotal || 0,
+    (loc.visits || []).length,
+  ].join('|');
+}
+
 function renderMarkers() {
   if (!map) return;
 
@@ -3006,17 +3030,55 @@ function renderMarkers() {
   }
 
   try {
-    // 1. Full teardown — always, regardless of mode
+    const filtered = getFilteredLocations();
+    const styleChanged = state.mapStyle !== _renderState.mapStyle;
+    const sizeChanged = state.markerSizeMode !== _renderState.markerSizeMode;
+
+    // ── INCREMENTAL DIFF (cluster ↔ cluster, no mode flip) ───────────────────
+    if (state.mapStyle !== 'heat' && !styleChanged && !sizeChanged && _renderState.markerById.size > 0) {
+      const newIds = new Set();
+      const toAdd = [];
+      const toRemoveById = new Set();
+      for (const loc of filtered) {
+        newIds.add(loc.id);
+        const sig = markerHash(loc);
+        const existing = _renderState.markerById.get(loc.id);
+        if (!existing) {
+          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          bindMarkerBehavior(m, loc);
+          toAdd.push({ id: loc.id, marker: m, hash: sig });
+        } else if (existing.hash !== sig) {
+          // Content (icon-affecting fields) changed → rebuild this marker
+          toRemoveById.add(loc.id);
+          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          bindMarkerBehavior(m, loc);
+          toAdd.push({ id: loc.id, marker: m, hash: sig });
+        }
+      }
+      const toRemove = [];
+      for (const [id, entry] of _renderState.markerById) {
+        if (!newIds.has(id) || toRemoveById.has(id)) toRemove.push(entry.marker);
+      }
+      if (toRemove.length > 0) markersLayer.removeLayers(toRemove);
+      if (toAdd.length > 0) markersLayer.addLayers(toAdd.map(x => x.marker));
+      // Update registry: drop gone/replaced, add new
+      for (const id of [..._renderState.markerById.keys()]) {
+        if (!newIds.has(id) || toRemoveById.has(id)) _renderState.markerById.delete(id);
+      }
+      for (const x of toAdd) _renderState.markerById.set(x.id, { marker: x.marker, hash: x.hash });
+      return;
+    }
+
+    // ── FULL TEARDOWN (heat mode, mode/size flip, or first render) ───────────
     markersLayer.clearLayers();
+    _renderState.markerById.clear();
     map.off('zoomend', _heatZoomHandler);
     if (_heatLazyHandler) { map.off('zoomend', _heatLazyHandler); _heatLazyHandler = null; }
     if (_individualMarkersLayer) { map.removeLayer(_individualMarkersLayer); _individualMarkersLayer = null; }
     if (heatLayer) { try { map.removeLayer(heatLayer); } catch {} heatLayer = null; }
 
-    const filtered = getFilteredLocations();
-
     if (state.mapStyle === 'heat') {
-      // 2a. Recreate heat layer fresh
+      // Recreate heat layer fresh
       const count = filtered.length || 1;
       const intensity = count <= 3 ? 1.0 : count <= 10 ? 0.7 : count <= 50 ? 0.5 : 0.3;
       heatLayer = L.heatLayer(
@@ -3026,7 +3088,7 @@ function renderMarkers() {
       );
       map.addLayer(heatLayer);
 
-      // 2b. Individual markers: build lazily on first zoom past threshold
+      // Individual markers: build lazily on first zoom past threshold
       const _heatFiltered = filtered;
       _heatLazyHandler = function() {
         if (map.getZoom() < 10) return;
@@ -3047,14 +3109,18 @@ function renderMarkers() {
         map.on('zoomend', _heatLazyHandler);
       }
     } else {
-      // 2c. Cluster mode (default) — batch add for performance
-      const markers = filtered.map(loc => {
-        const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
-        bindMarkerBehavior(marker, loc);
-        return marker;
-      });
+      // Cluster mode — batch add and populate the diff registry
+      const markers = [];
+      for (const loc of filtered) {
+        const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+        bindMarkerBehavior(m, loc);
+        markers.push(m);
+        _renderState.markerById.set(loc.id, { marker: m, hash: markerHash(loc) });
+      }
       markersLayer.addLayers(markers);
     }
+    _renderState.mapStyle = state.mapStyle;
+    _renderState.markerSizeMode = state.markerSizeMode;
   } catch (err) {
     console.warn('renderMarkers error (map may not be visible):', err.message);
   }
