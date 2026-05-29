@@ -1126,6 +1126,27 @@ describe('Frontend correctness fixes', () => {
     // before await. New code: try/catch around await, mutation after success.
     expect(html).not.toMatch(/api\('PUT', '\/locations\/' \+ locId,[^)]+\)\.catch\(\(\) => \{\}\)/);
   });
+
+  test('bulkAddToCollection uses Promise.allSettled (rollback-safe)', () => {
+    // Old code: optimistic mutation + Promise.all (throws on first failure),
+    // no rebuildIndexes before viewCollection — added rows didn't show up.
+    expect(html).toMatch(/bulkAddToCollection[\s\S]{0,2000}Promise\.allSettled/);
+    expect(html).toMatch(/bulkAddToCollection[\s\S]{0,2000}rebuildIndexes\(\)/);
+    // Mutation must happen AFTER the PUT (in the fulfilled branch),
+    // not before the request goes out.
+    expect(html).not.toMatch(/bulkAddToCollection[\s\S]{0,2000}loc\.collections\s*=\s*\[[\s\S]{0,200}api\('PUT'/);
+  });
+
+  test('deleteBulkSelection uses Promise.allSettled (no unhandled rejection)', () => {
+    // Old code: serial `await api('DELETE')` in a loop with no try/catch —
+    // mid-loop failure leaves bulkSelected partially consistent + unhandled rejection.
+    expect(html).toMatch(/function deleteBulkSelection[\s\S]{0,2000}Promise\.allSettled/);
+  });
+
+  test('deleteTransit routes through showConfirm (not native confirm)', () => {
+    expect(html).toMatch(/async function deleteTransit[\s\S]{0,300}showConfirm/);
+    expect(html).not.toMatch(/async function deleteTransit[\s\S]{0,300}if\s*\(!confirm\(/);
+  });
 });
 
 // ─── XSS regression checks ───────────────────────────────

@@ -3415,17 +3415,25 @@ function deleteBulkSelection() {
   if (bulkSelected.size === 0) return;
   const count = bulkSelected.size;
   showConfirm(`Delete ${count} locations? This cannot be undone.`, async () => {
-    for (const locId of bulkSelected) {
-      await api('DELETE', '/locations/' + locId);
-      state.locations = state.locations.filter(l => (l.id || l._id) !== locId);
+    const ids = Array.from(bulkSelected);
+    const results = await Promise.allSettled(ids.map(id => api('DELETE', '/locations/' + id)));
+    const deletedIds = new Set();
+    let failed = 0;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') deletedIds.add(ids[i]);
+      else failed++;
+    });
+    if (deletedIds.size > 0) {
+      state.locations = state.locations.filter(l => !deletedIds.has(l.id || l._id));
     }
-    bulkSelected.clear();
+    deletedIds.forEach(id => bulkSelected.delete(id));
     rebuildIndexes();
     renderBulkList();
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
-    showToast(`${count} locations deleted`);
+    if (failed > 0) showToast(`${deletedIds.size} deleted, ${failed} failed (state preserved)`, 'warn');
+    else showToast(`${deletedIds.size} locations deleted`);
   });
 }
 
@@ -6100,16 +6108,27 @@ function filterColAddList(colId) {
 async function bulkAddToCollection(colId) {
   const checkboxes = document.querySelectorAll('.col-bulk-cb:checked');
   if (checkboxes.length === 0) { showToast('Select at least one location.', 'warn'); return; }
-  const updates = [];
+  const items = [];
   checkboxes.forEach(cb => {
     const loc = stateIndex.locationById.get(cb.value);
-    if (loc) {
-      loc.collections = [...(loc.collections || []), colId];
-      updates.push(api('PUT', '/locations/' + loc.id, { collections: loc.collections }));
+    if (loc && !(loc.collections || []).includes(colId)) {
+      const nextCollections = [...(loc.collections || []), colId];
+      items.push({ loc, nextCollections });
     }
   });
-  await Promise.all(updates);
+  if (items.length === 0) { viewCollection(colId); return; }
+  const results = await Promise.allSettled(
+    items.map(it => api('PUT', '/locations/' + it.loc.id, { collections: it.nextCollections }))
+  );
+  let ok = 0, failed = 0;
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') { items[i].loc.collections = items[i].nextCollections; ok++; }
+    else failed++;
+  });
+  rebuildIndexes();
   viewCollection(colId);
+  if (failed > 0) showToast(`${ok} added, ${failed} failed (state preserved)`, 'warn');
+  else if (ok > 0) showToast(`Added ${ok} to collection`);
 }
 
 // ── Collection: unified search (single or multi, comma-separated) ──
@@ -8309,7 +8328,8 @@ function renderTransitsMap(transits) {
 }
 
 async function deleteTransit(id) {
-  if (!confirm('Delete this transit?')) return;
+  const confirmed = await showConfirm('Delete this transit?');
+  if (!confirmed) return;
   try {
     await api('DELETE', '/transits/' + id);
     state.transits = state.transits.filter(t => t.id !== id);
