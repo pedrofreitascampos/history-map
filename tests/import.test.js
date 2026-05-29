@@ -1873,6 +1873,25 @@ describe('parseFr24Csv', () => {
     const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
     expect(rows).toHaveLength(1);
   });
+
+  // Regression (2026-05-30): real FR24 export now has an Airline column at
+  // index 7, shifting Aircraft → 8, Registration → 9, Seat → 10, Note → 14.
+  // Parser must auto-detect the airline column and align downstream fields,
+  // otherwise the "Aircraft" field receives "Norwegian Air International (D8/IBK)".
+  // Plus: leading blank line, HH:MM:SS duration, (IATA/ICAO) paired form.
+  test('handles real FR24 export (Airline column + HH:MM:SS + IATA/ICAO + leading blank)', () => {
+    const csv = `\nDate,"Flight number",From,To,"Dep time","Arr time",Duration,Airline,Aircraft,Registration,"Seat number","Seat type","Flight class","Flight reason",Note,Dep_id,Arr_id,Airline_id,Aircraft_id\n2018-12-02,D83302,"Copenhagen / Kastrup (CPH/EKCH)","Berlin / Schonefeld (SXF/EDDB)",15:25:00,16:25:00,01:00:00,"Norwegian Air International (D8/IBK)","Boeing 737-800 (B738)",,,0,0,0,,606,2828,1644,231`;
+    const rows = vm.runInContext(`parseFr24Csv(${JSON.stringify(csv)})`, ctx);
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(r.date).toBe('2018-12-02');
+    expect(r.flightNumber).toBe('D83302');
+    expect(r.from).toBe('Copenhagen / Kastrup (CPH/EKCH)');
+    expect(r.to).toBe('Berlin / Schonefeld (SXF/EDDB)');
+    expect(r.duration).toBe('01:00:00');
+    expect(r.aircraft).toBe('Boeing 737-800 (B738)');  // NOT "Norwegian Air International..."
+    expect(r.airline).toBe('Norwegian Air International (D8/IBK)');
+  });
 });
 
 describe('extractIata', () => {
@@ -1882,6 +1901,20 @@ describe('extractIata', () => {
   test('extracts from bare 3-letter lowercase', () => { expect(ex('jfk')).toBe('JFK'); });
   test('returns null for unmatchable', () => { expect(ex('Some Place')).toBe(null); });
   test('returns null for empty', () => { expect(ex('')).toBe(null); });
+
+  // Regression (2026-05-30): real FR24 export uses "Name (IATA/ICAO)" paired
+  // form, e.g. "Copenhagen / Kastrup (CPH/EKCH)". The old regex required just
+  // "(XXX)" so every row failed → 0 flights imported.
+  test('extracts IATA from (IATA/ICAO) paired form (real FR24 export)', () => {
+    expect(ex('Copenhagen / Kastrup (CPH/EKCH)')).toBe('CPH');
+    expect(ex('Berlin / Schonefeld (SXF/EDDB)')).toBe('SXF');
+    expect(ex('Amsterdam / Schiphol (AMS/EHAM)')).toBe('AMS');
+    expect(ex('Boston / Logan (BOS/KBOS)')).toBe('BOS');
+  });
+
+  test('paired form is robust to trailing whitespace', () => {
+    expect(ex('Lisbon (LIS/LPPT)   ')).toBe('LIS');
+  });
 });
 
 describe('normalizeDate', () => {
@@ -1900,6 +1933,13 @@ describe('parseDurationMinutes', () => {
   test('12:00 → 720', () => { expect(pd('12:00')).toBe(720); });
   test('returns null for garbage', () => { expect(pd('garbage')).toBe(null); });
   test('returns null for empty', () => { expect(pd('')).toBe(null); });
+
+  // Regression (2026-05-30): real FR24 export uses HH:MM:SS not HH:MM.
+  test('accepts HH:MM:SS (real FR24 export form)', () => {
+    expect(pd('01:00:00')).toBe(60);
+    expect(pd('07:15:30')).toBe(435); // seconds truncated
+    expect(pd('00:45:00')).toBe(45);
+  });
 });
 
 describe('buildIataIndex', () => {
@@ -1950,6 +1990,25 @@ describe('resolveFr24Row', () => {
     const r = resolve({ from: 'Some Place', to: 'JFK' });
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/origin/i);
+  });
+
+  // End-to-end regression (2026-05-30): real FR24 export rows must resolve
+  // even though airports use "(IATA/ICAO)" paired form.
+  test('resolves a real FR24 paired-form row', () => {
+    const idx2 = {
+      CPH: { iata: 'CPH', name: 'Copenhagen', lat: 55.6180, lon: 12.6508 },
+      SXF: { iata: 'SXF', name: 'Berlin Schonefeld', lat: 52.3800, lon: 13.5225 },
+    };
+    const row = { date: '2018-12-02', flightNumber: 'D83302',
+      from: 'Copenhagen / Kastrup (CPH/EKCH)',
+      to: 'Berlin / Schonefeld (SXF/EDDB)',
+      duration: '01:00:00', aircraft: 'Boeing 737-800 (B738)', seat: '', note: '', registration: '' };
+    const r = vm.runInContext(`resolveFr24Row(${JSON.stringify(row)}, ${JSON.stringify(idx2)})`, ctx);
+    expect(r.ok).toBe(true);
+    expect(r.transit.fromIata).toBe('CPH');
+    expect(r.transit.toIata).toBe('SXF');
+    expect(r.transit.durationMin).toBe(60);
+    expect(r.transit.aircraft).toBe('Boeing 737-800 (B738)');
   });
 });
 
