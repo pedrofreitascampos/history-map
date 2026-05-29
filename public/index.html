@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Oikumene — Your Inhabited World</title>
+<title>Oikumene · Your Inhabited World</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="anonymous" />
@@ -1332,6 +1332,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="trips-view" onclick="switchView('trips-view')">
       🧳 <span class="tab-label">Trips</span>
     </button>
+    <button class="nav-tab" data-view="transits-view" onclick="switchView('transits-view')">
+      ✈ <span class="tab-label">Transits</span>
+    </button>
     <button class="nav-tab" data-view="collections-view" onclick="switchView('collections-view')">
       🏆 <span class="tab-label">Collections</span>
     </button>
@@ -1344,9 +1347,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
       📥 <span class="tab-label">Import</span>
       <span class="badge" id="approval-badge" style="display:none">0</span>
-    </button>
-    <button class="nav-tab" data-view="transits-view" onclick="switchView('transits-view')">
-      ✈ <span class="tab-label">Transits</span>
     </button>
   </nav>
 
@@ -1741,7 +1741,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div id="approval-list" class="approval-grid"></div>
     </div>
   </div>
-</div>
 
 <!-- ═══════════════════════ TRANSITS VIEW ═══════════════════════ -->
 <div id="transits-view" class="view" style="flex-direction:column; overflow-y:auto; padding:20px;">
@@ -1774,6 +1773,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div id="transit-list-container"></div>
   <div id="transit-map-container" style="display:none; height:calc(100vh - 260px); min-height:320px; border-radius:8px; overflow:hidden;"></div>
 </div>
+</div><!-- /#app -->
 
 <!-- ═══════════════════════ EDIT MODAL ═══════════════════════ -->
 <div class="modal-overlay" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">

@@ -1321,6 +1321,46 @@ describe('Replay play button disabled invariant', () => {
   });
 });
 
+// ─── DOM structure: every .view must live inside #app ────
+// Regression guard: transits-view was added outside #app, so it
+// rendered at viewport top=0 underneath the position:fixed topbar,
+// making "+ Add Transit" and "📥 Import FR24" unclickable.
+describe('DOM structure — views nested under #app', () => {
+  const { JSDOM } = require('jsdom');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+
+  test('#app exists and is the .view ancestor for every view', () => {
+    const app = doc.getElementById('app');
+    expect(app).not.toBeNull();
+    const views = doc.querySelectorAll('.view');
+    expect(views.length).toBeGreaterThan(0);
+    const orphans = [];
+    views.forEach(v => {
+      if (!app.contains(v)) orphans.push(v.id || '(no id)');
+    });
+    expect(orphans).toEqual([]);
+  });
+
+  test('#transits-view specifically is a descendant of #app (regression for 27a6bf77)', () => {
+    const app = doc.getElementById('app');
+    const transits = doc.getElementById('transits-view');
+    expect(transits).not.toBeNull();
+    expect(app.contains(transits)).toBe(true);
+  });
+
+  test('nav tab order: Trips → Transits → Collections (user-requested 2026-05-30)', () => {
+    const tabs = Array.from(doc.querySelectorAll('.nav-tab')).map(t => t.dataset.view);
+    const trips = tabs.indexOf('trips-view');
+    const transits = tabs.indexOf('transits-view');
+    const collections = tabs.indexOf('collections-view');
+    expect(trips).toBeGreaterThanOrEqual(0);
+    expect(transits).toBe(trips + 1);
+    expect(collections).toBe(transits + 1);
+  });
+});
+
 // ─── Transits ────────────────────────────────────────────
 describe('Transits', () => {
   let transitToken;
