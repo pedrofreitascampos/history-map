@@ -1248,6 +1248,32 @@ describe('Frontend correctness fixes', () => {
     // Must NOT use api() — a 401 there would recursively trigger logout().
     expect(html).not.toMatch(/function logout\(\)[\s\S]{0,800}api\('POST', '\/auth\/logout'/);
   });
+
+  test('replay engine handles both visit and transit frame kinds', () => {
+    // computeReplayFrames signature now takes trips + transits.
+    expect(html).toMatch(/function computeReplayFrames\(locations, trips, transits, filters\)/);
+    // replayTick branches on kind for animation.
+    expect(html).toMatch(/function replayTick\(\)[\s\S]{0,500}frame\.kind === 'transit'/);
+    // buildReplayMarker returns null for transit frames (they animate, not drop).
+    expect(html).toMatch(/function buildReplayMarker[\s\S]{0,200}frame\.kind === 'transit'[\s\S]{0,40}return null/);
+  });
+
+  test('replay path uses mode-shape: flight = great-circle arc, ground = straight', () => {
+    expect(html).toMatch(/function replayTransitPathSegments[\s\S]{0,400}greatCircleArc/);
+    expect(html).toMatch(/function replayTransitPathSegments[\s\S]{0,400}splitAntiMeridian/);
+  });
+
+  test('realistic-routes toggle wires OSRM prefetch into playReplay', () => {
+    expect(html).toMatch(/<input id="replay-realistic-routes" type="checkbox"/);
+    expect(html).toMatch(/async function playReplay[\s\S]{0,800}realisticRoutes[\s\S]{0,200}prefetchReplayRoutes/);
+    expect(html).toMatch(/async function prefetchReplayRoutes[\s\S]{0,1500}router\.project-osrm\.org/);
+  });
+
+  test('heuristic transit-mode helper exposes <30 / <500 / >=500 buckets', () => {
+    // Distance bands chosen so a car/train/flight call all hit deterministic
+    // arms. Asserts the constants haven't drifted out of the source.
+    expect(html).toMatch(/function inferTransitMode\(distKm\)\s*\{\s*if \(distKm < 30\) return 'car';\s*if \(distKm < 500\) return 'train';\s*return 'flight';/);
+  });
 });
 
 // ─── XSS regression checks ───────────────────────────────

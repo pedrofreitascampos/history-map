@@ -56,6 +56,7 @@ const code = [
   extractFunction('computeTripStats'),
   extractFunction('computeChronologyMilestones'),
   extractFunction('computeMarkerSize'),
+  extractFunction('inferTransitMode'),
   extractFunction('computeReplayFrames'),
   extractFunction('pickMarkerEmoji'),
   extractFunction('parseCSVLine'),
@@ -1622,6 +1623,136 @@ describe('computeReplayFrames', () => {
   it('falls back to _id when id is missing (legacy NeDB)', () => {
     const out = run([{ _id: 'nedb1', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] }]);
     expect(out[0].id).toBe('nedb1');
+  });
+
+  it('tags visit frames with kind:visit', () => {
+    const out = run([{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', visits: [{ date: '2024-01-01' }] }]);
+    expect(out[0].kind).toBe('visit');
+  });
+});
+
+describe('computeReplayFrames — transits + heuristic', () => {
+  const runFull = (locs, trips, transits, filters) => vm.runInContext(
+    `computeReplayFrames(${JSON.stringify(locs)}, ${JSON.stringify(trips)}, ${JSON.stringify(transits)}, ${JSON.stringify(filters || null)})`,
+    ctx
+  );
+
+  it('interleaves explicit transits with visits by date', () => {
+    const out = runFull(
+      [
+        { id: 'lis', name: 'Lisbon', lat: 38.7, lng: -9.1, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-01' }] },
+        { id: 'jfk', name: 'NYC',    lat: 40.7, lng: -74.0, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-03' }] },
+      ],
+      [{ id: 't1', name: 'Trip 1' }],
+      [{ id: 'tr1', mode: 'flight', tripId: 't1', date: '2024-06-02', fromLat: 38.7, fromLng: -9.1, toLat: 40.7, toLng: -74.0, fromName: 'LIS', toName: 'JFK' }],
+    );
+    expect(out.length).toBe(3);
+    expect(out.map(f => f.kind)).toEqual(['visit', 'transit', 'visit']);
+    expect(out[1].mode).toBe('flight');
+    expect(out[1].fromName).toBe('LIS');
+  });
+
+  it('visit < transit when sharing a date (tie-break)', () => {
+    const out = runFull(
+      [{ id: 'a', name: 'A', lat: 1, lng: 2, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-01-01' }] }],
+      [{ id: 't1' }],
+      [{ id: 't', mode: 'car', tripId: 't1', date: '2024-01-01', fromLat: 1, fromLng: 2, toLat: 3, toLng: 4 }],
+    );
+    expect(out[0].kind).toBe('visit');
+    expect(out[1].kind).toBe('transit');
+  });
+
+  it('synthesizes heuristic transits between same-trip consecutive visits', () => {
+    // 38.7,-9.1 → 41.15,-8.6 is ~270km, mid-range → train
+    const out = runFull(
+      [
+        { id: 'lis', name: 'Lisbon', lat: 38.7,  lng: -9.1, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-01' }] },
+        { id: 'opo', name: 'Porto',  lat: 41.15, lng: -8.6, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-03' }] },
+      ],
+      [{ id: 't1' }],
+      [],
+    );
+    const synthetic = out.find(f => f.kind === 'transit' && f.synthetic);
+    expect(synthetic).toBeTruthy();
+    expect(synthetic.mode).toBe('train');
+    expect(synthetic.tripId).toBe('t1');
+  });
+
+  it('does not synthesize when an explicit transit already links the stops', () => {
+    const out = runFull(
+      [
+        { id: 'lis', name: 'Lisbon', lat: 38.7, lng: -9.1, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-01' }] },
+        { id: 'jfk', name: 'NYC',    lat: 40.7, lng: -74.0, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-06-03' }] },
+      ],
+      [{ id: 't1' }],
+      [{ id: 'tr1', mode: 'flight', tripId: 't1', date: '2024-06-03', fromLat: 38.7, fromLng: -9.1, toLat: 40.7, toLng: -74.0 }],
+    );
+    const transitFrames = out.filter(f => f.kind === 'transit');
+    expect(transitFrames.length).toBe(1);
+    expect(transitFrames[0].synthetic).toBe(false);
+  });
+
+  it('does not synthesize across trips (only within a trip)', () => {
+    const out = runFull(
+      [
+        { id: 'a', name: 'A', lat: 38, lng: -9,  category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-01-01' }] },
+        { id: 'b', name: 'B', lat: 48, lng:  2,  category: 'cafe', status: 'been', tripId: 't2', visits: [{ date: '2024-02-01' }] },
+      ],
+      [{ id: 't1' }, { id: 't2' }],
+      [],
+    );
+    expect(out.filter(f => f.kind === 'transit')).toEqual([]);
+  });
+
+  it('heuristic picks car for <30km, train for <500km, flight for >=500km', () => {
+    const distCases = [
+      // ~5km
+      { lat1: 38.70, lng1: -9.10, lat2: 38.72, lng2: -9.05, expected: 'car' },
+      // ~300km
+      { lat1: 38.70, lng1: -9.10, lat2: 41.30, lng2: -8.50, expected: 'train' },
+      // >5000km
+      { lat1: 38.70, lng1: -9.10, lat2: 40.70, lng2: -74.0, expected: 'flight' },
+    ];
+    distCases.forEach(c => {
+      const out = runFull(
+        [
+          { id: 'a', name: 'A', lat: c.lat1, lng: c.lng1, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-01-01' }] },
+          { id: 'b', name: 'B', lat: c.lat2, lng: c.lng2, category: 'cafe', status: 'been', tripId: 't1', visits: [{ date: '2024-01-02' }] },
+        ],
+        [{ id: 't1' }],
+        [],
+      );
+      const syn = out.find(f => f.kind === 'transit' && f.synthetic);
+      expect(syn?.mode).toBe(c.expected);
+    });
+  });
+
+  it('back-compat: (locations, filters) signature still works', () => {
+    // Older call sites passed only two args. The shim must accept this.
+    const out = vm.runInContext(
+      `computeReplayFrames([{id:'a',name:'A',lat:1,lng:2,category:'cafe',status:'been',visits:[{date:'2024-01-01'}]}], { year: '2024' })`,
+      ctx,
+    );
+    expect(out.length).toBe(1);
+    expect(out[0].kind).toBe('visit');
+  });
+
+  it('skips transits with invalid coords', () => {
+    const out = runFull(
+      [],
+      [],
+      [{ id: 't', mode: 'flight', date: '2024-01-01', fromLat: null, fromLng: -9, toLat: 40, toLng: -74 }],
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('skips transits without a date', () => {
+    const out = runFull(
+      [],
+      [],
+      [{ id: 't', mode: 'flight', fromLat: 1, fromLng: 2, toLat: 3, toLng: 4 }],
+    );
+    expect(out).toEqual([]);
   });
 });
 

@@ -1535,6 +1535,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <button class="replay-speed-btn" data-speed="10" onclick="setReplaySpeed(10)">10×</button>
         </div>
       </div>
+      <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input id="replay-realistic-routes" type="checkbox" onchange="setReplayRealisticRoutes(this.checked)" style="cursor:pointer;">
+          Realistic road routes
+        </label>
+        <span title="Fetches each ground leg from OSRM at play time. Adds 1–3s per leg and may rate-limit on long replays." style="color:var(--text-muted);font-size:11px;">⚠ slower, network</span>
+        <span id="replay-route-status" style="margin-left:auto;color:var(--text-muted);font-size:11px;"></span>
+      </div>
     </div>
     <div class="timeline" id="timeline"></div>
   </div>
@@ -4738,9 +4746,27 @@ function computeChronologyMilestones(locations, trips) {
   return { firstVisit, yearStats };
 }
 
-function computeReplayFrames(locations, filters) {
+// Distance-based heuristic for synthesizing a transit mode between two
+// visits in the same trip when no logged transit links them.
+function inferTransitMode(distKm) {
+  if (distKm < 30) return 'car';
+  if (distKm < 500) return 'train';
+  return 'flight';
+}
+
+function computeReplayFrames(locations, trips, transits, filters) {
+  // Back-compat shim: older callers passed (locations, filters). Detect by
+  // shape — if trips is an object with year/category/trip keys (or undefined
+  // and transits is also undefined), treat trips as filters.
+  if (trips && !Array.isArray(trips) && transits === undefined && filters === undefined) {
+    filters = trips; trips = []; transits = [];
+  }
+  trips = trips || [];
+  transits = transits || [];
   const { year, category, trip } = filters || {};
-  const frames = [];
+
+  // 1) Visit frames (unchanged shape; kind tag added).
+  const visitFrames = [];
   for (const loc of locations) {
     if (loc.status !== 'been' || loc.needsApproval) continue;
     if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number') continue;
@@ -4749,7 +4775,8 @@ function computeReplayFrames(locations, filters) {
     for (const v of (loc.visits || [])) {
       if (!v.date) continue;
       if (year && !v.date.startsWith(year)) continue;
-      frames.push({
+      visitFrames.push({
+        kind: 'visit',
         id: loc.id || loc._id,
         name: loc.name,
         lat: loc.lat,
@@ -4760,8 +4787,101 @@ function computeReplayFrames(locations, filters) {
       });
     }
   }
-  frames.sort((a, b) => a.date.localeCompare(b.date));
-  return frames;
+
+  // 2) Transit frames. Filter by trip and year (transits have no category).
+  const transitFrames = [];
+  for (const t of transits) {
+    if (!t.date) continue;
+    if (typeof t.fromLat !== 'number' || typeof t.fromLng !== 'number') continue;
+    if (typeof t.toLat !== 'number' || typeof t.toLng !== 'number') continue;
+    if (year && !t.date.startsWith(year)) continue;
+    if (trip && t.tripId !== trip) continue;
+    transitFrames.push({
+      kind: 'transit',
+      id: t.id || t._id || `t-${transitFrames.length}`,
+      mode: t.mode || 'flight',
+      fromLat: t.fromLat, fromLng: t.fromLng,
+      toLat: t.toLat, toLng: t.toLng,
+      fromName: t.fromName || '', toName: t.toName || '',
+      date: t.date,
+      tripId: t.tripId || null,
+      synthetic: false,
+    });
+  }
+
+  // 3) Heuristic: between consecutive visits in the same trip with no logged
+  // transit on the same day, synthesize one so the replay has motion to show.
+  // Indexed by tripId for cheap lookup; dedupe so two same-trip same-day visits
+  // don't double-emit (the explicit transit, if any, will already be in the set).
+  if (trips.length > 0) {
+    const visitsByTrip = new Map();
+    for (const f of visitFrames) {
+      if (!f.tripId) continue;
+      if (!visitsByTrip.has(f.tripId)) visitsByTrip.set(f.tripId, []);
+      visitsByTrip.get(f.tripId).push(f);
+    }
+    // Dedupe key is tripId + endpoint pair (date excluded — explicit transits
+    // can be logged on any day between the two visits and still be the same leg).
+    const endpointKey = (tripId, fromLat, fromLng, toLat, toLng) =>
+      `${tripId}|${Math.round(fromLat*10)},${Math.round(fromLng*10)}->${Math.round(toLat*10)},${Math.round(toLng*10)}`;
+    const explicitKeys = new Set(transitFrames.map(t =>
+      endpointKey(t.tripId, t.fromLat, t.fromLng, t.toLat, t.toLng)
+    ));
+    for (const [tripId, vs] of visitsByTrip) {
+      vs.sort((a, b) => a.date.localeCompare(b.date));
+      for (let i = 0; i < vs.length - 1; i++) {
+        const v1 = vs[i], v2 = vs[i + 1];
+        if (v1.id === v2.id && v1.lat === v2.lat && v1.lng === v2.lng) continue;
+        const distKm = haversineKm(v1.lat, v1.lng, v2.lat, v2.lng);
+        if (distKm < 1) continue;
+        const mode = inferTransitMode(distKm);
+        if (explicitKeys.has(endpointKey(tripId, v1.lat, v1.lng, v2.lat, v2.lng))) continue;
+        transitFrames.push({
+          kind: 'transit',
+          id: `syn-${tripId}-${i}`,
+          mode,
+          fromLat: v1.lat, fromLng: v1.lng,
+          toLat: v2.lat, toLng: v2.lng,
+          fromName: v1.name, toName: v2.name,
+          date: v2.date,
+          tripId,
+          synthetic: true,
+        });
+      }
+    }
+  }
+
+  // 4) Merge + sort. Tie-break: visits land before transits on the same date,
+  // since a transit ON 2026-05-29 departs after the day's first visit.
+  const all = [...visitFrames, ...transitFrames];
+  all.sort((a, b) => {
+    const c = a.date.localeCompare(b.date);
+    if (c !== 0) return c;
+    return (a.kind === 'visit' ? 0 : 1) - (b.kind === 'visit' ? 0 : 1);
+  });
+  return all;
+}
+
+// Polyline points for a transit frame. Flight = great-circle arc (multiple
+// segments across the anti-meridian); ground = straight line OR pre-fetched
+// OSRM route when realistic-mode is on.
+function replayTransitPathSegments(frame) {
+  if (frame.routeCoords && frame.routeCoords.length >= 2) return [frame.routeCoords];
+  if (frame.mode === 'flight') {
+    const arc = greatCircleArc(frame.fromLat, frame.fromLng, frame.toLat, frame.toLng, 64);
+    return splitAntiMeridian(arc).filter(seg => seg.length >= 2);
+  }
+  return [[[frame.fromLat, frame.fromLng], [frame.toLat, frame.toLng]]];
+}
+
+// Flatten segments into a single sequence of points for the moving icon.
+// Anti-meridian splits show as a "jump" in the marker — acceptable, since
+// flights crossing the dateline visually warp anyway.
+function replayTransitFlatPath(frame) {
+  const segs = replayTransitPathSegments(frame);
+  const flat = [];
+  for (const seg of segs) for (const p of seg) flat.push(p);
+  return flat;
 }
 
 function renderChronology() {
@@ -4902,10 +5022,13 @@ const replayState = {
   speed: 2,
   baseDelayMs: 500,
   timerId: null,
+  animTimerId: null,
+  animMarker: null,
   map: null,
   markersLayer: null,
   polylineLayer: null,
   panelOpen: false,
+  realisticRoutes: false,
   pathLines: { old: null, mid: null, recent: null },
   lastBoundaries: { oldEnd: -1, midEnd: -1, total: -1 },
 };
@@ -4946,7 +5069,7 @@ function rebuildReplayFrames() {
     category: catEl ? catEl.value || null : null,
     trip: tripEl ? tripEl.value || null : null,
   };
-  replayState.frames = computeReplayFrames(state.locations, filters);
+  replayState.frames = computeReplayFrames(state.locations, state.trips, state.transits, filters);
   replayState.currentIdx = -1;
   replayState.renderedUpTo = -1;
   replayState.pathLines = { old: null, mid: null, recent: null };
@@ -4956,13 +5079,27 @@ function rebuildReplayFrames() {
   scrubber.value = 0;
   if (replayState.markersLayer) replayState.markersLayer.clearLayers();
   if (replayState.polylineLayer) replayState.polylineLayer.clearLayers();
+  clearReplayAnim();
   updateReplayPositionLabel();
   if (replayState.frames.length && replayState.map) {
-    const bounds = L.latLngBounds(replayState.frames.map(f => [f.lat, f.lng]));
-    replayState.map.fitBounds(bounds, { padding: [40, 40] });
+    // fitBounds spans both visit lat/lng and transit endpoints.
+    const pts = [];
+    for (const f of replayState.frames) {
+      if (f.kind === 'transit') { pts.push([f.fromLat, f.fromLng]); pts.push([f.toLat, f.toLng]); }
+      else { pts.push([f.lat, f.lng]); }
+    }
+    if (pts.length) replayState.map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
   }
   const playBtn = document.getElementById('replay-play-btn');
   if (playBtn) playBtn.disabled = replayState.frames.length === 0;
+}
+
+function clearReplayAnim() {
+  if (replayState.animTimerId) { clearInterval(replayState.animTimerId); replayState.animTimerId = null; }
+  if (replayState.animMarker && replayState.markersLayer) {
+    replayState.markersLayer.removeLayer(replayState.animMarker);
+  }
+  replayState.animMarker = null;
 }
 
 function toggleReplayPlay() {
@@ -4971,7 +5108,7 @@ function toggleReplayPlay() {
   else playReplay();
 }
 
-function playReplay() {
+async function playReplay() {
   if (replayState.frames.length === 0) return;
   if (replayState.currentIdx >= replayState.frames.length - 1) {
     replayState.currentIdx = -1;
@@ -4981,15 +5118,68 @@ function playReplay() {
     if (replayState.markersLayer) replayState.markersLayer.clearLayers();
     if (replayState.polylineLayer) replayState.polylineLayer.clearLayers();
   }
+  if (replayState.realisticRoutes) {
+    // Pre-fetch road routes for ground transit frames without cached coords.
+    // Fire-and-await before pressing play so the animation isn't stuttery.
+    await prefetchReplayRoutes();
+  }
   replayState.isPlaying = true;
   const btn = document.getElementById('replay-play-btn');
   if (btn) btn.textContent = '⏸';
   scheduleNextReplayTick();
 }
 
+function setReplayRealisticRoutes(enabled) {
+  replayState.realisticRoutes = !!enabled;
+  // Invalidate the cached routeCoords so toggling re-prefetches if needed.
+  // (Cheaper than recomputing here — prefetch runs lazily on next play.)
+  if (!enabled) {
+    for (const f of replayState.frames) {
+      if (f.kind === 'transit' && f.mode !== 'flight') f.routeCoords = null;
+    }
+  }
+}
+
+// Fetch OSRM driving routes for ground transit frames (car/bus). Concurrency
+// capped at 4 — the public OSRM endpoint rate-limits aggressively. Failures
+// fall back silently to the straight-line path used by mode-shaped mode.
+async function prefetchReplayRoutes() {
+  const targets = replayState.frames.filter(f =>
+    f.kind === 'transit' && f.mode !== 'flight' && f.mode !== 'ferry' && !f.routeCoords
+  );
+  if (targets.length === 0) return;
+  const statusEl = document.getElementById('replay-route-status');
+  if (statusEl) statusEl.textContent = `Loading ${targets.length} route${targets.length === 1 ? '' : 's'}…`;
+  let done = 0;
+  const fetchOne = async (f) => {
+    try {
+      const coords = `${f.fromLng},${f.fromLat};${f.toLng},${f.toLat}`;
+      const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?geometries=geojson&overview=full`);
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes?.[0]) {
+        f.routeCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      }
+    } catch {}
+    done++;
+    if (statusEl) statusEl.textContent = `Loading ${done} / ${targets.length} routes…`;
+  };
+  const MAX_CONCURRENT = 4;
+  let idx = 0;
+  const workers = Array(Math.min(MAX_CONCURRENT, targets.length)).fill(0).map(async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= targets.length) return;
+      await fetchOne(targets[i]);
+    }
+  });
+  await Promise.all(workers);
+  if (statusEl) statusEl.textContent = '';
+}
+
 function pauseReplay() {
   replayState.isPlaying = false;
   if (replayState.timerId) { clearTimeout(replayState.timerId); replayState.timerId = null; }
+  clearReplayAnim();
   const btn = document.getElementById('replay-play-btn');
   if (btn) btn.textContent = '▶';
 }
@@ -5024,11 +5214,20 @@ function replayTick() {
   if (!replayState.isPlaying) return;
   const next = replayState.currentIdx + 1;
   if (next >= replayState.frames.length) { pauseReplay(); return; }
-  setReplayPosition(next);
-  scheduleNextReplayTick();
+  const frame = replayState.frames[next];
+  if (frame.kind === 'transit') {
+    advanceToFrame(next);
+    animateReplayTransit(frame, () => {
+      if (replayState.isPlaying) scheduleNextReplayTick();
+    });
+  } else {
+    advanceToFrame(next);
+    scheduleNextReplayTick();
+  }
 }
 
 function buildReplayMarker(frame) {
+  if (frame.kind === 'transit') return null;
   const cat = CATEGORIES[frame.category] || CATEGORIES.location;
   return L.marker([frame.lat, frame.lng], {
     icon: L.divIcon({
@@ -5040,16 +5239,94 @@ function buildReplayMarker(frame) {
   });
 }
 
-function setReplayPosition(idx) {
+function buildReplayTransitLine(frame) {
+  const m = transitMeta(frame.mode);
+  const segs = replayTransitPathSegments(frame);
+  const lines = [];
+  for (const seg of segs) {
+    if (seg.length < 2) continue;
+    lines.push(L.polyline(seg, {
+      color: m.color,
+      weight: 2,
+      opacity: 0.6,
+      dashArray: frame.mode === 'train' ? '6,4' : (frame.mode === 'ferry' ? '2,6' : null),
+    }));
+  }
+  return lines;
+}
+
+function makeMovingIcon(mode) {
+  const m = transitMeta(mode);
+  return L.divIcon({
+    className: '',
+    html: `<div style="font-size:18px;line-height:1;text-shadow:0 0 4px ${m.color};" aria-hidden="true">${m.emoji}</div>`,
+    iconSize: [22, 22], iconAnchor: [11, 11],
+  });
+}
+
+// Drop the transit's path polyline, then walk a single mode-icon marker
+// along it. Calls `done()` when the marker reaches the endpoint, OR
+// immediately if playback was paused mid-animation.
+function animateReplayTransit(frame, done) {
+  if (!replayState.markersLayer || !replayState.polylineLayer) { done(); return; }
+  // Drop the route line (faded — the running icon is the focal point).
+  buildReplayTransitLine(frame).forEach(line => line.addTo(replayState.polylineLayer));
+  const path = replayTransitFlatPath(frame);
+  if (path.length < 2) { done(); return; }
+  clearReplayAnim();
+  const marker = L.marker(path[0], { icon: makeMovingIcon(frame.mode), interactive: false }).addTo(replayState.markersLayer);
+  replayState.animMarker = marker;
+  // Total animation window scales with speed: at 1× ≈ 1200ms; at 10× ≈ 120ms.
+  // Step count = path length, capped so very long arcs don't starve the tick rate.
+  const total = Math.max(120, Math.round(1200 / replayState.speed));
+  const steps = Math.min(path.length, 32);
+  const stepMs = Math.max(20, Math.round(total / steps));
+  let i = 0;
+  replayState.animTimerId = setInterval(() => {
+    if (!replayState.isPlaying) {
+      clearInterval(replayState.animTimerId);
+      replayState.animTimerId = null;
+      return;
+    }
+    i += Math.max(1, Math.floor(path.length / steps));
+    if (i >= path.length - 1) {
+      marker.setLatLng(path[path.length - 1]);
+      clearInterval(replayState.animTimerId);
+      replayState.animTimerId = null;
+      // Leave the route polyline behind, drop the moving marker.
+      replayState.markersLayer.removeLayer(marker);
+      replayState.animMarker = null;
+      done();
+      return;
+    }
+    marker.setLatLng(path[i]);
+  }, stepMs);
+}
+
+// Advance the rendered state without firing the transit animation —
+// shared by replayTick (which adds the animation afterwards for transit
+// frames) and seekReplay (which skips animation entirely).
+function advanceToFrame(idx) {
   if (idx < 0 || idx >= replayState.frames.length) return;
   replayState.currentIdx = idx;
   replayState.renderedUpTo = idx;
-  replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[idx]));
+  const frame = replayState.frames[idx];
+  if (frame.kind === 'visit') {
+    replayState.markersLayer.addLayer(buildReplayMarker(frame));
+  } else if (frame.kind === 'transit') {
+    // On a skip (seekReplay), drop the static route line so the user can see
+    // the trip's shape without running the animation.
+    buildReplayTransitLine(frame).forEach(line => line.addTo(replayState.polylineLayer));
+  }
   renderReplayPath();
   const scrubber = document.getElementById('replay-scrubber');
   if (scrubber) scrubber.value = idx;
   updateReplayPositionLabel();
 }
+
+// Kept as an alias so existing call sites (renderReplayPath path-cache code)
+// don't have to know about the animation split.
+function setReplayPosition(idx) { advanceToFrame(idx); }
 
 function seekReplay(rawIdx) {
   const idx = parseInt(rawIdx, 10);
@@ -5057,18 +5334,21 @@ function seekReplay(rawIdx) {
   if (!replayState.markersLayer || !replayState.polylineLayer || replayState.frames.length === 0) return;
   pauseReplay();
   const upTo = Math.min(idx, replayState.frames.length - 1);
-  if (upTo >= replayState.renderedUpTo) {
-    for (let i = replayState.renderedUpTo + 1; i <= upTo; i++) {
-      replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
+  const addStaticForFrame = f => {
+    if (f.kind === 'visit') {
+      replayState.markersLayer.addLayer(buildReplayMarker(f));
+    } else if (f.kind === 'transit') {
+      buildReplayTransitLine(f).forEach(line => line.addTo(replayState.polylineLayer));
     }
+  };
+  if (upTo >= replayState.renderedUpTo) {
+    for (let i = replayState.renderedUpTo + 1; i <= upTo; i++) addStaticForFrame(replayState.frames[i]);
   } else {
     replayState.markersLayer.clearLayers();
     replayState.polylineLayer.clearLayers();
     replayState.pathLines = { old: null, mid: null, recent: null };
     replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
-    for (let i = 0; i <= upTo; i++) {
-      replayState.markersLayer.addLayer(buildReplayMarker(replayState.frames[i]));
-    }
+    for (let i = 0; i <= upTo; i++) addStaticForFrame(replayState.frames[i]);
   }
   replayState.renderedUpTo = upTo;
   replayState.currentIdx = upTo;
@@ -5076,30 +5356,43 @@ function seekReplay(rawIdx) {
   updateReplayPositionLabel();
 }
 
+// Visit-only dot trail. The fading polyline represents "places I've been so
+// far"; transit polylines (drawn separately by buildReplayTransitLine) are
+// the routes between major stops. This keeps the trail readable when a trip
+// has dense intra-city visits but only one or two long-haul transits.
 function renderReplayPath() {
   if (!replayState.polylineLayer) return;
   const idx = replayState.currentIdx;
-  if (idx <= 0) {
-    replayState.polylineLayer.clearLayers();
-    replayState.pathLines = { old: null, mid: null, recent: null };
-    replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
-    return;
+  // Collect visit positions up to and including the current index.
+  const visitedPts = [];
+  for (let i = 0; i <= idx; i++) {
+    const f = replayState.frames[i];
+    if (f && f.kind === 'visit') visitedPts.push([f.lat, f.lng]);
   }
-  const total = idx + 1;
-  const oldEnd = Math.floor(total * 0.5);
-  const midEnd = Math.floor(total * 0.75);
-  const lb = replayState.lastBoundaries;
-  const pl = replayState.pathLines;
+  // Wipe & rebuild the trail. Note: this also wipes already-rendered transit
+  // route lines, so we re-draw them after.
+  const transitFramesUpTo = [];
+  for (let i = 0; i <= idx; i++) {
+    const f = replayState.frames[i];
+    if (f && f.kind === 'transit') transitFramesUpTo.push(f);
+  }
+  replayState.polylineLayer.clearLayers();
+  replayState.pathLines = { old: null, mid: null, recent: null };
+  replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
+  if (visitedPts.length === 0 && transitFramesUpTo.length === 0) return;
 
-  if (lb.oldEnd === oldEnd && lb.midEnd === midEnd && pl.recent) {
-    const frame = replayState.frames[idx];
-    pl.recent.addLatLng([frame.lat, frame.lng]);
-  } else {
-    replayState.polylineLayer.clearLayers();
-    const visited = replayState.frames.slice(0, total);
-    const oldPts = visited.slice(0, Math.max(0, oldEnd)).map(f => [f.lat, f.lng]);
-    const midPts = visited.slice(Math.max(0, oldEnd - 1), Math.max(0, midEnd)).map(f => [f.lat, f.lng]);
-    const recentPts = visited.slice(Math.max(0, midEnd - 1)).map(f => [f.lat, f.lng]);
+  // Re-add transit route lines (these were on the polylineLayer too).
+  transitFramesUpTo.forEach(f => buildReplayTransitLine(f).forEach(line => line.addTo(replayState.polylineLayer)));
+
+  // Then the visit-only dot trail layered on top, in three opacity buckets.
+  if (visitedPts.length >= 2) {
+    const total = visitedPts.length;
+    const oldEnd = Math.floor(total * 0.5);
+    const midEnd = Math.floor(total * 0.75);
+    const oldPts = visitedPts.slice(0, Math.max(0, oldEnd));
+    const midPts = visitedPts.slice(Math.max(0, oldEnd - 1), Math.max(0, midEnd));
+    const recentPts = visitedPts.slice(Math.max(0, midEnd - 1));
+    const pl = replayState.pathLines;
     pl.old = oldPts.length >= 2 ? L.polyline(oldPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[0], weight: 2 }).addTo(replayState.polylineLayer) : null;
     pl.mid = midPts.length >= 2 ? L.polyline(midPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[1], weight: 2 }).addTo(replayState.polylineLayer) : null;
     pl.recent = recentPts.length >= 2 ? L.polyline(recentPts, { color: REPLAY_LINE_COLOR, opacity: REPLAY_BUCKET_OPACITY[2], weight: 2.5 }).addTo(replayState.polylineLayer) : null;
@@ -5123,7 +5416,14 @@ function updateReplayPositionLabel() {
     return;
   }
   const frame = replayState.frames[replayState.currentIdx];
-  label.textContent = `${replayState.currentIdx + 1} / ${replayState.frames.length} · ${frame.date} · ${frame.name}`;
+  const total = replayState.frames.length;
+  if (frame.kind === 'transit') {
+    const m = transitMeta(frame.mode);
+    const fromTo = `${frame.fromName || ''} → ${frame.toName || ''}`.trim();
+    label.textContent = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${m.emoji} ${fromTo}`;
+  } else {
+    label.textContent = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${frame.name}`;
+  }
 }
 
 function onChronoFilterChange() {
