@@ -4,3 +4,7 @@ data/admin1-simplified.json
 coverage/
 .claude/
 .env
+data-e2e/
+e2e/.auth/
+playwright-report/
+test-results/

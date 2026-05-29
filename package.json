@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:e2e": "node e2e/clean-data.js && playwright test",
+    "test:e2e:headed": "node e2e/clean-data.js && playwright test --headed"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,8 +21,15 @@
     "nedb-promises": "^6.2.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "jest": "^30.3.0",
     "jsdom": "^24.1.3",
     "supertest": "^7.2.2"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/e2e/"
+    ]
   }
 }
