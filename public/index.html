@@ -1743,16 +1743,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <h3>📍 Google Data Guide</h3>
         <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-direction:column;gap:12px;">
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
-            <strong style="color:var(--text-primary);">⭐ Saved Places</strong>
-            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Maps (My Places)</strong> → export. Import the <code>Saved Places.json</code> GeoJSON file.</p>
+            <strong style="color:var(--text-primary);">⭐ Saved Places (starred / hearted)</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Maps (your places)</strong> → export. Import the <code>Saved Places.json</code> GeoJSON file.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">📋 Saved Lists (Want to go, custom lists)</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Saved</strong> → export. You'll get one <code>.csv</code> per list (Starred, Want to go, plus each custom list). Drop them here — coords are pulled from each entry's map URL, falling back to OSM geocoding.</p>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">🗺️ My Maps</strong>
             <p style="color:var(--text-muted);margin-top:4px;">Open your My Map → ⋮ menu → <strong>Export to KML</strong>. Import the <code>.kml</code> file. Folder names become categories.</p>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
-            <strong style="color:var(--text-primary);">📅 Timeline / Location History</strong>
-            <p style="color:var(--text-muted);margin-top:4px;">Go to <strong>takeout.google.com</strong> → select <strong>Location History</strong> → export. Import the monthly <code>.json</code> files from <code>Semantic Location History</code> folder. Visit dates and durations are preserved.</p>
+            <strong style="color:var(--text-primary);">📅 Timeline (place visits)</strong>
+            <p style="color:var(--text-muted);margin-top:4px;"><strong>Heads-up:</strong> since late 2024 Google moved Timeline to on-device storage. Takeout's "Location History" folder no longer ships your visits — only an encrypted blob and settings files.</p>
+            <p style="color:var(--text-muted);margin-top:6px;">To export today, use the <strong>Google Maps app on your phone</strong>: <strong>your profile picture → Your Timeline → ⋮ → Location &amp; privacy settings → Export Timeline data</strong>. You'll get a single large <code>.json</code> with <code>semanticSegments</code> — drop it here. Place names, addresses, and place IDs are preserved; Places API enrichment runs automatically if a key is configured.</p>
+            <p style="color:var(--text-muted);margin-top:6px;">Have a pre-2024 Takeout archive? The monthly files in <code>Semantic Location History/</code> still work — drop them all in.</p>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📌 Mapstr</strong>
