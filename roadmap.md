@@ -13,30 +13,38 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 ### Security (audit 2026-05-30, reconciled against shipped work)
 
-The 2026-05-30 audit produced 12 findings. All 11 actionable findings are
-now resolved; H-2 has a partial fix shipped with a deferred long-term piece.
-See Resolved table below for the full reconciliation.
-
-### H-2 deferred decision
-
-JWT TTL was shortened 90d → 30d and per-token `jti` revocation + `/api/auth/logout`
-shipped (`53e2db7` era). Long-term migration to **HttpOnly cookies** remains
-deferred — captured here so it doesn't get lost. Tradeoff: cookie migration
-touches every `api()` call site + needs CSRF on state-changing routes.
+The 2026-05-30 audit produced 12 findings. **All 12 are now resolved**
+(H-2 cookie migration shipped 2026-05-30 in `ade84d8`). See Resolved
+table below for the per-finding reconciliation.
 
 ### Other open items
 
 - **Marker layer-diff** — ✅ shipped 2026-05-30 (commit `d1b37ba`).
 - **FR24 "not an export" guard** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
 - **LOW polish bundle** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
-- **CSP nonce refactor** — ✅ partial shipped 2026-05-30 (commit `aa479d5`).
-  `script-src` now requires a per-request nonce; `'unsafe-inline'` removed.
-  Residuals (intentionally deferred): `script-src-attr` still permissive
-  (hundreds of `onclick=` handlers — needs an event-delegation refactor);
-  `style-src` stays permissive because Leaflet injects nonceless inline
-  styles at runtime (per CSP-3, mixing `'unsafe-inline'` with a nonce in
-  style-src causes browsers to ignore `'unsafe-inline'` — no strict-dynamic
-  story for third-party CSS).
+- **CSP nonce on `script-src`** — ✅ shipped 2026-05-30 (commit `aa479d5`).
+  Per-request nonce on every inline `<script>` block.
+- **H-2: HttpOnly cookie for bearer** — ✅ shipped 2026-05-30 (commit `ade84d8`).
+  Cookie is `HttpOnly` + `SameSite=Strict` + `Secure` in prod, 30d TTL. JS
+  can no longer read the bearer (closes the XSS-exfiltration window).
+  `auth()` reads cookie first, Authorization header as back-compat fallback.
+- **CSP `script-src-attr 'none'`** — ✅ shipped 2026-05-30 (commit `c9f7ec9`).
+  All 217 inline event handlers (`onclick=` / `onchange=` / `onmouseover=` /
+  `oninput=` / `onkeydown=` / `onfocus=`) migrated to a document-level
+  capture-phase dispatcher reading `data-<event>=` + `data-argN=` attributes.
+  No `'unsafe-inline'` remains on any JS-execution directive. A stored XSS
+  that lands `<button onclick="alert(1)">` is silently ignored.
+- **`style-src` stays permissive** (deferred). Leaflet injects nonceless
+  inline styles at runtime for cursors/panes/tiles; per CSP-3, mixing
+  `'unsafe-inline'` with a nonce in `style-src` causes browsers to ignore
+  `'unsafe-inline'` and enforce nonces strictly. Until we have a strict-
+  dynamic-for-CSS story (or migrate off Leaflet inline styles), this
+  residual remains as accepted defense-in-depth gap. Lower severity than
+  script injection — style injection cannot execute code.
+- **CSS-ify legacy hover-bg ACTIONS** (low priority). The 4 hoverIn /
+  hoverOut sites use inline JS to toggle a background colour on mouseover/
+  mouseout. The right fix is a `:hover` rule. Bridge action in place so the
+  visual behaviour is preserved.
 - **Bootstrap map/collections/trips DBs** — waiting on user inputs. Existing
   bootstrap surfaces: bulk JSON/CSV/KML, Google Timeline, OSM enrich, Google
   Places sync, FR24 (transits + auto-airport stops).
@@ -82,6 +90,7 @@ touches every `api()` call site + needs CSRF on state-changing routes.
 | **[M-5]** `express.json` 10MB global body limit | ✅ `e4d0b4f`. Global dropped to 1MB; path-mounted 10MB on `/api/locations/bulk` + `/api/transits/bulk`. |
 | **[L-3]** `render.yaml` `npm install` not `npm ci` | ✅ `e4d0b4f`. Switched to `npm ci` (lockfile-strict). |
 | **[L-4]** `render.yaml` missing `ALLOWED_EMAILS` + `ALLOWED_ORIGINS` | ✅ `e4d0b4f`. Both declared with `sync: false`. |
+| **[H-2]** JWT bearer in `localStorage`, 90-day TTL, no revocation | ✅ Full path shipped. `53e2db7`: TTL 30d + `jti` revocation + `/api/auth/logout`. `ade84d8`: bearer migrated to `HttpOnly` + `SameSite=Strict` + `Secure`-in-prod cookie; JS can no longer read the token (XSS-exfiltration window closed). |
 
 ## Major shipped batches (chronological)
 
@@ -100,4 +109,9 @@ See memory roadmap for full commit-level detail. Headline batches:
   marker layer-diff perf, FR24 paired-IATA + column-drift + HH:MM:SS fix,
   decommissioned-airports patch, distance-bucket line coloring + per-mode
   dash, click-transit→open-trip, transit-tab structural fix, countries-
-  with-flags stats section. **Session totals: 517 jest + 5 e2e green.**
+  with-flags stats section, M-3/M-5/L-3/L-4 audit batch, FR24 not-an-export
+  guard + LOW polish bundle, CSP nonce on `script-src` (`aa479d5`),
+  **H-2 HttpOnly cookies migration** (`ade84d8`), **full onclick refactor
+  + `script-src-attr 'none'`** (`c9f7ec9` — 217 inline handlers → document-
+  level capture-phase dispatcher; +3 e2e specs: view-switch, edit-modal,
+  filter-category). **Session totals: 552 jest + 8 e2e green.**
