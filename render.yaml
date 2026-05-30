@@ -3,7 +3,7 @@ services:
     name: history-map
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: node server/index.js
     envVars:
       - key: JWT_SECRET
@@ -13,4 +13,8 @@ services:
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_PLACES_KEY
+        sync: false
+      - key: ALLOWED_EMAILS
+        sync: false
+      - key: ALLOWED_ORIGINS
         sync: false

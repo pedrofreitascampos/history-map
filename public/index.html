@@ -2929,9 +2929,13 @@ function showMultiPrompt(fields) {
   });
 }
 
-// Build a Google Maps URL from whatever identifiers we have
+// Build a Google Maps URL from whatever identifiers we have.
+// _googleUrl is honored only when it parses as http(s) — esc() HTML-escapes
+// but does NOT block `javascript:` URIs, so imported JSON could plant a
+// click-XSS via `<a href="${esc(_googleUrl)}">`. Defensive fallback to
+// the placeId / lat-lng branches.
 function getGoogleMapsUrl(loc) {
-  if (loc._googleUrl) return loc._googleUrl;
+  if (loc._googleUrl && /^https?:\/\//i.test(loc._googleUrl)) return loc._googleUrl;
   if (loc._googlePlaceId) return `https://www.google.com/maps/place/?q=place_id:${loc._googlePlaceId}`;
   if (loc.lat && loc.lng) return `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
   return '';

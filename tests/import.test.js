@@ -93,6 +93,7 @@ const code = [
   extractFunction('interleaveStopsAndTransits'),
   extractFunction('computeTransitStats'),
   extractFunction('formatTransitMinutes'),
+  extractFunction('getGoogleMapsUrl'),
 ].join('\n');
 
 // Provide DOMParser stub for parseKML
@@ -2623,5 +2624,110 @@ describeDom('showConfirm contract (regression)', () => {
     dom.window.document.querySelector('.confirm-danger').click();
     await promise;
     expect(called).toBe(true);
+  });
+});
+
+// ─── getGoogleMapsUrl scheme validation (M-3) ───────────
+describe('getGoogleMapsUrl rejects non-http(s) _googleUrl', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(contextCode, ctx);
+
+  function call(loc) {
+    return vm.runInContext(`getGoogleMapsUrl(${JSON.stringify(loc)})`, ctx);
+  }
+
+  test('honors http(s) _googleUrl as-is', () => {
+    expect(call({ _googleUrl: 'https://maps.google.com/?cid=123' }))
+      .toBe('https://maps.google.com/?cid=123');
+    expect(call({ _googleUrl: 'http://example.com/maps' }))
+      .toBe('http://example.com/maps');
+  });
+
+  test('javascript: URI falls through to placeId branch', () => {
+    const url = call({ _googleUrl: 'javascript:alert(1)', _googlePlaceId: 'abc123' });
+    expect(url).toMatch(/^https:\/\/www\.google\.com\/maps\/place\/.*place_id:abc123$/);
+  });
+
+  test('javascript: URI falls through to lat/lng branch when no placeId', () => {
+    const url = call({ _googleUrl: 'JaVaScRiPt:alert(1)', lat: 38.7, lng: -9.1 });
+    expect(url).toMatch(/^https:\/\/www\.google\.com\/maps\/search\/.*38\.7.*-9\.1/);
+  });
+
+  test('data: URI also rejected', () => {
+    expect(call({ _googleUrl: 'data:text/html,<script>alert(1)</script>' }))
+      .toBe('');
+  });
+
+  test('vbscript: URI rejected', () => {
+    expect(call({ _googleUrl: 'vbscript:msgbox(1)' })).toBe('');
+  });
+
+  test('empty / null / non-string _googleUrl falls through cleanly', () => {
+    expect(call({ _googleUrl: '', _googlePlaceId: 'p' }))
+      .toBe('https://www.google.com/maps/place/?q=place_id:p');
+    expect(call({ _googleUrl: null, lat: 1, lng: 2 }))
+      .toMatch(/maps\/search/);
+  });
+
+  test('protocol-relative URL (//evil.com) rejected — no scheme', () => {
+    expect(call({ _googleUrl: '//evil.com/x' })).toBe('');
+  });
+});
+
+// ─── sanitizeLocationUpdate _googleUrl scheme guard (M-3 server) ──
+describe('sanitizeLocationUpdate strips non-http(s) _googleUrl', () => {
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+
+  test('sanitizer function contains the _googleUrl scheme check', () => {
+    const fnStart = serverSrc.indexOf('function sanitizeLocationUpdate');
+    expect(fnStart).toBeGreaterThan(-1);
+    // The check must look at updates._googleUrl and require http(s)
+    const fnBody = serverSrc.substring(fnStart, fnStart + 2000);
+    expect(fnBody).toMatch(/updates\._googleUrl/);
+    expect(fnBody).toMatch(/https\?:\\\/\\\//);
+  });
+
+  test('_googleUrl is in the LOCATION_FIELDS allowlist (so it reaches the sanitizer)', () => {
+    expect(serverSrc).toMatch(/LOCATION_FIELDS\s*=\s*\[[\s\S]*?_googleUrl[\s\S]*?\]/);
+  });
+});
+
+// ─── Server body-limit scoping (M-5) ─────────────────────
+describe('express.json body limit is 1mb global + 10mb on bulk routes', () => {
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+
+  test('global express.json is 1mb (not 10mb)', () => {
+    // The unscoped app.use(express.json(...)) call must be 1mb
+    expect(serverSrc).toMatch(/app\.use\(express\.json\(\{\s*limit:\s*['"]1mb['"]\s*\}\)\)/);
+  });
+
+  test('bulk-import paths mounted with 10mb limit before the global', () => {
+    const tenMb = serverSrc.indexOf("express.json({ limit: '10mb' })");
+    const oneMb = serverSrc.indexOf("express.json({ limit: '1mb' })");
+    expect(tenMb).toBeGreaterThan(-1);
+    expect(oneMb).toBeGreaterThan(-1);
+    expect(tenMb).toBeLessThan(oneMb); // path-mounted runs FIRST
+    // and the path-mounted block names the bulk endpoints
+    const tenMbWindow = serverSrc.substring(tenMb - 200, tenMb + 100);
+    expect(tenMbWindow).toMatch(/\/api\/locations\/bulk/);
+    expect(tenMbWindow).toMatch(/\/api\/transits\/bulk/);
+  });
+});
+
+// ─── render.yaml deploy invariants (L-3 + L-4) ───────────
+describe('render.yaml has lockfile-strict build + auth env vars', () => {
+  const renderYaml = fs.readFileSync(path.join(__dirname, '..', 'render.yaml'), 'utf-8');
+
+  test('buildCommand uses npm ci, not npm install', () => {
+    expect(renderYaml).toMatch(/buildCommand:\s*npm ci/);
+    expect(renderYaml).not.toMatch(/buildCommand:\s*npm install/);
+  });
+
+  test('ALLOWED_EMAILS declared with sync:false', () => {
+    expect(renderYaml).toMatch(/key:\s*ALLOWED_EMAILS[\s\S]{0,80}sync:\s*false/);
+  });
+
+  test('ALLOWED_ORIGINS declared with sync:false', () => {
+    expect(renderYaml).toMatch(/key:\s*ALLOWED_ORIGINS[\s\S]{0,80}sync:\s*false/);
   });
 });

@@ -96,7 +96,14 @@ const corsAllowed = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
   : (process.env.NODE_ENV === 'production' ? false : ['http://localhost:3001', 'http://localhost:3000']);
 app.use(cors({ origin: corsAllowed, credentials: false }));
-app.use(express.json({ limit: '10mb' }));
+// Bulk-import endpoints handle KML/CSV/Timeline payloads that legitimately run
+// into single-digit MBs. Everything else stays at 1MB — authenticated users
+// can't DoS the 512MB Render instance with repeated 10MB bodies on regular
+// CRUD endpoints. Path-mounted middleware runs before the global; body-parser
+// skips re-parsing when req._body is already true, so each request is parsed
+// exactly once at the appropriate limit.
+app.use(['/api/locations/bulk', '/api/transits/bulk'], express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting — disabled in test environment to allow full test suite runs
 const isTest = process.env.NODE_ENV === 'test';
@@ -410,6 +417,16 @@ function sanitizeLocationUpdate(updates) {
       else delete updates.iata;
     } else {
       delete updates.iata;
+    }
+  }
+  // Block javascript:/data:/vbscript: URI injection via stored _googleUrl —
+  // the frontend renders this as <a href="…">. Drop anything that isn't
+  // explicitly http(s).
+  if (updates._googleUrl !== undefined) {
+    if (typeof updates._googleUrl === 'string' && /^https?:\/\//i.test(updates._googleUrl)) {
+      // keep as-is
+    } else {
+      delete updates._googleUrl;
     }
   }
   return updates;
