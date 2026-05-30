@@ -2714,6 +2714,55 @@ describe('express.json body limit is 1mb global + 10mb on bulk routes', () => {
   });
 });
 
+// ─── FR24 'not an export' guard ──────────────────────────
+describe('renderFr24Preview surfaces a clear error when zero rows resolve', () => {
+  test('source contains the dedicated zero-resolved branch', () => {
+    const renderFn = extractFunction('renderFr24Preview');
+    // The "not an FR24 export" message must mention this specifically
+    expect(renderFn).toMatch(/Flightradar24 export/);
+    // Must be gated on okCount === 0 AND resolved.length > 0 (so an empty file
+    // still hits the "no rows" path higher up, not this banner)
+    expect(renderFn).toMatch(/resolved\.length\s*>\s*0\s*&&\s*okCount\s*===\s*0/);
+    // Must offer a retry affordance so the user isn't stuck
+    expect(renderFn).toMatch(/Try another file/);
+  });
+
+  test('happy-path status text still shows for mixed/all-OK runs', () => {
+    const renderFn = extractFunction('renderFr24Preview');
+    // The original "X rows · Y resolved · Z unresolved" line must still exist
+    // in the else branch
+    expect(renderFn).toMatch(/rows.*okCount.*resolved.*failCount.*unresolved/s);
+  });
+});
+
+// ─── Transit stat strip auto-hides at 0 transits ─────────
+describe('Transit stats strip is empty when state.transits is empty', () => {
+  test('renderTransitsView gates the strip on state.transits.length > 0', () => {
+    const renderFn = extractFunction('renderTransitsView');
+    // The strip render must be wrapped in a length check, not unconditional
+    expect(renderFn).toMatch(/state\.transits\.length\s*>\s*0\s*\?\s*renderTransitsStatsStrip/);
+  });
+});
+
+// ─── 12px font floor (a11y) ──────────────────────────────
+describe('No CSS font-size is below 12px', () => {
+  test('no `font-size: 11px` or `font-size:11px` declarations remain', () => {
+    // Both spaced and unspaced forms should be gone — the floor is 12px.
+    // (10px is occasionally fine for super-tiny utility labels but the audit
+    // bumped EVERY 11px to 12px for a uniform readability floor.)
+    expect(indexHtml).not.toMatch(/font-size:\s*11px/);
+  });
+
+  test('Transits tab icon has the emoji variation selector (U+FE0F)', () => {
+    // Plain U+2708 (✈) renders as a B/W text glyph in some browsers.
+    // Adding U+FE0F (✈️) forces the emoji presentation, matching the other
+    // tab icons (🧳 🏆 🌍 …) which are already emoji-class codepoints.
+    const tabMatch = indexHtml.match(/data-view="transits-view"[\s\S]{0,200}/);
+    expect(tabMatch).toBeTruthy();
+    expect(tabMatch[0]).toContain('✈️');
+  });
+});
+
 // ─── render.yaml deploy invariants (L-3 + L-4) ───────────
 describe('render.yaml has lockfile-strict build + auth env vars', () => {
   const renderYaml = fs.readFileSync(path.join(__dirname, '..', 'render.yaml'), 'utf-8');
