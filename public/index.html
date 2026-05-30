@@ -252,9 +252,36 @@ body {
 .popup-inner { padding: 16px; }
 .popup-inner h3 { font-family: var(--font-display); font-size: 17px; margin-bottom: 4px; }
 .popup-cat { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
-.popup-ratings { display: flex; gap: 16px; margin-bottom: 10px; }
-.popup-rating-item { font-size: 12px; color: var(--text-secondary); }
+.popup-ratings { display: flex; gap: 16px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+.popup-rating-item { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
 .popup-rating-item span { color: var(--accent); font-weight: 600; }
+.popup-stars { display: inline-flex; gap: 1px; line-height: 1; }
+.popup-stars .popup-star {
+  background: none; border: none; padding: 0 1px; cursor: pointer;
+  color: var(--text-muted); font-size: 15px; line-height: 1;
+  font-family: inherit; opacity: 0.45; transition: transform 0.1s, opacity 0.1s;
+}
+.popup-stars .popup-star.filled { color: var(--accent); opacity: 1; }
+.popup-stars .popup-star:hover { transform: scale(1.2); opacity: 1; }
+
+/* Tiny rating label tucked under the map marker. Uses the icon's existing
+   position:relative so it can position absolutely just below the circle. */
+.marker-rating {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.72);
+  padding: 0 4px;
+  border-radius: 4px;
+  line-height: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .popup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .popup-tag {
@@ -396,15 +423,6 @@ select.filter-select:focus { border-color: var(--accent); }
 }
 .heatmap-toggle.active .toggle-switch { background: var(--accent); }
 .heatmap-toggle.active .toggle-switch::after { left: 19px; background: var(--bg-primary); }
-
-.sidebar-add-btn {
-  width: 100%; padding: 10px; border-radius: var(--radius);
-  border: 1px dashed var(--accent); background: var(--accent-dim);
-  color: var(--accent); font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: var(--transition);
-  font-family: var(--font-body); margin-top: 8px;
-}
-.sidebar-add-btn:hover { background: rgba(255,193,68,0.25); }
 
 /* ═══════════════════════════════════════════════════════════ */
 /* MODAL                                                      */
@@ -1410,11 +1428,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <!-- FILTER SIDEBAR -->
   <aside id="sidebar">
     <div class="filter-section">
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <input type="text" class="form-input" id="quick-add-input" placeholder="Add place"
+          aria-label="Add a new place"
+          style="flex:1;font-size:12px;padding:6px 10px;"
+          data-keydown="enterKey" data-arg0="quickAddPlace" data-prevent="1">
+        <button class="add-small-btn" data-click="quickAddPlace" title="Add place" aria-label="Add place"
+          style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">+</button>
+      </div>
       <div style="display:flex;gap:6px;">
-        <input type="text" class="form-input" id="map-search-input" placeholder="🔍 Search places..."
+        <input type="text" class="form-input" id="map-search-input" placeholder="Search place"
+          aria-label="Search for a place"
           style="flex:1;font-size:12px;padding:6px 10px;"
           data-keydown="enterKey" data-arg0="mapSearch" data-prevent="1">
-        <button class="add-small-btn" data-click="mapSearch" style="border-style:solid;padding:4px 8px;font-size:12px;">Go</button>
+        <button class="add-small-btn" data-click="mapSearch" title="Search" aria-label="Search"
+          style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
       <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
     </div>
@@ -1500,7 +1528,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <span id="marker-size-desc" style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;"></span>
     </div>
 
-    <button class="sidebar-add-btn" data-click="openAddModal">+ Add New Location</button>
   </aside>
 
   <button class="sidebar-toggle" id="sidebar-toggle" data-click="toggleSidebar" aria-label="Toggle sidebar">◀</button>
@@ -1844,11 +1871,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="modal-close" data-click="closeModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="form-group" style="position:relative;">
-        <label>🔍 Search Place</label>
-        <input type="text" class="form-input" id="loc-search" placeholder="Search by name, address, or city..." autocomplete="off">
-        <div id="loc-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:10;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);max-height:200px;overflow-y:auto;box-shadow:var(--shadow-lg);"></div>
-      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Name</label>
@@ -2868,9 +2890,17 @@ function createMarkerIcon(loc, opts) {
   const fontSize = Math.round(size * 0.5);
   const half = size / 2;
 
+  // Tiny rating label tucked under the marker. Prefer Google rating (more
+  // signal — based on many reviewers); fall back to user's own rating. Hidden
+  // when no rating exists so unrated markers stay clean.
+  const rl = loc.googleRating || loc.myRating;
+  const ratingLabel = rl
+    ? `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`
+    : '';
+
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${esc(pickMarkerEmoji(loc, opts))}</div>`,
+    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${esc(pickMarkerEmoji(loc, opts))}${ratingLabel}</div>`,
     iconSize: [size, size],
     iconAnchor: [half, half],
     popupAnchor: [0, -half - 3],
@@ -3141,7 +3171,12 @@ function createPopupContent(loc) {
   const trip = stateIndex.tripById.get(loc.tripId);
   const visitDates = (loc.visits || []).map(v => v.date).filter(Boolean).join(', ');
   const googleStars = loc.googleRating ? '⭐ ' + loc.googleRating : '—';
-  const myStars = loc.myRating ? '★ ' + loc.myRating + '/5' : '—';
+  const my = Math.max(0, Math.min(5, parseInt(loc.myRating) || 0));
+  // Interactive 5-star widget: each star PUTs the new rating on click.
+  // Clicking the current rating again clears it (toggle off).
+  const myStars = [1,2,3,4,5].map(n =>
+    `<button type="button" class="popup-star${n <= my ? ' filled' : ''}" data-click="setPopupRating" data-arg0="${esc(loc.id)}" data-arg1="${n}" aria-label="${n} star${n === 1 ? '' : 's'}" title="${n}/5">★</button>`
+  ).join('');
   const peopleTags = (loc.people || []).map(p => `<span class="popup-tag">${esc(p)}</span>`).join('');
 
   const priceStr = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
@@ -3164,7 +3199,7 @@ function createPopupContent(loc) {
     <div class="popup-cat">${cat.label}${priceStr}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
-      <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
+      <div class="popup-rating-item">Mine: <span class="popup-stars" data-loc-id="${esc(loc.id)}">${myStars}</span></div>
     </div>
     ${wantStr}
     ${tagChips ? `<div class="popup-tags">${tagChips}</div>` : ''}
@@ -3963,8 +3998,6 @@ function openAddModal(lat, lng) {
 
   document.getElementById('modal-title').textContent = 'Add Location';
   document.getElementById('delete-loc-btn').style.display = 'none';
-  document.getElementById('loc-search').value = '';
-  document.getElementById('loc-search-results').style.display = 'none';
   document.getElementById('loc-name').value = '';
   document.getElementById('loc-address').value = '';
   document.getElementById('loc-lat').value = lat || '';
@@ -4055,8 +4088,19 @@ function openEditModal(id) {
 
 function closeModal() {
   document.getElementById('edit-modal').classList.remove('open');
-  document.getElementById('loc-search-results').style.display = 'none';
   restoreFocus();
+}
+
+// Sidebar quick-add: type a name → opens the add-location modal with that
+// name pre-filled. Replaces the legacy sidebar add button; the modal's
+// redundant search field was also removed since the sidebar already has a
+// 'Search place' input (mapSearch).
+function quickAddPlace() {
+  const input = document.getElementById('quick-add-input');
+  const name = (input?.value || '').trim();
+  openAddModal();
+  if (name) document.getElementById('loc-name').value = name;
+  if (input) input.value = '';
 }
 
 // ── Location search (Nominatim) ──────────────────────────
@@ -4180,6 +4224,41 @@ function setRating(val) {
     s.setAttribute('tabindex', v === val ? '0' : '-1');
     s.setAttribute('aria-checked', v === val ? 'true' : 'false');
   });
+}
+
+// Inline rating from the map popup: optimistic UI then PUT. Clicking the
+// already-set rating toggles it back to 0 so users can clear a mistake
+// without opening the edit modal. markerHash includes myRating so the marker
+// also refreshes on the next render cycle (size-mode my-rating recomputes).
+async function setPopupRating(locId, val) {
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  const v = Math.max(0, Math.min(5, parseInt(val) || 0));
+  const newVal = (loc.myRating || 0) === v ? 0 : v;
+  const prev = loc.myRating || 0;
+  loc.myRating = newVal;
+  // Update the open popup's stars in place (no full re-render — would close).
+  document.querySelectorAll('.popup-stars').forEach(host => {
+    if (host.dataset.locId !== locId) return;
+    host.querySelectorAll('.popup-star').forEach(s => {
+      const sv = parseInt(s.dataset.arg1) || 0;
+      s.classList.toggle('filled', sv <= newVal);
+    });
+  });
+  try {
+    await api('PUT', `/locations/${encodeURIComponent(locId)}`, { myRating: newVal });
+    _renderMarkersPending = true;
+  } catch (e) {
+    loc.myRating = prev;
+    document.querySelectorAll('.popup-stars').forEach(host => {
+      if (host.dataset.locId !== locId) return;
+      host.querySelectorAll('.popup-star').forEach(s => {
+        const sv = parseInt(s.dataset.arg1) || 0;
+        s.classList.toggle('filled', sv <= prev);
+      });
+    });
+    toast('Failed to save rating', 'error');
+  }
 }
 function updateStars(val) {
   document.querySelectorAll('#my-rating .star').forEach(s => {

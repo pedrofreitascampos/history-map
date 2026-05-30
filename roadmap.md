@@ -46,7 +46,20 @@ table below for the per-finding reconciliation.
   / `hoverOut` removed from the dispatcher. Pure presentational refactor.
 - **Bootstrap map/collections/trips DBs** — waiting on user inputs. Existing
   bootstrap surfaces: bulk JSON/CSV/KML, Google Timeline, OSM enrich, Google
-  Places sync, FR24 (transits + auto-airport stops).
+  Places sync, FR24 (transits + auto-airport stops). Additional candidate
+  paths queued for the bootstrapping push:
+  - **Playwright/headless-browser scraper** for sources without an export
+    API. Spin up Chromium server-side, log in as the user (cookies
+    forwarded), scrape the place list + metadata, normalize into the
+    location-import shape. Targets: anywhere the user has a curated list
+    that won't export cleanly. ToS-grey per source; gate per-target.
+  - **beliapp.co import** — Beli is an app for restaurant/bar lists. The
+    user's profile is at <https://beliapp.co/app/guavajellyreturns> with
+    visited places + a linked wishlist. Need to (a) check whether Beli has
+    a JSON export (profile API / settings → export), (b) if not, scrape
+    via Playwright (the page is SPA-rendered). Restaurants + bars import
+    into the locations DB with category set; the wishlist becomes
+    `status: 'bucket'`. Also pull through ratings if present.
 
 ### Wishlist (P1+)
 
