@@ -67,6 +67,7 @@ const code = [
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.
   extractFunction('parseGoogleSavedPlaces'),
   extractFunction('parseGoogleTimelineOld'),
+  extractFunction('_gmTimelineDisplayName'),
   extractFunction('parseGoogleTimelineNew'),
   extractFunction('parseGoogleTimelineSegments'),
   extractFunction('parseGoogleTimelineEdits'),
@@ -605,7 +606,7 @@ describe('parseJSON — Google Timeline New format', () => {
 describe('parseJSON — Google Timeline Segments', () => {
   const parseSegments = (data) => vm.runInContext(`parseGoogleTimelineSegments(${JSON.stringify(data)})`, ctx);
 
-  test('parses semanticSegments with latLng string', () => {
+  test('parses semanticSegments with latLng string, preserves real place-name casing', () => {
     const data = {
       semanticSegments: [
         {
@@ -620,7 +621,7 @@ describe('parseJSON — Google Timeline Segments', () => {
     };
     const result = parseSegments(data);
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('La boqueria');
+    expect(result[0].name).toBe('La Boqueria');  // real name — NOT title-cased / lower-cased
     expect(result[0].lat).toBeCloseTo(41.3874);
   });
 
@@ -637,6 +638,101 @@ describe('parseJSON — Google Timeline Segments', () => {
       ],
     });
     expect(result).toHaveLength(1);
+  });
+});
+
+describe('Google Timeline parsers — phone-export fidelity (2026-05-30 fix)', () => {
+  const parseNew = (content) => vm.runInContext(`parseJSON(${JSON.stringify(content)})`, ctx);
+  const parseSegments = (data) => vm.runInContext(`parseGoogleTimelineSegments(${JSON.stringify(data)})`, ctx);
+
+  test('parseGoogleTimelineNew reads placeLocation.name (not just semanticType)', () => {
+    // Before the fix, name was forced to the semanticType enum ("Restaurant")
+    // regardless of whether placeLocation.name was present. This locked the
+    // user out of real names from phone exports.
+    const data = JSON.stringify([
+      {
+        visit: {
+          topCandidate: {
+            placeLocation: {
+              latLng: '38.7100, -9.1400',
+              name: 'Pastéis de Belém',
+              address: 'R. de Belém 84-92, Lisboa',
+            },
+            semanticType: 'TYPE_RESTAURANT',
+            placeId: 'ChIJBelem',
+          },
+        },
+        startTime: '2025-08-12T15:00:00Z',
+      },
+    ]);
+    const result = parseNew(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Pastéis de Belém');
+    expect(result[0].address).toBe('R. de Belém 84-92, Lisboa');
+    expect(result[0]._placeId).toBe('ChIJBelem');
+    expect(result[0].category).toBe('restaurant');
+  });
+
+  test('parseGoogleTimelineNew still falls back to semanticType when name is absent', () => {
+    const data = JSON.stringify([
+      {
+        visit: {
+          topCandidate: {
+            placeLocation: { latLng: '48.2082, 16.3738' },
+            semanticType: 'TYPE_HOME',
+          },
+        },
+        startTime: '2025-01-01T08:00:00Z',
+      },
+    ]);
+    const result = parseNew(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Home');  // title-cased TYPE_ enum
+  });
+
+  test('parseGoogleTimelineSegments preserves real-name casing, captures placeId + address', () => {
+    const data = {
+      semanticSegments: [
+        {
+          visit: {
+            topCandidate: {
+              placeLocation: {
+                latLng: '38.7077, -9.1366',
+                name: 'Praça do Comércio',
+                address: 'Praça do Comércio, 1100-148 Lisboa',
+              },
+              placeId: 'ChIJPraca',
+              semanticType: 'TYPE_TOURIST_ATTRACTION',
+            },
+          },
+          startTime: '2025-08-13T11:00:00Z',
+        },
+      ],
+    };
+    const result = parseSegments(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Praça do Comércio');  // diacritics + multi-word casing preserved
+    expect(result[0].address).toBe('Praça do Comércio, 1100-148 Lisboa');
+    expect(result[0]._placeId).toBe('ChIJPraca');
+  });
+
+  test('parseGoogleTimelineSegments still title-cases semanticType fallback', () => {
+    const data = {
+      semanticSegments: [
+        {
+          visit: {
+            topCandidate: {
+              placeLocation: { latLng: '52.5200, 13.4050' },
+              semanticType: 'TYPE_RESTAURANT',
+            },
+          },
+          startTime: '2025-07-01T19:00:00Z',
+        },
+      ],
+    };
+    const result = parseSegments(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Restaurant');  // enum → title-cased
   });
 });
 

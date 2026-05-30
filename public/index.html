@@ -7916,6 +7916,16 @@ function parseGoogleTimelineOld(data) {
   return results;
 }
 
+// Title-case a TYPE_* enum fallback ("RESTAURANT" → "Restaurant"). Real place
+// names from placeLocation.name are passed through untouched so casing like
+// "Praça do Comércio" / "La Boqueria" survives.
+function _gmTimelineDisplayName(placeName, semanticType) {
+  if (placeName && typeof placeName === 'string' && placeName.trim()) return placeName;
+  const fallback = (semanticType || '').replace('TYPE_', '').replace(/_/g, ' ').toLowerCase();
+  if (!fallback) return 'Unknown';
+  return fallback.charAt(0).toUpperCase() + fallback.slice(1);
+}
+
 // ── Google Timeline: New format (array with visit objects) ──
 function parseGoogleTimelineNew(data) {
   const seen = new Map();
@@ -7923,12 +7933,18 @@ function parseGoogleTimelineNew(data) {
   data.forEach(item => {
     const visit = item.visit;
     if (!visit?.topCandidate?.placeLocation) return;
-    const locStr = visit.topCandidate.placeLocation.latLng || '';
+    const place = visit.topCandidate.placeLocation;
+    const locStr = place.latLng || '';
     const [latStr, lngStr] = locStr.split(',').map(s => s.trim());
-    const lat = parseFloat(latStr) || 0;
-    const lng = parseFloat(lngStr) || 0;
+    const lat = parseFloat(latStr) || place.lat || place.latitude || 0;
+    const lng = parseFloat(lngStr) || place.lng || place.longitude || 0;
     if (!lat || !lng) return;
-    const name = visit.topCandidate.semanticType?.replace('TYPE_', '').replace(/_/g, ' ').toLowerCase() || 'Unknown';
+    const semanticType = visit.topCandidate.semanticType || '';
+    const name = _gmTimelineDisplayName(place.name, semanticType);
+    // semanticType ("TYPE_RESTAURANT" → "RESTAURANT") fed into inferCategory so
+    // we keep the strong category signal even when we use the real place name
+    // for display.
+    const inferenceText = name + ' ' + (place.address || '') + ' ' + semanticType.replace('TYPE_', '').replace(/_/g, ' ');
     const visitDate = item.startTime ? new Date(item.startTime).toISOString().split('T')[0] : '';
     const key = lat.toFixed(4) + '|' + lng.toFixed(4);
 
@@ -7939,13 +7955,13 @@ function parseGoogleTimelineNew(data) {
       }
     } else {
       const entry = {
-        name: name.charAt(0).toUpperCase() + name.slice(1),
+        name,
         lat, lng,
-        category: inferCategory(name),
-        address: '',
+        category: inferCategory(inferenceText),
+        address: place.address || '',
         status: 'been',
         visits: visitDate ? [{ date: visitDate, notes: '' }] : [],
-        _placeId: visit.topCandidate.placeId || '',
+        _placeId: visit.topCandidate.placeId || place.placeId || '',
       };
       seen.set(key, entry);
       results.push(entry);
@@ -7962,11 +7978,13 @@ function parseGoogleTimelineSegments(data) {
   segments.forEach(seg => {
     const visit = seg.visit;
     if (!visit?.topCandidate?.placeLocation) return;
-    const latLng = visit.topCandidate.placeLocation;
-    const lat = latLng.latLng ? parseFloat(latLng.latLng.split(',')[0]) : (latLng.lat || latLng.latitude || 0);
-    const lng = latLng.latLng ? parseFloat(latLng.latLng.split(',')[1]) : (latLng.lng || latLng.longitude || 0);
+    const place = visit.topCandidate.placeLocation;
+    const lat = place.latLng ? parseFloat(place.latLng.split(',')[0]) : (place.lat || place.latitude || 0);
+    const lng = place.latLng ? parseFloat(place.latLng.split(',')[1]) : (place.lng || place.longitude || 0);
     if (!lat || !lng) return;
-    const name = visit.topCandidate.placeLocation.name || visit.topCandidate.semanticType?.replace('TYPE_', '').replace(/_/g, ' ') || 'Unknown';
+    const semanticType = visit.topCandidate.semanticType || '';
+    const name = _gmTimelineDisplayName(place.name, semanticType);
+    const inferenceText = name + ' ' + (place.address || '') + ' ' + semanticType.replace('TYPE_', '').replace(/_/g, ' ');
     const visitDate = seg.startTime ? new Date(seg.startTime).toISOString().split('T')[0] : '';
     const key = lat.toFixed(4) + '|' + lng.toFixed(4);
 
@@ -7977,11 +7995,13 @@ function parseGoogleTimelineSegments(data) {
       }
     } else {
       const entry = {
-        name: typeof name === 'string' ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : 'Unknown',
+        name,
         lat, lng,
-        category: inferCategory(name || ''),
-        address: '', status: 'been',
+        category: inferCategory(inferenceText),
+        address: place.address || '',
+        status: 'been',
         visits: visitDate ? [{ date: visitDate, notes: '' }] : [],
+        _placeId: visit.topCandidate.placeId || place.placeId || '',
       };
       seen.set(key, entry);
       results.push(entry);
