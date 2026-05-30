@@ -50,17 +50,17 @@ table below for the per-finding reconciliation.
 
 ### Wishlist (P1+)
 
-- **Google data — easier ingestion path.** Today's import surfaces touch Google
-  data only at the edges: Google Timeline JSON import (locations + trips),
-  Google Saved Places JSON import (parseGoogleSavedPlaces — Place IDs from
-  starred list URLs), and per-location Google Places sync (rating + price +
-  user count). What's missing is a smooth "give me everything I've put into
-  Google Maps" path. Research spike needed: (a) Google Takeout still the
-  authoritative dump path — what schemas does it ship today vs. when the
-  Timeline parser was written; (b) is there a partner-program/Saved-Places
-  API that would let us pull stars + want-to-go + custom lists directly with
-  OAuth scope upgrade; (c) sharable-list URL scraping as a stopgap. Tracked
-  alongside the existing Maps-saved-lists writeback blocker.
+- **Google data — easier ingestion path.** Research spike completed 2026-05-30
+  (`a537b43` — see `docs/research/google-data-ingestion.md`). **Two follow-ups
+  shipped:** `99d0ea2` patched the phone-export parsers
+  (`parseGoogleTimelineSegments` + `parseGoogleTimelineNew`) to read real place
+  names, capture `placeId` + `address`, and stop mangling diacritic casing;
+  `ac88ce0` updated the Google Data Guide with the 2024+ on-device export path
+  and the Takeout `Saved/` CSV-list path. **Still open:** KML/KMZ import for
+  My Maps (~1 day, `togeojson`), legacy Places API → Places API (New)
+  migration (not urgent), Data Portability API OAuth flow (blocked on Google's
+  Restricted-scope verification for personal apps — monitor for relaxation).
+  Do not build the sharable-list scraper (ToS risk + low value).
 - **Top-rated Google Places by category** — discovery: places near a region
   with >1000 ratings, filtered by category, one-click bucket-list add.
 - **Time Out / website import** — generic web-scrape importer with per-site
@@ -114,5 +114,9 @@ See memory roadmap for full commit-level detail. Headline batches:
   + `script-src-attr 'none'`** (`c9f7ec9` — 217 inline handlers → document-
   level capture-phase dispatcher; +3 e2e specs: view-switch, edit-modal,
   filter-category), **CSS-ify hover-bg bridge** (`342cf0d` — `.hover-bg-tertiary`
-  rule replaces the last 4 inline data-mouseover/out sites). **Session totals:
-  556 jest + 8 e2e green.**
+  rule replaces the last 4 inline data-mouseover/out sites), **Google data
+  ingestion research brief** (`a537b43` — `docs/research/google-data-ingestion.md`),
+  **Timeline phone-export parser fix** (`99d0ea2` — real names, `placeId`,
+  address, casing preservation), **Import guide refresh for 2024 Google changes**
+  (`ac88ce0` — on-device Timeline export path + Saved-folder CSV-list path).
+  **Session totals: 560 jest + 8 e2e green.**
