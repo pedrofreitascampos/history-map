@@ -38,11 +38,8 @@ touches every `api()` call site + needs CSRF on state-changing routes.
 ### Other open items
 
 - **Marker layer-diff** — ✅ shipped 2026-05-30 (commit `d1b37ba`).
-- **FR24 "not an export" guard** — when all rows resolve to unknown airports
-  (likely a non-FR24 CSV), surface a clearer error instead of silent 0-imported.
-  `public/index.html:~5262/8447`.
-- **LOW polish bundle** — stat strip auto-hide at 0 transits; `✈` tab icon
-  variation-selector for emoji rendering parity; raise 11px fonts to 12px floor.
+- **FR24 "not an export" guard** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
+- **LOW polish bundle** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
 - **CSP nonce refactor** — currently `'unsafe-inline'` on script-src/style-src
   because the whole frontend is one inline `<script>` + many `onclick=`.
   Migrating to nonces is the highest-risk single change in the codebase.
