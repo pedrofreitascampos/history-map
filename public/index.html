@@ -1316,20 +1316,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <!-- Login box -->
     <div class="login-box">
       <div class="login-tabs">
-        <button class="login-tab active" onclick="switchLoginTab('login')">Sign In</button>
-        <button class="login-tab" onclick="switchLoginTab('register')">Register</button>
+        <button class="login-tab active" data-click="switchLoginTab" data-arg0="login">Sign In</button>
+        <button class="login-tab" data-click="switchLoginTab" data-arg0="register">Register</button>
       </div>
       <div class="form-group">
         <label for="auth-username">Username</label>
         <input type="text" class="form-input" id="auth-username" placeholder="username"
-          onkeydown="if(event.key==='Enter') document.getElementById('auth-password').focus()">
+          data-keydown="enterToFocus" data-target="auth-password">
       </div>
       <div class="form-group">
         <label for="auth-password">Password</label>
         <input type="password" class="form-input" id="auth-password" placeholder="••••••••"
-          onkeydown="if(event.key==='Enter') doAuth()">
+          data-keydown="enterKey" data-arg0="doAuth">
       </div>
-      <button class="btn btn-primary" onclick="doAuth()">Sign In</button>
+      <button class="btn btn-primary" data-click="doAuth">Sign In</button>
       <div class="login-error" id="auth-error"></div>
       <div id="google-signin-divider" style="display:none;margin-top:16px;position:relative;text-align:center;">
         <hr style="border:none;border-top:1px solid var(--border);margin:0;">
@@ -1353,43 +1353,43 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 
   <nav class="nav-tabs">
-    <button class="nav-tab active" data-view="map-view" onclick="switchView('map-view')">
+    <button class="nav-tab active" data-view="map-view" data-click="switchView" data-arg0="map-view">
       🗺️ <span class="tab-label">Map</span>
     </button>
-    <button class="nav-tab" data-view="stats-view" onclick="switchView('stats-view')">
+    <button class="nav-tab" data-view="stats-view" data-click="switchView" data-arg0="stats-view">
       📊 <span class="tab-label">Stats</span>
     </button>
-    <button class="nav-tab" data-view="chrono-view" onclick="switchView('chrono-view')">
+    <button class="nav-tab" data-view="chrono-view" data-click="switchView" data-arg0="chrono-view">
       📅 <span class="tab-label">Chronology</span>
     </button>
-    <button class="nav-tab" data-view="trips-view" onclick="switchView('trips-view')">
+    <button class="nav-tab" data-view="trips-view" data-click="switchView" data-arg0="trips-view">
       🧳 <span class="tab-label">Trips</span>
     </button>
-    <button class="nav-tab" data-view="transits-view" onclick="switchView('transits-view')">
+    <button class="nav-tab" data-view="transits-view" data-click="switchView" data-arg0="transits-view">
       ✈️ <span class="tab-label">Transits</span>
     </button>
-    <button class="nav-tab" data-view="collections-view" onclick="switchView('collections-view')">
+    <button class="nav-tab" data-view="collections-view" data-click="switchView" data-arg0="collections-view">
       🏆 <span class="tab-label">Collections</span>
     </button>
-    <button class="nav-tab" data-view="regions-view" onclick="switchView('regions-view')">
+    <button class="nav-tab" data-view="regions-view" data-click="switchView" data-arg0="regions-view">
       🌍 <span class="tab-label">Regions</span>
     </button>
-    <button class="nav-tab" data-view="bulk-view" onclick="switchView('bulk-view')">
+    <button class="nav-tab" data-view="bulk-view" data-click="switchView" data-arg0="bulk-view">
       ☑️ <span class="tab-label">Bulk Edit</span>
     </button>
-    <button class="nav-tab" data-view="import-view" onclick="switchView('import-view')">
+    <button class="nav-tab" data-view="import-view" data-click="switchView" data-arg0="import-view">
       📥 <span class="tab-label">Import</span>
       <span class="badge" id="approval-badge" style="display:none">0</span>
     </button>
   </nav>
 
   <div class="topbar-actions">
-    <button class="btn-icon" onclick="exportData()" title="Export Data" aria-label="Export Data">💾</button>
-    <button class="btn-icon" onclick="openAccountModal()" title="Account & Backups" aria-label="Account & Backups">👤</button>
-    <button class="btn-icon" id="theme-toggle" onclick="cycleTheme()" title="Change Theme" aria-label="Change Theme">🌙</button>
+    <button class="btn-icon" data-click="exportData" title="Export Data" aria-label="Export Data">💾</button>
+    <button class="btn-icon" data-click="openAccountModal" title="Account & Backups" aria-label="Account & Backups">👤</button>
+    <button class="btn-icon" id="theme-toggle" data-click="cycleTheme" title="Change Theme" aria-label="Change Theme">🌙</button>
     <div class="user-info">
       <span class="username" id="display-username"></span>
-      <button class="btn-logout" onclick="logout()">Sign out</button>
+      <button class="btn-logout" data-click="logout">Sign out</button>
     </div>
   </div>
 </header>
@@ -1406,52 +1406,52 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="display:flex;gap:6px;">
         <input type="text" class="form-input" id="map-search-input" placeholder="🔍 Search places..."
           style="flex:1;font-size:12px;padding:6px 10px;"
-          onkeydown="if(event.key==='Enter'){mapSearch();event.preventDefault();}">
-        <button class="add-small-btn" onclick="mapSearch()" style="border-style:solid;padding:4px 8px;font-size:12px;">Go</button>
+          data-keydown="enterKey" data-arg0="mapSearch" data-prevent="1">
+        <button class="add-small-btn" data-click="mapSearch" style="border-style:solid;padding:4px 8px;font-size:12px;">Go</button>
       </div>
       <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
     </div>
 
     <div class="filter-section">
-      <h4>Status <button class="clear-btn" type="button" onclick="clearStatusFilter()">clear</button></h4>
+      <h4>Status <button class="clear-btn" type="button" data-click="clearStatusFilter">clear</button></h4>
       <div class="filter-group">
-        <button class="filter-group-btn active" data-status="all" onclick="setStatusFilter('all', this)">All</button>
-        <button class="filter-group-btn" data-status="been" onclick="setStatusFilter('been', this)">✅ Been</button>
-        <button class="filter-group-btn" data-status="bucket" onclick="setStatusFilter('bucket', this)">⭐ Bucket</button>
+        <button class="filter-group-btn active" data-status="all" data-click="setStatusFilter" data-arg0="all" data-arg1="this">All</button>
+        <button class="filter-group-btn" data-status="been" data-click="setStatusFilter" data-arg0="been" data-arg1="this">✅ Been</button>
+        <button class="filter-group-btn" data-status="bucket" data-click="setStatusFilter" data-arg0="bucket" data-arg1="this">⭐ Bucket</button>
       </div>
     </div>
 
     <div class="filter-section">
-      <h4>Categories <button class="clear-btn" type="button" onclick="selectAllCategories()">select all</button> <button class="clear-btn" type="button" onclick="clearCategoryFilter()">clear all</button></h4>
+      <h4>Categories <button class="clear-btn" type="button" data-click="selectAllCategories">select all</button> <button class="clear-btn" type="button" data-click="clearCategoryFilter">clear all</button></h4>
       <div class="filter-chips" id="category-filters"></div>
     </div>
 
     <div class="filter-section">
-      <h4>Trip <button class="clear-btn" type="button" onclick="openTripManager()">manage</button></h4>
-      <select class="filter-select" id="trip-filter" onchange="applyFilters()">
+      <h4>Trip <button class="clear-btn" type="button" data-click="openTripManager">manage</button></h4>
+      <select class="filter-select" id="trip-filter" data-click="applyFilters">
         <option value="">All Trips</option>
       </select>
     </div>
 
     <div class="filter-section">
-      <h4>People <button class="clear-btn" type="button" onclick="openPeopleManager()">manage</button></h4>
-      <select class="filter-select" id="people-filter" onchange="applyFilters()">
+      <h4>People <button class="clear-btn" type="button" data-click="openPeopleManager">manage</button></h4>
+      <select class="filter-select" id="people-filter" data-click="applyFilters">
         <option value="">Everyone</option>
       </select>
     </div>
 
     <div class="filter-section">
-      <h4>Tags <button class="clear-btn" type="button" onclick="clearTagFilter()">clear</button></h4>
+      <h4>Tags <button class="clear-btn" type="button" data-click="clearTagFilter">clear</button></h4>
       <div class="filter-chips" id="tag-filters" style="max-height:120px;overflow-y:auto;"></div>
     </div>
 
     <div class="filter-section">
-      <h4>Price Level <button class="clear-btn" type="button" onclick="clearPriceFilter()">clear</button></h4>
+      <h4>Price Level <button class="clear-btn" type="button" data-click="clearPriceFilter">clear</button></h4>
       <div class="filter-chips">
-        <button class="filter-chip" data-price="1" onclick="togglePriceFilter(1, this)">€</button>
-        <button class="filter-chip" data-price="2" onclick="togglePriceFilter(2, this)">€€</button>
-        <button class="filter-chip" data-price="3" onclick="togglePriceFilter(3, this)">€€€</button>
-        <button class="filter-chip" data-price="4" onclick="togglePriceFilter(4, this)">€€€€</button>
+        <button class="filter-chip" data-price="1" data-click="togglePriceFilter" data-arg0="1" data-arg1="this">€</button>
+        <button class="filter-chip" data-price="2" data-click="togglePriceFilter" data-arg0="2" data-arg1="this">€€</button>
+        <button class="filter-chip" data-price="3" data-click="togglePriceFilter" data-arg0="3" data-arg1="this">€€€</button>
+        <button class="filter-chip" data-price="4" data-click="togglePriceFilter" data-arg0="4" data-arg1="this">€€€€</button>
       </div>
     </div>
 
@@ -1459,7 +1459,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>Google Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
-        <input type="range" class="rating-slider" id="google-rating-filter" min="0" max="5" step="0.5" value="0" oninput="document.getElementById('google-rating-value').textContent=this.value" onchange="applyFilters()">
+        <input type="range" class="rating-slider" id="google-rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="google-rating-value" data-click="applyFilters">
         <span class="rating-value" id="google-rating-value">0</span>
       </div>
     </div>
@@ -1468,7 +1468,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>My Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
-        <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" oninput="document.getElementById('rating-value').textContent=this.value" onchange="applyFilters()">
+        <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="rating-value" data-click="applyFilters">
         <span class="rating-value" id="rating-value">0</span>
       </div>
     </div>
@@ -1476,14 +1476,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="filter-section">
       <h4>Map Style</h4>
       <div class="filter-group">
-        <button class="filter-group-btn active" data-mapstyle="clusters" onclick="setMapStyle('clusters',this)">📍 Clusters</button>
-        <button class="filter-group-btn" data-mapstyle="heat" onclick="setMapStyle('heat',this)">🔥 Heatmap</button>
+        <button class="filter-group-btn active" data-mapstyle="clusters" data-click="setMapStyle" data-arg0="clusters" data-arg1="this">📍 Clusters</button>
+        <button class="filter-group-btn" data-mapstyle="heat" data-click="setMapStyle" data-arg0="heat" data-arg1="this">🔥 Heatmap</button>
       </div>
     </div>
 
     <div class="filter-section">
       <h4>Marker Size</h4>
-      <select class="filter-select" id="marker-size-mode" onchange="setMarkerSizeMode(this.value)">
+      <select class="filter-select" id="marker-size-mode" data-click="setMarkerSizeMode" data-arg0="this.value">
         <option value="default">Default (fixed)</option>
         <option value="my-rating">⭐ My rating</option>
         <option value="google-pop">🌟 Google popularity</option>
@@ -1493,10 +1493,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <span id="marker-size-desc" style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;"></span>
     </div>
 
-    <button class="sidebar-add-btn" onclick="openAddModal()">+ Add New Location</button>
+    <button class="sidebar-add-btn" data-click="openAddModal">+ Add New Location</button>
   </aside>
 
-  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">◀</button>
+  <button class="sidebar-toggle" id="sidebar-toggle" data-click="toggleSidebar" aria-label="Toggle sidebar">◀</button>
 
   <!-- APPROVAL VIEW -->
   <!-- STATISTICS VIEW -->
@@ -1549,31 +1549,31 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="chrono-header">
       <h1>Chronology</h1>
       <div class="chrono-filters">
-        <select id="chrono-year" onchange="onChronoFilterChange()"><option value="">All Years</option></select>
-        <select id="chrono-cat" onchange="onChronoFilterChange()"><option value="">All Categories</option></select>
-        <select id="chrono-trip" onchange="onChronoFilterChange()"><option value="">All Trips</option></select>
+        <select id="chrono-year" data-click="onChronoFilterChange"><option value="">All Years</option></select>
+        <select id="chrono-cat" data-click="onChronoFilterChange"><option value="">All Categories</option></select>
+        <select id="chrono-trip" data-click="onChronoFilterChange"><option value="">All Trips</option></select>
       </div>
     </div>
-    <button class="btn btn-secondary" id="replay-toggle-btn" onclick="toggleReplay()" style="margin: 0 20px 12px; align-self: flex-start;">▶ Replay</button>
+    <button class="btn btn-secondary" id="replay-toggle-btn" data-click="toggleReplay" style="margin: 0 20px 12px; align-self: flex-start;">▶ Replay</button>
 
     <div id="replay-panel" class="replay-panel" style="display:none;">
       <div id="replay-map"></div>
       <div class="replay-controls">
-        <button class="replay-play-btn" id="replay-play-btn" onclick="toggleReplayPlay()" aria-label="Play or pause replay">▶</button>
+        <button class="replay-play-btn" id="replay-play-btn" data-click="toggleReplayPlay" aria-label="Play or pause replay">▶</button>
         <div class="replay-scrubber-wrap">
-          <input type="range" id="replay-scrubber" min="0" max="0" value="0" step="1" oninput="seekReplay(this.value)" aria-label="Replay position">
+          <input type="range" id="replay-scrubber" min="0" max="0" value="0" step="1" data-click="seekReplay" data-arg0="this.value" aria-label="Replay position">
           <div class="replay-position-label" id="replay-position-label">—</div>
         </div>
         <div class="replay-speed-group" role="group" aria-label="Playback speed">
-          <button class="replay-speed-btn" data-speed="1" onclick="setReplaySpeed(1)">1×</button>
-          <button class="replay-speed-btn active" data-speed="2" onclick="setReplaySpeed(2)">2×</button>
-          <button class="replay-speed-btn" data-speed="5" onclick="setReplaySpeed(5)">5×</button>
-          <button class="replay-speed-btn" data-speed="10" onclick="setReplaySpeed(10)">10×</button>
+          <button class="replay-speed-btn" data-speed="1" data-click="setReplaySpeed" data-arg0="1">1×</button>
+          <button class="replay-speed-btn active" data-speed="2" data-click="setReplaySpeed" data-arg0="2">2×</button>
+          <button class="replay-speed-btn" data-speed="5" data-click="setReplaySpeed" data-arg0="5">5×</button>
+          <button class="replay-speed-btn" data-speed="10" data-click="setReplaySpeed" data-arg0="10">10×</button>
         </div>
       </div>
       <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input id="replay-realistic-routes" type="checkbox" onchange="setReplayRealisticRoutes(this.checked)" style="cursor:pointer;">
+          <input id="replay-realistic-routes" type="checkbox" data-click="setReplayRealisticRoutes" data-arg0="this.checked" style="cursor:pointer;">
           Realistic road routes
         </label>
         <span title="Fetches each ground leg from OSRM at play time. Adds 1–3s per leg and may rate-limit on long replays." style="color:var(--text-muted);font-size:12px;">⚠ slower, network</span>
@@ -1588,9 +1588,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
-        <select class="filter-select" id="trip-selector" onchange="selectTrip(this.value)" style="flex:1;max-width:300px;"></select>
-        <button class="btn btn-secondary" onclick="promptNewTrip().then(()=>{populateTripSelector();})" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
-        <button class="btn btn-secondary" onclick="importTripFromTimeline()" style="font-size:12px;padding:6px 12px;">📂 Import from Timeline</button>
+        <select class="filter-select" id="trip-selector" data-click="selectTrip" data-arg0="this.value" style="flex:1;max-width:300px;"></select>
+        <button class="btn btn-secondary" data-click="promptNewTrip" data-arg0=").then(()=>{populateTripSelector();}" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
+        <button class="btn btn-secondary" data-click="importTripFromTimeline" style="font-size:12px;padding:6px 12px;">📂 Import from Timeline</button>
         <input type="file" id="trip-timeline-input" accept=".json" style="display:none">
       </div>
       <div id="trip-map" style="flex:1;"></div>
@@ -1613,7 +1613,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <h1 style="font-family:var(--font-display);font-size:28px;">Collections</h1>
         <p style="color:var(--text-muted);font-size:14px;">Track your progress across curated lists of places.</p>
       </div>
-      <button class="btn btn-primary" onclick="openNewCollectionModal()">+ New Collection</button>
+      <button class="btn btn-primary" data-click="openNewCollectionModal">+ New Collection</button>
     </div>
     <div id="collections-grid" class="category-stats-grid stagger"></div>
   </div>
@@ -1622,7 +1622,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="view" id="regions-view" style="flex-direction:column;overflow:hidden;">
     <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg-glass);backdrop-filter:blur(12px);z-index:10;">
       <h2 style="font-family:var(--font-display);font-size:18px;margin:0;">🌍 Visited Regions</h2>
-      <select class="filter-select" id="region-color-scheme" onchange="updateRegionsColorScheme()" style="width:160px;">
+      <select class="filter-select" id="region-color-scheme" data-click="updateRegionsColorScheme" style="width:160px;">
         <option value="amber">🟡 Amber</option>
         <option value="blue">🔵 Blue</option>
         <option value="green">🟢 Green</option>
@@ -1646,22 +1646,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <!-- Filters -->
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
       <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Filter</span>
-      <select class="filter-select" id="bulk-filter-cat" onchange="renderBulkList()" style="width:150px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-cat" data-click="renderBulkList" style="width:150px;font-size:12px;">
         <option value="">All categories</option>
       </select>
-      <select class="filter-select" id="bulk-filter-status" onchange="renderBulkList()" style="width:150px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-status" data-click="renderBulkList" style="width:150px;font-size:12px;">
         <option value="">All status</option>
         <option value="been">✅ Been</option>
         <option value="bucket">⭐ Bucket</option>
         <option value="uncategorized">❓ Uncategorized</option>
         <option value="pending">⏳ Pending approval</option>
       </select>
-      <select class="filter-select" id="bulk-filter-tag" onchange="renderBulkList()" style="width:130px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-tag" data-click="renderBulkList" style="width:130px;font-size:12px;">
         <option value="">All tags</option>
       </select>
-      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." oninput="debouncedBulkFilter()" style="flex:1;min-width:120px;font-size:12px;padding:6px 10px;">
-      <button class="add-small-btn" onclick="selectAllBulk()" style="border-style:solid;font-size:12px;">Select all</button>
-      <button class="add-small-btn" onclick="clearBulkSelection()" style="border-style:solid;font-size:12px;">Clear</button>
+      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." data-click="debouncedBulkFilter" style="flex:1;min-width:120px;font-size:12px;padding:6px 10px;">
+      <button class="add-small-btn" data-click="selectAllBulk" style="border-style:solid;font-size:12px;">Select all</button>
+      <button class="add-small-btn" data-click="clearBulkSelection" style="border-style:solid;font-size:12px;">Clear</button>
     </div>
     <!-- Selection bar + actions -->
     <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:stretch;">
@@ -1685,11 +1685,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
       <!-- Right: action buttons -->
       <div style="display:flex;gap:6px;align-items:center;">
-        <button class="btn btn-primary" onclick="withLoading(this, applyBulkEdit)" style="font-size:12px;padding:6px 14px;">Apply</button>
-        <button class="btn btn-secondary" onclick="openFillMissingModal()" style="font-size:12px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
-        <button class="btn btn-secondary" onclick="withLoading(this, bulkEnrichOSM)" style="font-size:12px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
-        <button class="btn btn-secondary" onclick="withLoading(this, bulkSyncGoogle)" style="font-size:12px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
-        <button class="btn btn-danger" onclick="deleteBulkSelection()" style="font-size:12px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
+        <button class="btn btn-primary" data-click="withLoading" data-arg0="applyBulkEdit" style="font-size:12px;padding:6px 14px;">Apply</button>
+        <button class="btn btn-secondary" data-click="openFillMissingModal" style="font-size:12px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
+        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
+        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="font-size:12px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
+        <button class="btn btn-danger" data-click="deleteBulkSelection" style="font-size:12px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
       </div>
     </div>
     <!-- Location list -->
@@ -1709,7 +1709,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div class="dz-icon">📂</div>
           <div class="dz-text">Drag & drop files here or click to browse</div>
           <div class="dz-formats">CSV, JSON, KML, GeoJSON · Multiple files or folders supported</div>
-          <div style="margin-top:8px;"><button class="add-small-btn" onclick="event.stopPropagation();document.getElementById('folder-input').click();" style="border-style:solid;font-size:12px;">📁 Import Folder</button></div>
+          <div style="margin-top:8px;"><button class="add-small-btn" data-click="openFileDialog" data-target="folder-input" data-stop="1" style="border-style:solid;font-size:12px;">📁 Import Folder</button></div>
           <input type="file" id="file-input" accept=".csv,.json,.kml,.geojson,.kmz" multiple>
           <input type="file" id="folder-input" webkitdirectory style="display:none">
         </div>
@@ -1732,8 +1732,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
               <input type="checkbox" id="import-google-sync"> 📍 Enrich via Google Places
             </label>
             <span style="flex:1;"></span>
-            <button class="btn btn-secondary" onclick="cancelImport()">Cancel</button>
-            <button class="btn btn-primary" onclick="withLoading(this, confirmImport)">Import All</button>
+            <button class="btn btn-secondary" data-click="cancelImport">Cancel</button>
+            <button class="btn btn-primary" data-click="withLoading" data-arg0="confirmImport">Import All</button>
           </div>
         </div>
       </div>
@@ -1772,7 +1772,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           📋 Approval Queue
           <span class="approval-count" id="approval-count-label">0 pending</span>
         </h3>
-        <button class="btn btn-primary" onclick="bulkApprove()" id="bulk-approve-btn" style="font-size:12px;padding:8px 14px;">Approve All Suggestions</button>
+        <button class="btn btn-primary" data-click="bulkApprove" id="bulk-approve-btn" style="font-size:12px;padding:8px 14px;">Approve All Suggestions</button>
       </div>
       <div id="approval-list" class="approval-grid"></div>
     </div>
@@ -1783,9 +1783,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
     <h2 style="margin:0; color:var(--text-primary);">Transits</h2>
     <div style="display:flex; gap:8px;">
-      <button class="btn btn-secondary" id="transit-view-toggle" onclick="toggleTransitViewMode()" aria-label="Toggle list/map view">🗺 Map</button>
-      <button class="btn btn-secondary" onclick="openFr24Import()">📥 Import FR24</button>
-      <button class="btn btn-primary" onclick="openTransitModal()">+ Add Transit</button>
+      <button class="btn btn-secondary" id="transit-view-toggle" data-click="toggleTransitViewMode" aria-label="Toggle list/map view">🗺 Map</button>
+      <button class="btn btn-secondary" data-click="openFr24Import">📥 Import FR24</button>
+      <button class="btn btn-primary" data-click="openTransitModal">+ Add Transit</button>
     </div>
   </div>
 
@@ -1808,13 +1808,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div id="transit-filters" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
     <span role="group" aria-label="Filter by transport mode" style="display:contents;">
       <span style="color:var(--text-secondary); font-size:12px;">Mode:</span>
-      <button class="transit-mode-chip active" data-mode="all" aria-pressed="true" onclick="setTransitModeFilter('all')">All</button>
-      <button class="transit-mode-chip" data-mode="flight" aria-pressed="false" onclick="setTransitModeFilter('flight')">✈ Flight</button>
-      <button class="transit-mode-chip" data-mode="car" aria-pressed="false" onclick="setTransitModeFilter('car')">🚗 Car</button>
-      <button class="transit-mode-chip" data-mode="train" aria-pressed="false" onclick="setTransitModeFilter('train')">🚆 Train</button>
-      <button class="transit-mode-chip" data-mode="ferry" aria-pressed="false" onclick="setTransitModeFilter('ferry')">⛴ Ferry</button>
+      <button class="transit-mode-chip active" data-mode="all" aria-pressed="true" data-click="setTransitModeFilter" data-arg0="all">All</button>
+      <button class="transit-mode-chip" data-mode="flight" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="flight">✈ Flight</button>
+      <button class="transit-mode-chip" data-mode="car" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="car">🚗 Car</button>
+      <button class="transit-mode-chip" data-mode="train" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="train">🚆 Train</button>
+      <button class="transit-mode-chip" data-mode="ferry" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="ferry">⛴ Ferry</button>
     </span>
-    <input id="transit-search" type="text" placeholder="Search…" aria-label="Search transits" oninput="renderTransitsView()" style="padding:6px 10px; background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; min-width:160px;">
+    <input id="transit-search" type="text" placeholder="Search…" aria-label="Search transits" data-click="renderTransitsView" style="padding:6px 10px; background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; min-width:160px;">
     <span style="margin-left:auto; color:var(--text-secondary); font-size:12px;" id="transit-count-label"></span>
   </div>
 
@@ -1828,7 +1828,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal">
     <div class="modal-header">
       <h2 id="modal-title">Add Location</h2>
-      <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-group" style="position:relative;">
@@ -1869,9 +1869,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div id="loc-tag-suggestions" class="filter-chips" style="margin-bottom:8px;"></div>
         <div style="display:flex;gap:8px;">
           <input type="text" class="form-input" id="loc-tag-input" placeholder="Add custom tag" style="flex:1;"
-            onkeydown="if(event.key==='Enter'){addTag(); event.preventDefault();}" list="tag-datalist">
+            data-keydown="enterKey" data-arg0="addTag" data-prevent="1" list="tag-datalist">
           <datalist id="tag-datalist"></datalist>
-          <button class="add-small-btn" onclick="addTag()">Add</button>
+          <button class="add-small-btn" data-click="addTag">Add</button>
         </div>
       </div>
 
@@ -1882,38 +1882,38 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <select class="filter-select" id="loc-collection-select" style="flex:1;">
             <option value="">Add to collection...</option>
           </select>
-          <button class="add-small-btn" onclick="addCollectionToLoc()">Add</button>
-          <button class="add-small-btn" onclick="createCollectionFromModal()">+ New</button>
+          <button class="add-small-btn" data-click="addCollectionToLoc">Add</button>
+          <button class="add-small-btn" data-click="createCollectionFromModal">+ New</button>
         </div>
       </div>
 
       <div class="form-group" id="price-group" style="display:none;">
         <label>Price Level</label>
         <div class="filter-group" id="price-selector">
-          <button class="filter-group-btn active" data-price="0" onclick="setModalPrice(0, this)">None</button>
-          <button class="filter-group-btn" data-price="1" onclick="setModalPrice(1, this)">€</button>
-          <button class="filter-group-btn" data-price="2" onclick="setModalPrice(2, this)">€€</button>
-          <button class="filter-group-btn" data-price="3" onclick="setModalPrice(3, this)">€€€</button>
-          <button class="filter-group-btn" data-price="4" onclick="setModalPrice(4, this)">€€€€</button>
+          <button class="filter-group-btn active" data-price="0" data-click="setModalPrice" data-arg0="0" data-arg1="this">None</button>
+          <button class="filter-group-btn" data-price="1" data-click="setModalPrice" data-arg0="1" data-arg1="this">€</button>
+          <button class="filter-group-btn" data-price="2" data-click="setModalPrice" data-arg0="2" data-arg1="this">€€</button>
+          <button class="filter-group-btn" data-price="3" data-click="setModalPrice" data-arg0="3" data-arg1="this">€€€</button>
+          <button class="filter-group-btn" data-price="4" data-click="setModalPrice" data-arg0="4" data-arg1="this">€€€€</button>
         </div>
       </div>
 
       <div class="form-group">
         <label>Status</label>
         <div class="status-toggle">
-          <button class="status-option selected" data-status="been" onclick="selectStatus('been', this)">✅ Been There</button>
-          <button class="status-option" data-status="bucket" onclick="selectStatus('bucket', this)">⭐ Bucket List</button>
+          <button class="status-option selected" data-status="been" data-click="selectStatus" data-arg0="been" data-arg1="this">✅ Been There</button>
+          <button class="status-option" data-status="bucket" data-click="selectStatus" data-arg0="bucket" data-arg1="this">⭐ Bucket List</button>
         </div>
       </div>
 
       <div class="form-group" id="bucket-strength-group" style="display:none;">
         <label>Want-to-Go Strength <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— how much do you want to visit?</span></label>
         <div class="star-rating" id="bucket-strength" role="radiogroup" aria-label="Want-to-go strength">
-          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        onclick="setBucketStrength(1)" onkeydown="handleHeartKey(event,1)"></span>
-          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              onclick="setBucketStrength(2)" onkeydown="handleHeartKey(event,2)"></span>
-          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           onclick="setBucketStrength(3)" onkeydown="handleHeartKey(event,3)"></span>
-          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  onclick="setBucketStrength(4)" onkeydown="handleHeartKey(event,4)"></span>
-          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         onclick="setBucketStrength(5)" onkeydown="handleHeartKey(event,5)"></span>
+          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        data-click="setBucketStrength" data-arg0="1" data-click="handleHeartKey" data-arg0="event" data-arg1="1"></span>
+          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              data-click="setBucketStrength" data-arg0="2" data-click="handleHeartKey" data-arg0="event" data-arg1="2"></span>
+          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           data-click="setBucketStrength" data-arg0="3" data-click="handleHeartKey" data-arg0="event" data-arg1="3"></span>
+          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  data-click="setBucketStrength" data-arg0="4" data-click="handleHeartKey" data-arg0="event" data-arg1="4"></span>
+          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         data-click="setBucketStrength" data-arg0="5" data-click="handleHeartKey" data-arg0="event" data-arg1="5"></span>
         </div>
       </div>
 
@@ -1923,17 +1923,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="4.5" readonly style="opacity:0.6">
           <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
             <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;">📍 Google Maps</a>
-            <button type="button" id="loc-google-sync-btn" class="add-small-btn" onclick="syncFromEditModal()" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync Google</button>
+            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync Google</button>
           </div>
         </div>
         <div class="form-group">
           <label>My Rating</label>
           <div class="star-rating" id="my-rating" role="radiogroup" aria-label="My rating">
-            <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" onclick="setRating(1)">★</span>
-            <span class="star" data-val="2" role="radio" tabindex="-1" aria-label="2 stars" onclick="setRating(2)">★</span>
-            <span class="star" data-val="3" role="radio" tabindex="-1" aria-label="3 stars" onclick="setRating(3)">★</span>
-            <span class="star" data-val="4" role="radio" tabindex="-1" aria-label="4 stars" onclick="setRating(4)">★</span>
-            <span class="star" data-val="5" role="radio" tabindex="-1" aria-label="5 stars" onclick="setRating(5)">★</span>
+            <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" data-click="setRating" data-arg0="1">★</span>
+            <span class="star" data-val="2" role="radio" tabindex="-1" aria-label="2 stars" data-click="setRating" data-arg0="2">★</span>
+            <span class="star" data-val="3" role="radio" tabindex="-1" aria-label="3 stars" data-click="setRating" data-arg0="3">★</span>
+            <span class="star" data-val="4" role="radio" tabindex="-1" aria-label="4 stars" data-click="setRating" data-arg0="4">★</span>
+            <span class="star" data-val="5" role="radio" tabindex="-1" aria-label="5 stars" data-click="setRating" data-arg0="5">★</span>
           </div>
         </div>
       </div>
@@ -1944,7 +1944,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <select class="filter-select" id="loc-trip" style="flex:1;">
             <option value="">No trip</option>
           </select>
-          <button class="add-small-btn" onclick="promptNewTrip()">+ New</button>
+          <button class="add-small-btn" data-click="promptNewTrip">+ New</button>
         </div>
       </div>
 
@@ -1953,15 +1953,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="people-tags" id="loc-people-tags"></div>
         <div style="display:flex;gap:8px;">
           <input type="text" class="form-input" id="loc-person-input" placeholder="Add a person" style="flex:1;"
-            onkeydown="if(event.key==='Enter'){addPerson(); event.preventDefault();}">
-          <button class="add-small-btn" onclick="addPerson()">Add</button>
+            data-keydown="enterKey" data-arg0="addPerson" data-prevent="1">
+          <button class="add-small-btn" data-click="addPerson">Add</button>
         </div>
       </div>
 
       <div class="form-group">
         <label>Visits</label>
         <div class="visits-list" id="loc-visits"></div>
-        <button class="add-small-btn" onclick="addVisitField()">+ Add Visit</button>
+        <button class="add-small-btn" data-click="addVisitField">+ Add Visit</button>
       </div>
 
       <div class="form-group">
@@ -1970,10 +1970,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-danger" id="delete-loc-btn" onclick="deleteLocation()" style="display:none">Delete</button>
+      <button class="btn btn-danger" id="delete-loc-btn" data-click="deleteLocation" style="display:none">Delete</button>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" id="save-loc-btn" onclick="withLoading(this, saveLocation)">Save</button>
+        <button class="btn btn-secondary" data-click="closeModal">Cancel</button>
+        <button class="btn btn-primary" id="save-loc-btn" data-click="withLoading" data-arg0="saveLocation">Save</button>
       </div>
     </div>
   </div>
@@ -1984,7 +1984,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:420px;">
     <div class="modal-header">
       <h2 id="people-modal-title">Manage People</h2>
-      <button class="modal-close" onclick="closePeopleManager()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closePeopleManager" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Remove a person from all locations, or rename them.</p>
@@ -1995,7 +1995,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
     <div class="modal-footer">
       <div></div>
-      <button class="btn btn-secondary" onclick="closePeopleManager()">Done</button>
+      <button class="btn btn-secondary" data-click="closePeopleManager">Done</button>
     </div>
   </div>
 </div>
@@ -2005,7 +2005,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:480px;">
     <div class="modal-header">
       <h2 id="trips-modal-title">Manage Trips</h2>
-      <button class="modal-close" onclick="closeTripManager()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeTripManager" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Rename, edit dates, or delete trips. Deleting a trip unlinks it from its locations (locations are kept).</p>
@@ -2015,8 +2015,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="openAddTripFromManager()">+ Add Trip</button>
-      <button class="btn btn-secondary" onclick="closeTripManager()">Done</button>
+      <button class="btn btn-secondary" data-click="openAddTripFromManager">+ Add Trip</button>
+      <button class="btn btn-secondary" data-click="closeTripManager">Done</button>
     </div>
   </div>
 </div>
@@ -2026,7 +2026,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:480px;">
     <div class="modal-header">
       <h2 id="fill-missing-title">🔧 Fill Missing Data</h2>
-      <button class="modal-close" onclick="closeFillMissingModal()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeFillMissingModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" id="fill-missing-scope-label">Scope: all filtered locations</p>
@@ -2037,8 +2037,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div id="fill-missing-empty" style="display:none;font-size:12px;color:var(--text-muted);padding:8px 0;">All locations in scope are complete. Nothing to fill. 🎉</div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeFillMissingModal()">Cancel</button>
-      <button class="btn btn-primary" id="fill-missing-run-btn" onclick="withLoading(this, runFillMissing)">Run</button>
+      <button class="btn btn-secondary" data-click="closeFillMissingModal">Cancel</button>
+      <button class="btn btn-primary" id="fill-missing-run-btn" data-click="withLoading" data-arg0="runFillMissing">Run</button>
     </div>
   </div>
 </div>
@@ -2048,7 +2048,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:460px;">
     <div class="modal-header">
       <h2 id="account-modal-title">Account & Backups</h2>
-      <button class="modal-close" onclick="closeAccountModal()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeAccountModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:12px;border-radius:var(--radius);background:var(--bg-tertiary);">
@@ -2065,13 +2065,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Daily backups are created automatically. Last 7 days kept.</p>
       <div id="account-backups" style="margin-bottom:16px;"></div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-secondary" onclick="exportData()" style="flex:1;font-size:12px;">💾 Export Now</button>
-        <button class="btn btn-secondary" onclick="downloadLatestBackup()" style="flex:1;font-size:12px;">📥 Download Latest Backup</button>
+        <button class="btn btn-secondary" data-click="exportData" style="flex:1;font-size:12px;">💾 Export Now</button>
+        <button class="btn btn-secondary" data-click="downloadLatestBackup" style="flex:1;font-size:12px;">📥 Download Latest Backup</button>
       </div>
     </div>
     <div class="modal-footer">
       <div></div>
-      <button class="btn btn-secondary" onclick="closeAccountModal()">Close</button>
+      <button class="btn btn-secondary" data-click="closeAccountModal">Close</button>
     </div>
   </div>
 </div>
@@ -2081,7 +2081,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:760px; max-width:96vw; max-height:90vh; display:flex; flex-direction:column;">
     <div class="modal-header">
       <h2 id="fr24-modal-title">Import Flightradar24 CSV</h2>
-      <button class="modal-close" onclick="closeFr24Import()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeFr24Import" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" style="overflow:auto; flex:1;">
       <p style="color:var(--text-secondary); font-size:13px; margin-top:0;">
@@ -2089,15 +2089,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </p>
       <div id="fr24-dropzone" style="border:2px dashed var(--border); border-radius:8px; padding:32px; text-align:center; color:var(--text-secondary); margin-bottom:12px; cursor:pointer;">
         <div style="font-size:32px;">📥</div>
-        <div>Drop CSV here or <a href="#" onclick="document.getElementById('fr24-file').click(); return false;" style="color:var(--accent);">browse</a></div>
-        <input id="fr24-file" type="file" accept=".csv,text/csv" style="display:none;" onchange="handleFr24File(this.files[0])">
+        <div>Drop CSV here or <a href="#" data-click="openFileDialog" data-target="fr24-file" style="color:var(--accent);">browse</a></div>
+        <input id="fr24-file" type="file" accept=".csv,text/csv" style="display:none;" data-click="handleFr24File" data-arg0="this.files[0]">
       </div>
       <div id="fr24-status" style="color:var(--text-secondary); font-size:13px;"></div>
       <div id="fr24-preview" style="margin-top:12px;"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeFr24Import()">Cancel</button>
-      <button class="btn btn-primary" id="fr24-import-btn" onclick="submitFr24Import()" disabled>Import 0 flights</button>
+      <button class="btn btn-secondary" data-click="closeFr24Import">Cancel</button>
+      <button class="btn btn-primary" id="fr24-import-btn" data-click="submitFr24Import" disabled>Import 0 flights</button>
     </div>
   </div>
 </div>
@@ -2107,7 +2107,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:560px; max-width:96vw;">
     <div class="modal-header">
       <h2 id="transit-modal-title">Add Transit</h2>
-      <button class="modal-close" onclick="closeTransitModal()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeTransitModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-row"><label for="transit-trip">Trip (optional)</label>
@@ -2149,8 +2149,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-row"><label for="transit-notes">Notes</label><textarea id="transit-notes" rows="2"></textarea></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeTransitModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveTransit()">Save</button>
+      <button class="btn btn-secondary" data-click="closeTransitModal">Cancel</button>
+      <button class="btn btn-primary" data-click="saveTransit">Save</button>
     </div>
   </div>
 </div>
@@ -2160,26 +2160,165 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="modal" style="width:640px; max-width:96vw; max-height:90vh; display:flex; flex-direction:column;">
     <div class="modal-header">
       <h2 id="attach-modal-title">Attach transits</h2>
-      <button class="modal-close" onclick="closeAttachPicker()" aria-label="Close">&times;</button>
+      <button class="modal-close" data-click="closeAttachPicker" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" style="overflow:auto;flex:1;">
-      <input type="text" placeholder="Search transits…" oninput="setAttachSearch(this.value)" style="width:100%;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;margin-bottom:12px;">
+      <input type="text" placeholder="Search transits…" data-click="setAttachSearch" data-arg0="this.value" style="width:100%;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;margin-bottom:12px;">
       <div id="attach-list"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeAttachPicker()">Cancel</button>
-      <button class="btn btn-primary" id="attach-submit-btn" onclick="submitAttachPicker()" disabled>Attach 0 transits</button>
+      <button class="btn btn-secondary" data-click="closeAttachPicker">Cancel</button>
+      <button class="btn btn-primary" id="attach-submit-btn" data-click="submitAttachPicker" disabled>Attach 0 transits</button>
     </div>
   </div>
 </div>
 
 <!-- Context Menu -->
 <div class="context-menu" id="context-menu" role="menu">
-  <button type="button" class="context-menu-item" role="menuitem" tabindex="-1" onclick="addPinHere()">📌 Add location here</button>
+  <button type="button" class="context-menu-item" role="menuitem" tabindex="-1" data-click="addPinHere">📌 Add location here</button>
 </div>
 
 
 <script nonce="__CSP_NONCE__">
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* EVENT DELEGATION (CSP: no inline handlers)                            */
+/* ═══════════════════════════════════════════════════════════════════════ */
+// All UI events go through a single document-level listener per event type.
+// Each interactive element carries `data-<event>="<action>"` (kebab-case
+// → camelCase via dataset, e.g. data-click="openTripById") plus optional
+// `data-arg0`, `data-arg1`, … positional argument attributes.
+//
+// Dispatch order, when the listener fires for `<event>`:
+//   1. If `data-stop="1"`, call e.stopPropagation() first.
+//   2. If `data-prevent="1"`, call e.preventDefault() first.
+//   3. If ACTIONS[<action>] exists, it gets (el, e) and does whatever it
+//      wants — used for handlers that read named data attrs, branch on
+//      event state, or compose multiple calls.
+//   4. Otherwise look up window[<action>] (every page-level function is on
+//      the inline-script global scope) and call it with positional args
+//      from data-arg0, data-arg1, ….
+//
+// Why: closes the residual `script-src-attr` 'unsafe-inline' gap in CSP.
+// Inline `onclick=`/`onchange=` attrs are the last execution surface
+// reachable via stored-XSS injection of arbitrary HTML. After this
+// refactor a CSP injection that lands a `<button onclick="…">` is
+// silently ignored by the browser.
+const ACTIONS = {
+  // Placeholder action used when an element only carries data-stop/data-prevent.
+  noop: () => {},
+  // Open a hidden file input (commonly the <input type="file"> we cover with
+  // a styled "browse" link). data-target names the file input's id.
+  openFileDialog: (el) => {
+    const t = document.getElementById(el.dataset.target);
+    if (t) t.click();
+  },
+  // Bulk-list row: clicking anywhere except the checkbox opens the editor.
+  editLocOrCheckbox: (el, e) => {
+    if (e.target && e.target.type === 'checkbox') return;
+    openEditModal(el.dataset.arg0);
+  },
+  // Apply-button wrapper — show in-flight spinner while a function runs.
+  // data-arg0 names the global function to call.
+  withLoading: (el) => {
+    const fn = window[el.dataset.arg0];
+    if (typeof fn === 'function') withLoading(el, fn);
+  },
+  // Enter-key keydown helper: shifts focus to a sibling field on Enter.
+  // data-target names the element to focus.
+  enterToFocus: (el, e) => {
+    if (e.key !== 'Enter') return;
+    const t = document.getElementById(el.dataset.target);
+    if (t) t.focus();
+  },
+  // Enter-key keydown helper: data-arg0 is the action to dispatch on Enter.
+  enterKey: (el, e) => {
+    if (e.key !== 'Enter') return;
+    if (el.dataset.prevent) e.preventDefault();
+    const action = el.dataset.arg0;
+    if (ACTIONS[action]) return ACTIONS[action](el, e);
+    const fn = window[action];
+    if (typeof fn === 'function') {
+      const extra = [];
+      for (let i = 1; el.dataset['arg' + i] !== undefined; i++) extra.push(el.dataset['arg' + i]);
+      fn(...extra);
+    }
+  },
+  // Mirror the source element's `.value` into a target's textContent — used
+  // by the rating sliders (slider input → numeric label).
+  syncToText: (el) => {
+    const t = document.getElementById(el.dataset.target);
+    if (t) t.textContent = el.value;
+  },
+  // Clear a masked-placeholder text field on focus.
+  clearIfMasked: (el) => {
+    if (typeof el.value === 'string' && el.value.startsWith('••')) el.value = '';
+  },
+  // Edit-modal visits: write back to state.modalVisits[idx].<field>.
+  setModalVisitField: (el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    const field = el.dataset.field;
+    if (Number.isInteger(idx) && field && state.modalVisits[idx]) {
+      state.modalVisits[idx][field] = el.value;
+    }
+  },
+  // Sync-all Google Places button: showConfirm + withLoading + bulkGoogleSync.
+  // Wrapped as a custom action because the prior inline form passed an arrow
+  // function literal as showConfirm's second arg, which can't survive the
+  // string-encoded data-arg-N pipeline.
+  confirmBulkGoogleSync: (el) => {
+    showConfirm(el.dataset.arg0, async () => withLoading(el, bulkGoogleSync), 'Sync');
+  },
+  // Hover visuals: distinct in/out background values, each carried by its
+  // own data attr so the same element can wire both events without a clash.
+  // Legacy bridge — the right fix is a CSS :hover rule, deferred.
+  hoverIn: (el) => { el.style.background = el.dataset.bgIn || ''; },
+  hoverOut: (el) => { el.style.background = el.dataset.bgOut || ''; },
+  // Focus blur for masked password-like fields handled by clearIfMasked.
+};
+
+function _readPositionalArgs(el) {
+  const args = [];
+  for (let i = 0; ; i++) {
+    const v = el.dataset['arg' + i];
+    if (v === undefined) break;
+    args.push(v);
+  }
+  return args;
+}
+
+function _runAction(actionName, el, e) {
+  if (!actionName) return;
+  if (el.dataset.stop) e.stopPropagation();
+  if (el.dataset.prevent) e.preventDefault();
+  const custom = ACTIONS[actionName];
+  if (custom) return custom(el, e);
+  const fn = window[actionName];
+  if (typeof fn !== 'function') {
+    console.warn('[delegate] unknown action:', actionName, el);
+    return;
+  }
+  return fn(..._readPositionalArgs(el));
+}
+
+function _delegate(eventName, dataKey) {
+  // Capture phase: events flow document → target FIRST, then bubble. Capture
+  // lets us catch clicks inside containers that call stopPropagation on the
+  // bubble path (notably Leaflet popups, which install
+  // L.DomEvent.disableClickPropagation on .leaflet-popup-pane — without
+  // capture our document listener never sees popup-button clicks).
+  document.addEventListener(eventName, (e) => {
+    const el = e.target.closest(`[data-${dataKey}]`);
+    if (!el) return;
+    _runAction(el.dataset[dataKey], el, e);
+  }, true);
+}
+
+// Wire all event types we use. focusin/focusout instead of focus/blur because
+// the latter don't bubble; change/input/keydown/submit/drop/etc do bubble.
+['click','change','input','mouseover','mouseout','keydown','submit','drop','dragover','dragenter','dragleave','focusin'].forEach(evt => {
+  _delegate(evt, evt);
+});
+
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* DATA MODEL & CONSTANTS                                                */
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -2996,7 +3135,7 @@ function createPopupContent(loc) {
 
   const isBeen = loc.status === 'been';
   return `<div class="popup-inner" style="position:relative;">
-    <button onclick="deleteFromPopup('${esc(loc.id)}')" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
+    <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
     <h3>${cat.emoji} ${esc(loc.name)}</h3>
     <div class="popup-cat">${cat.label}${priceStr}</div>
     <div class="popup-ratings">
@@ -3011,8 +3150,8 @@ function createPopupContent(loc) {
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
     <div style="display:flex;gap:6px;margin-top:8px;">
-      <button class="popup-btn" onclick="toggleStatusFromPopup('${esc(loc.id)}')" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
-      <button class="popup-btn" onclick="openEditModal('${esc(loc.id)}')" style="flex:1;">✏️ Edit</button>
+      <button class="popup-btn" data-click="toggleStatusFromPopup" data-arg0="${esc(loc.id)}" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
+      <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;">✏️ Edit</button>
     </div>
   </div>`;
 }
@@ -3438,9 +3577,9 @@ function _renderBulkItem(loc) {
   const tooltip = esc(_bulkItemTooltip(loc));
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;cursor:pointer;"
     title="${tooltip}"
-    onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''"
-    onclick="if(event.target.type!=='checkbox')openEditModal('${locId}')">
-    <input type="checkbox" class="bulk-cb" value="${locId}" ${checked} onchange="toggleBulkCb(this)" onclick="event.stopPropagation()">
+    data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out=""
+    data-click="editLocOrCheckbox" data-arg0="${locId}">
+    <input type="checkbox" class="bulk-cb" value="${locId}" ${checked} data-click="toggleBulkCb" data-arg0="this" data-click="noop" data-stop="1">
     <span style="font-size:16px;">${c.emoji}</span>
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${statusIcon} ${esc(loc.name)}</span>
     <span style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${c.label}</span>
@@ -3672,12 +3811,12 @@ async function mapSearch() {
       const ratingBadge = r.googleRating ? `<span style="font-size:10px;color:var(--accent);">⭐${r.googleRating}</span>` : '';
       const priceBadge = r.priceLevel ? `<span style="font-size:10px;color:var(--text-muted);">${'€'.repeat(r.priceLevel)}</span>` : '';
       return `<div class="search-result-item" style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
-        onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
-        <button onclick="flyToSearchResult(${i})" style="flex:1;min-width:0;background:none;border:none;color:inherit;cursor:pointer;text-align:left;padding:0;font-family:inherit;">
+        data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="">
+        <button data-click="flyToSearchResult" data-arg0="${i}" style="flex:1;min-width:0;background:none;border:none;color:inherit;cursor:pointer;text-align:left;padding:0;font-family:inherit;">
           <div style="font-weight:500;font-size:12px;">${cat.emoji} ${esc(r.name)} ${ratingBadge} ${priceBadge}</div>
           <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
         </button>
-        <button class="add-small-btn" onclick="addSearchResultAsLocation(${i})" style="border-style:solid;padding:4px 8px;font-size:12px;flex-shrink:0;min-height:32px;">+ Add</button>
+        <button class="add-small-btn" data-click="addSearchResultAsLocation" data-arg0="${i}" style="border-style:solid;padding:4px 8px;font-size:12px;flex-shrink:0;min-height:32px;">+ Add</button>
       </div>`;
     }).join('');
   } catch { resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed.</span>'; }
@@ -3937,7 +4076,7 @@ async function searchLocation(query) {
     resultsDiv.innerHTML = data.map((r, i) => {
       const cat = osmToCategory(r.class, r.type) || inferCategory(r.display_name);
       const catInfo = CATEGORIES[cat] || CATEGORIES.location;
-      return `<button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;text-align:left;color:var(--text-primary);font-size:12px;border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='none'" onclick="pickSearchResult(${i})">
+      return `<button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;text-align:left;color:var(--text-primary);font-size:12px;border-bottom:1px solid var(--border);" data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="none" data-click="pickSearchResult" data-arg0="${i}">
         <span style="font-size:16px;">${catInfo.emoji}</span>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.name || r.display_name.split(',')[0])}</div>
@@ -4050,7 +4189,7 @@ document.addEventListener('keydown', e => {
 function renderPeopleTags() {
   const container = document.getElementById('loc-people-tags');
   container.innerHTML = state.modalPeople.map((p, i) =>
-    `<span class="people-tag">${esc(p)}<button class="remove-tag" onclick="removePerson(${i})" aria-label="Remove ${esc(p)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`
+    `<span class="people-tag">${esc(p)}<button class="remove-tag" data-click="removePerson" data-arg0="${i}" aria-label="Remove ${esc(p)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`
   ).join('');
 }
 function addPerson() {
@@ -4071,9 +4210,9 @@ function renderVisitFields() {
   const container = document.getElementById('loc-visits');
   container.innerHTML = state.modalVisits.map((v, i) =>
     `<div class="visit-item">
-      <input type="date" class="form-input" value="${v.date || ''}" onchange="state.modalVisits[${i}].date=this.value" style="flex:1;">
-      <input type="text" class="form-input" value="${esc(v.notes || '')}" placeholder="Notes" onchange="state.modalVisits[${i}].notes=this.value" style="flex:2;">
-      <span class="remove-visit" onclick="removeVisit(${i})">&times;</span>
+      <input type="date" class="form-input" value="${v.date || ''}" data-change="setModalVisitField" data-idx="${i}" data-field="date" style="flex:1;">
+      <input type="text" class="form-input" value="${esc(v.notes || '')}" placeholder="Notes" data-change="setModalVisitField" data-idx="${i}" data-field="notes" style="flex:2;">
+      <span class="remove-visit" data-click="removeVisit" data-arg0="${i}">&times;</span>
     </div>`
   ).join('');
 }
@@ -4340,8 +4479,8 @@ function renderPeopleManager() {
     `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);background:var(--bg-tertiary);">
       <span style="flex:1;font-size:13px;">${esc(name)}</span>
       <span style="font-size:12px;color:var(--text-muted);">${count} place${count>1?'s':''}</span>
-      <button class="add-small-btn" data-person-idx="${idx}" onclick="renamePerson(this.dataset.personIdx)" style="border-style:solid;padding:4px 8px;">rename</button>
-      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:12px;font-family:var(--font-body);" data-person-idx="${idx}" onclick="removePersonGlobal(this.dataset.personIdx)">remove</button>
+      <button class="add-small-btn" data-person-idx="${idx}" data-click="renamePerson" data-arg0="this.dataset.personIdx" style="border-style:solid;padding:4px 8px;">rename</button>
+      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:12px;font-family:var(--font-body);" data-person-idx="${idx}" data-click="removePersonGlobal" data-arg0="this.dataset.personIdx">remove</button>
     </div>`
   ).join('');
   // Store names for lookup by index
@@ -4425,9 +4564,9 @@ function renderTripManager() {
         <div style="font-size:12px;color:var(--text-muted);">${esc(dates)} · ${locCount} place${locCount!==1?'s':''}</div>
       </div>
       ${catChips ? `<div style="display:flex;gap:4px;flex-wrap:wrap;">${catChips}</div>` : ''}
-      <button class="add-small-btn" onclick="renameTrip('${t.id}')" style="border-style:solid;padding:4px 8px;">rename</button>
-      <button class="add-small-btn" onclick="editTripDates('${t.id}')" style="border-style:solid;padding:4px 8px;">dates</button>
-      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:12px;font-family:var(--font-body);" onclick="deleteTrip('${t.id}')">delete</button>
+      <button class="add-small-btn" data-click="renameTrip" data-arg0="${t.id}" style="border-style:solid;padding:4px 8px;">rename</button>
+      <button class="add-small-btn" data-click="editTripDates" data-arg0="${t.id}" style="border-style:solid;padding:4px 8px;">dates</button>
+      <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:4px 8px;cursor:pointer;font-size:12px;font-family:var(--font-body);" data-click="deleteTrip" data-arg0="${t.id}">delete</button>
     </div>`;
   }).join('');
 }
@@ -4547,8 +4686,8 @@ function renderApproval() {
         </select>
       </div>
       <div class="approval-actions">
-        <button class="btn btn-primary" onclick="approveByIndex(${idx})">✅ Approve</button>
-        <button class="btn btn-secondary" onclick="openEditModal('${(loc.id || '').replace(/'/g, "\\'")}')">✏️ Edit</button>
+        <button class="btn btn-primary" data-click="approveByIndex" data-arg0="${idx}">✅ Approve</button>
+        <button class="btn btn-secondary" data-click="openEditModal" data-arg0="${esc(loc.id || '')}">✏️ Edit</button>
       </div>
     </div>`;
   }).join('');
@@ -4677,7 +4816,7 @@ function renderStats() {
     const pct = Math.round(cs.been / total * 100);
     const catAvg = cs.ratingCount ? (cs.ratingSum / cs.ratingCount).toFixed(1) : '—';
     const hex = COLOR_HEX[cat.color] || DEFAULT_HEX;
-    return `<div class="cat-stat-card" style="cursor:pointer;" onclick="viewCategoryOnMap('${key}')" title="Click to view ${cat.label} on the map">
+    return `<div class="cat-stat-card" style="cursor:pointer;" data-click="viewCategoryOnMap" data-arg0="${key}" title="Click to view ${cat.label} on the map">
       <span class="cat-stat-emoji">${cat.emoji}</span>
       <div class="cat-stat-info">
         <div class="cat-stat-name">${cat.label}</div>
@@ -4711,7 +4850,7 @@ function renderStats() {
       if (countEl) countEl.textContent = '';
     } else {
       const cards = countryRanked.map(c =>
-        `<div class="flag-card" onclick="viewCountryOnMap('${esc(c.code)}')" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
+        `<div class="flag-card" data-click="viewCountryOnMap" data-arg0="${esc(c.code)}" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
           <span class="flag-emoji" aria-label="${esc(c.name)} flag">${countryCodeToFlag(c.code)}</span>
           <span class="flag-name">${esc(c.name)}</span>
           <span class="flag-count">${c.count} place${c.count === 1 ? '' : 's'}</span>
@@ -5166,7 +5305,7 @@ function renderChronology() {
       const people = (entry.loc.people || []).map(p => esc(p)).join(', ');
       const entryKey = `${entry.loc.id}|${entry.date}`;
       const firstVisitRegion = firstVisit.get(entryKey);
-      html += `<div class="timeline-item" onclick="openEditModal('${entry.loc.id}')">
+      html += `<div class="timeline-item" data-click="openEditModal" data-arg0="${entry.loc.id}">
         <div class="ti-top">
           <span class="ti-emoji">${cat.emoji}</span>
           <span class="ti-name">${esc(entry.loc.name)}</span>
@@ -6315,7 +6454,7 @@ function renderTripDetail(trip, tripLocs) {
         <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${esc(trip.name)}</h3>
         <div style="font-size:12px;color:var(--text-muted);">${dates.map(d => formatDate(d)).join(' → ') || 'No dates set'}${duration ? ' · ' + duration : ''}</div>
       </div>
-      <button class="btn btn-danger" onclick="deleteTrip('${trip.id}')" style="font-size:12px;padding:4px 10px;" title="Delete trip">🗑️</button>
+      <button class="btn btn-danger" data-click="deleteTrip" data-arg0="${trip.id}" style="font-size:12px;padding:4px 10px;" title="Delete trip">🗑️</button>
     </div>
 
     <div class="trip-stats-grid">
@@ -6385,16 +6524,16 @@ function renderTripDetail(trip, tripLocs) {
       const rating = loc.myRating ? ' · ★' + loc.myRating : '';
       const isFirst = stopNum === 1;
       const isLast = stopNum === tripLocs.length;
-      html += `<div class="trip-loc-item" onclick="openEditModal('${esc(loc.id)}')">
+      html += `<div class="trip-loc-item" data-click="openEditModal" data-arg0="${esc(loc.id)}">
         <div class="tl-num">${stopNum}</div>
         <span style="font-size:16px;">${cat.emoji}</span>
         <div class="tl-info">
           <div class="tl-name">${esc(loc.name)}</div>
           <div class="tl-meta">${visitDate ? formatDate(visitDate) : 'No date'}${price}${rating}</div>
         </div>
-        <div class="tl-move" onclick="event.stopPropagation()">
-          <button onclick="moveTripLoc('${esc(loc.id)}', -1)" ${isFirst ? 'disabled style="opacity:0.2"' : ''}>▲</button>
-          <button onclick="moveTripLoc('${esc(loc.id)}', 1)" ${isLast ? 'disabled style="opacity:0.2"' : ''}>▼</button>
+        <div class="tl-move" data-click="noop" data-stop="1">
+          <button data-click="moveTripLoc" data-arg0="${esc(loc.id)}" data-arg1="-1" ${isFirst ? 'disabled style="opacity:0.2"' : ''}>▲</button>
+          <button data-click="moveTripLoc" data-arg0="${esc(loc.id)}" data-arg1="1" ${isLast ? 'disabled style="opacity:0.2"' : ''}>▼</button>
         </div>
       </div>`;
     } else {
@@ -6408,15 +6547,15 @@ function renderTripDetail(trip, tripLocs) {
         <span class="ttc-rail" style="background:${m.color}"></span>
         <span class="ttc-icon" style="color:${m.color}">${m.emoji}</span>
         <span class="ttc-meta">${flight}${dist}${dur ? ' · ' + dur : ''}${entry.loose ? ' · <em style="color:var(--text-muted);">date outside trip range</em>' : ''}</span>
-        <button class="ttc-action" onclick="openTransitModal('${esc(t.id)}')" aria-label="Edit transit" title="Edit">✎</button>
-        <button class="ttc-action" onclick="detachTransitFromTrip('${esc(t.id)}')" aria-label="Detach from trip" title="Detach from trip">⊘</button>
+        <button class="ttc-action" data-click="openTransitModal" data-arg0="${esc(t.id)}" aria-label="Edit transit" title="Edit">✎</button>
+        <button class="ttc-action" data-click="detachTransitFromTrip" data-arg0="${esc(t.id)}" aria-label="Detach from trip" title="Detach from trip">⊘</button>
       </div>`;
     }
   });
   html += `</div>`;
   html += `<div style="display:flex;gap:8px;margin-top:10px;">
-    <button class="btn btn-secondary" style="flex:1;font-size:12px;" onclick="openAddTransportFromTrip('${esc(trip.id)}')">+ Add transport</button>
-    <button class="btn btn-secondary" style="flex:1;font-size:12px;" onclick="openAttachTransitsPicker('${esc(trip.id)}')">📎 Attach existing</button>
+    <button class="btn btn-secondary" style="flex:1;font-size:12px;" data-click="openAddTransportFromTrip" data-arg0="${esc(trip.id)}">+ Add transport</button>
+    <button class="btn btn-secondary" style="flex:1;font-size:12px;" data-click="openAttachTransitsPicker" data-arg0="${esc(trip.id)}">📎 Attach existing</button>
   </div>`;
 
   document.getElementById('trip-detail').innerHTML = html;
@@ -6554,7 +6693,7 @@ function renderAttachPickerList() {
     const currentTrip = t.tripId ? (stateIndex.tripById ? stateIndex.tripById.get(t.tripId) : null) : null;
     const tripLabel = currentTrip ? `<span style="font-size:12px;color:var(--accent);margin-left:6px;">in: ${esc(currentTrip.name)}</span>` : '';
     return `<label class="attach-row">
-      <input type="checkbox" onchange="toggleAttachSelect('${esc(t.id)}', this.checked)" ${_attachSelected.has(t.id) ? 'checked' : ''}>
+      <input type="checkbox" data-click="toggleAttachSelect" data-arg0="${esc(t.id)}" data-arg1="this.checked" ${_attachSelected.has(t.id) ? 'checked' : ''}>
       <span style="color:${m.color};font-size:18px;">${m.emoji}</span>
       <span class="attach-route">${esc(t.fromName || '?')} → ${esc(t.toName || '?')}</span>
       <span class="attach-date">${esc(t.date || '')}</span>
@@ -6609,14 +6748,14 @@ function renderCollections() {
     const visited = locs.filter(l => l.status === 'been').length;
     const total = col.totalItems || locs.length;
     const pct = total > 0 ? Math.round(visited / total * 100) : 0;
-    return `<div class="cat-stat-card" style="cursor:pointer;" onclick="viewCollection('${col.id}')">
+    return `<div class="cat-stat-card" style="cursor:pointer;" data-click="viewCollection" data-arg0="${col.id}">
       <span class="cat-stat-emoji">${esc(col.emoji || '📋')}</span>
       <div class="cat-stat-info" style="flex:1;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div class="cat-stat-name">${esc(col.name)}</div>
           <div style="display:flex;gap:4px;">
-            <button class="add-small-btn" onclick="event.stopPropagation();editCollection('${col.id}')" style="border-style:solid;padding:2px 6px;font-size:10px;">edit</button>
-            <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:10px;font-family:var(--font-body);" onclick="event.stopPropagation();deleteCollection('${col.id}')">×</button>
+            <button class="add-small-btn" data-stop="1" data-click="editCollection" data-arg0="${col.id}" style="border-style:solid;padding:2px 6px;font-size:10px;">edit</button>
+            <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:10px;font-family:var(--font-body);" data-stop="1" data-click="deleteCollection" data-arg0="${col.id}">×</button>
           </div>
         </div>
         <div class="cat-stat-counts">${visited} of ${total} visited · ${pct}% complete</div>
@@ -6635,7 +6774,7 @@ function viewCollection(colId) {
 
   const container = document.getElementById('collections-grid');
   let html = `<div style="grid-column:1/-1;margin-bottom:16px;">
-    <button class="add-small-btn" onclick="renderCollections()" style="margin-bottom:12px;">← Back to all collections</button>
+    <button class="add-small-btn" data-click="renderCollections" style="margin-bottom:12px;">← Back to all collections</button>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
       <span style="font-size:32px;">${esc(col.emoji || '📋')}</span>
       <div>
@@ -6663,16 +6802,16 @@ function viewCollection(colId) {
     <details>
       <summary style="font-size:12px;color:var(--accent);cursor:pointer;">Add existing locations to this collection</summary>
       <div style="display:flex;gap:8px;margin:8px 0;">
-        <select class="filter-select" id="col-add-cat-filter" onchange="filterColAddList('${colId}')" style="flex:1;">
+        <select class="filter-select" id="col-add-cat-filter" data-click="filterColAddList" data-arg0="${colId}" style="flex:1;">
           <option value="">All categories</option>
           ${catOptions}
         </select>
-        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." oninput="debouncedFilterColAddList('${colId}')" style="flex:1;">
+        <input type="text" class="form-input" id="col-add-search" placeholder="Filter by name..." data-click="debouncedFilterColAddList" data-arg0="${colId}" style="flex:1;">
       </div>
       <div id="col-add-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;">
         ${renderColAddItems(available)}
       </div>
-      <button class="btn btn-primary" style="margin-top:8px;font-size:12px;padding:7px 14px;" onclick="bulkAddToCollection('${colId}')">Add Selected</button>
+      <button class="btn btn-primary" style="margin-top:8px;font-size:12px;padding:7px 14px;" data-click="bulkAddToCollection" data-arg0="${colId}">Add Selected</button>
     </details>
   </div>`;
 
@@ -6680,8 +6819,8 @@ function viewCollection(colId) {
   html += `<div style="grid-column:1/-1;margin-bottom:16px;">
     <div style="display:flex;gap:8px;align-items:center;">
       <input type="text" class="form-input" id="collection-search-input" placeholder="🔍 Search places to add (comma-separated for multiple)" style="flex:1;"
-        onkeydown="if(event.key==='Enter'){searchForCollection('${colId}');event.preventDefault();}">
-      <button class="btn btn-secondary" style="padding:8px 14px;font-size:12px;" onclick="searchForCollection('${colId}')">Search</button>
+        data-keydown="enterKey" data-arg0="searchForCollection" data-arg1="${colId}" data-prevent="1">
+      <button class="btn btn-secondary" style="padding:8px 14px;font-size:12px;" data-click="searchForCollection" data-arg0="${colId}">Search</button>
     </div>
     <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Single place or multiple: "Colosseum Rome, Eiffel Tower Paris, Sagrada Familia"</div>
     <div id="collection-search-results" style="margin-top:6px;"></div>
@@ -6695,7 +6834,7 @@ function viewCollection(colId) {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
       const statusIcon = loc.status === 'been' ? '✅' : '⭐';
       const rating = loc.myRating ? ' · ★' + loc.myRating : '';
-      return `<div class="cat-stat-card" style="cursor:pointer;" onclick="switchView('map-view');setTimeout(()=>openEditModal('${loc.id}'),300)">
+      return `<div class="cat-stat-card" style="cursor:pointer;" data-click="switchView" data-arg0="'map-view');setTimeout(()=>openEditModal('${loc.id}')" data-arg1="300">
         <span class="cat-stat-emoji">${cat.emoji}</span>
         <div class="cat-stat-info">
           <div class="cat-stat-name">${statusIcon} ${esc(loc.name)}</div>
@@ -6750,7 +6889,7 @@ function renderColAddItems(items) {
   if (items.length === 0) return '<span style="font-size:12px;color:var(--text-muted);">No matching locations.</span>';
   return items.map(l => {
     const c = CATEGORIES[l.category] || CATEGORIES.location;
-    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'">
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="transparent">
       <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${esc(l.name)} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
     </label>`;
   }).join('');
@@ -6838,7 +6977,7 @@ async function searchForCollection(colId) {
             <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
           </div>
           <button class="btn btn-primary" style="padding:5px 10px;font-size:12px;flex-shrink:0;"
-            onclick="addSearchResultToCollection('${colId}', ${i})">+ Add</button>
+            data-click="addSearchResultToCollection" data-arg0="${colId}" data-arg1="${i}">+ Add</button>
         </div>`;
       }).join('');
     } catch { resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed.</span>'; }
@@ -6975,7 +7114,7 @@ function renderModalCollections() {
   container.innerHTML = locCols.map((colId, i) => {
     const col = stateIndex.collectionById.get(colId);
     if (!col) return '';
-    return `<span class="people-tag">${esc(col.emoji || '📋')} ${esc(col.name)}<button class="remove-tag" onclick="removeCollectionFromLoc(${i})" aria-label="Remove ${esc(col.name)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`;
+    return `<span class="people-tag">${esc(col.emoji || '📋')} ${esc(col.name)}<button class="remove-tag" data-click="removeCollectionFromLoc" data-arg0="${i}" aria-label="Remove ${esc(col.name)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:2px 4px;min-width:24px;min-height:24px;">&times;</button></span>`;
   }).join('');
 
   const sel = document.getElementById('loc-collection-select');
@@ -7260,12 +7399,12 @@ async function openAccountModal() {
       placesDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
         <span style="color:var(--success);">●</span> Connected
         <span style="color:var(--text-muted);flex:1;">${unsynced} locations not yet synced</span>
-        ${unsynced > 0 ? `<button class="btn btn-primary" onclick="showConfirm('This will use ${unsynced} of your 5,000 free monthly Find Place requests${unsynced > 5000 ? ' (over free tier — extra cost ~$'+ ((unsynced-5000)*0.017).toFixed(2) +')' : ' (within free tier — $0)'}. Continue?', () => withLoading(this, bulkGoogleSync), 'Sync')" style="font-size:12px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
+        ${unsynced > 0 ? `<button class="btn btn-primary" data-click="confirmBulkGoogleSync" data-arg0="${esc('This will use ' + unsynced + ' of your 5,000 free monthly Find Place requests' + (unsynced > 5000 ? ' (over free tier — extra cost ~$' + ((unsynced-5000)*0.017).toFixed(2) + ')' : ' (within free tier — $0)') + '. Continue?')}" style="font-size:12px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
         <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;cursor:pointer;">
           Search provider:
-          <select class="filter-select" id="search-provider-toggle" onchange="setSearchProvider(this.value)" style="width:140px;font-size:12px;padding:3px 6px;">
+          <select class="filter-select" id="search-provider-toggle" data-click="setSearchProvider" data-arg0="this.value" style="width:140px;font-size:12px;padding:3px 6px;">
             <option value="google" ${localStorage.getItem('hm_search_provider') !== 'osm' ? 'selected' : ''}>Google Places</option>
             <option value="osm" ${localStorage.getItem('hm_search_provider') === 'osm' ? 'selected' : ''}>OpenStreetMap</option>
           </select>
@@ -7275,8 +7414,8 @@ async function openAccountModal() {
         <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
         <div style="display:flex;gap:6px;margin-top:6px;">
           <input type="password" class="form-input" id="places-key-input" placeholder="New key..." style="flex:1;font-size:12px;padding:6px 8px;">
-          <button class="btn btn-secondary" onclick="savePlacesKey()" style="font-size:12px;padding:4px 10px;">Save</button>
-          <button class="btn btn-danger" onclick="removePlacesKey()" style="font-size:12px;padding:4px 10px;">Remove</button>
+          <button class="btn btn-secondary" data-click="savePlacesKey" style="font-size:12px;padding:4px 10px;">Save</button>
+          <button class="btn btn-danger" data-click="removePlacesKey" style="font-size:12px;padding:4px 10px;">Remove</button>
         </div>
       </details>`;
     } else {
@@ -7289,8 +7428,8 @@ async function openAccountModal() {
           <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Google Places API Key</label>
           <div style="display:flex;gap:6px;">
             <input type="password" class="form-input" id="places-key-input" placeholder="AIza..." value="${keyPreview ? '••••••••' : ''}"
-              style="flex:1;font-size:12px;padding:6px 8px;" onfocus="if(this.value.startsWith('••'))this.value=''">
-            <button class="btn btn-primary" onclick="savePlacesKey()" style="font-size:12px;padding:4px 10px;">Save</button>
+              style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
+            <button class="btn btn-primary" data-click="savePlacesKey" style="font-size:12px;padding:4px 10px;">Save</button>
           </div>
           <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">5,000 free searches + 5,000 free syncs per month. Key stored on server, never exposed to browser.</div>
         </div>
@@ -7310,8 +7449,8 @@ async function openAccountModal() {
         const sizeKB = (b.size / 1024).toFixed(1);
         return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
           <span style="flex:1;">${b.date} <span style="color:var(--text-muted);">(${sizeKB}KB)</span></span>
-          <button class="add-small-btn" onclick="downloadUserBackup('${esc(b.name)}')" style="border-style:solid;padding:3px 8px;font-size:12px;">Download</button>
-          <button class="add-small-btn" onclick="restoreBackup('${esc(b.name)}')" style="border-style:solid;padding:3px 8px;font-size:12px;color:var(--accent);">Restore</button>
+          <button class="add-small-btn" data-click="downloadUserBackup" data-arg0="${esc(b.name)}" style="border-style:solid;padding:3px 8px;font-size:12px;">Download</button>
+          <button class="add-small-btn" data-click="restoreBackup" data-arg0="${esc(b.name)}" style="border-style:solid;padding:3px 8px;font-size:12px;color:var(--accent);">Restore</button>
         </div>`;
       }).join('');
     }
@@ -8015,7 +8154,7 @@ async function geocodeCSVResults(results) {
       <div style="margin-bottom:8px;">📍 This CSV has no coordinates — looking up locations via OpenStreetMap...</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Searching Nominatim with 2 parallel workers. Places not found will be skipped.</div>
       <div id="geocode-progress" style="font-size:12px;">Starting...</div>
-      <button class="btn btn-secondary" onclick="cancelNominatim()" style="font-size:12px;padding:4px 12px;margin-top:8px;">⏹ Stop & use what we have</button>
+      <button class="btn btn-secondary" data-click="cancelNominatim" style="font-size:12px;padding:4px 12px;margin-top:8px;">⏹ Stop & use what we have</button>
     `;
   }
   const toGeocode = results.filter(r => r._needsGeocode);
@@ -8965,7 +9104,7 @@ function renderTransitsList(transits) {
   if (transits.length === 0) {
     const filtersActive = _transitModeFilter !== 'all' || (document.getElementById('transit-search')?.value || '').trim() !== '';
     el.innerHTML = filtersActive
-      ? `<div style="text-align:center; color:var(--text-secondary); padding:48px;">No transits match your filters. <button type="button" onclick="clearTransitFilters()" style="background:none; border:none; color:var(--accent); cursor:pointer; text-decoration:underline; font:inherit; padding:0;">Clear filters</button></div>`
+      ? `<div style="text-align:center; color:var(--text-secondary); padding:48px;">No transits match your filters. <button type="button" data-click="clearTransitFilters" style="background:none; border:none; color:var(--accent); cursor:pointer; text-decoration:underline; font:inherit; padding:0;">Clear filters</button></div>`
       : `<div style="text-align:center; color:var(--text-secondary); padding:48px;">No transits yet. Click <strong>+ Add Transit</strong> to create one.</div>`;
     return;
   }
@@ -8976,10 +9115,10 @@ function renderTransitsList(transits) {
     const flightId = t.flightNumber ? esc(t.flightNumber) : '';
     const linkedTrip = t.tripId ? stateIndex.tripById.get(t.tripId) : null;
     const tripChip = linkedTrip
-      ? `<span class="transit-trip-chip" onclick="event.stopPropagation(); openTripById('${esc(t.tripId)}')" title="Open trip">🧳 ${esc(linkedTrip.name)}</span>`
+      ? `<span class="transit-trip-chip" data-stop="1" data-click="openTripById" data-arg0="${esc(t.tripId)}" title="Open trip">🧳 ${esc(linkedTrip.name)}</span>`
       : '';
     const cardClickAttr = linkedTrip
-      ? ` onclick="openTripById('${esc(t.tripId)}')" style="cursor:pointer;" title="Open trip: ${esc(linkedTrip.name)}"`
+      ? ` data-click="openTripById" data-arg0="${esc(t.tripId)}" style="cursor:pointer;" title="Open trip: ${esc(linkedTrip.name)}"`
       : '';
     return `
       <div class="transit-card"${cardClickAttr}>
@@ -8990,9 +9129,9 @@ function renderTransitsList(transits) {
             ${esc(t.date || '')} ${flightId ? '· ' + flightId : ''} ${dist ? '· ' + dist : ''} ${dur ? '· ' + dur : ''} ${t.notes ? '· ' + esc(t.notes) : ''}
           </div>
         </div>
-        <div class="actions" onclick="event.stopPropagation();">
-          <button class="btn btn-secondary" onclick="openTransitModal('${esc(t.id)}')" aria-label="Edit transit">✎</button>
-          <button class="btn btn-secondary" onclick="deleteTransit('${esc(t.id)}')" aria-label="Delete transit">🗑</button>
+        <div class="actions" data-click="noop" data-stop="1">
+          <button class="btn btn-secondary" data-click="openTransitModal" data-arg0="${esc(t.id)}" aria-label="Edit transit">✎</button>
+          <button class="btn btn-secondary" data-click="deleteTransit" data-arg0="${esc(t.id)}" aria-label="Delete transit">🗑</button>
         </div>
       </div>
     `;
@@ -9250,7 +9389,7 @@ async function handleFr24File(file) {
     const text = await file.text();
     _fr24ParsedRows = parseFr24Csv(text);
     if (_fr24ParsedRows.length === 0) {
-      statusEl.innerHTML = `No rows found in CSV. <button type="button" class="add-small-btn" onclick="document.getElementById('fr24-file').click()" style="margin-left:6px;">Try another file</button>`;
+      statusEl.innerHTML = `No rows found in CSV. <button type="button" class="add-small-btn" data-click="openFileDialog" data-target="fr24-file" style="margin-left:6px;">Try another file</button>`;
       return;
     }
     const iataIndex = await lazyLoadAirports();
@@ -9259,7 +9398,7 @@ async function handleFr24File(file) {
     resolved.forEach(r => { if (r.ok) _fr24ResolvedTransits.push(r.transit); });
     renderFr24Preview(resolved);
   } catch (err) {
-    statusEl.innerHTML = `<span style="color:var(--danger);">Error: ${esc(err.message)}.</span> <button type="button" class="add-small-btn" onclick="document.getElementById('fr24-file').click()" style="margin-left:6px;">Retry</button>`;
+    statusEl.innerHTML = `<span style="color:var(--danger);">Error: ${esc(err.message)}.</span> <button type="button" class="add-small-btn" data-click="openFileDialog" data-target="fr24-file" style="margin-left:6px;">Retry</button>`;
   }
 }
 
@@ -9279,7 +9418,7 @@ function renderFr24Preview(resolved) {
       `<strong>This doesn't look like a Flightradar24 export.</strong> ` +
       `None of the ${resolved.length} row${resolved.length === 1 ? '' : 's'} had a recognizable airport code. ` +
       `FR24 CSVs have <code>From</code> and <code>To</code> columns with paired codes like <code>Copenhagen (CPH/EKCH)</code>. ` +
-      `<button type="button" class="add-small-btn" onclick="document.getElementById('fr24-file').click()" style="margin-left:6px;">Try another file</button>` +
+      `<button type="button" class="add-small-btn" data-click="openFileDialog" data-target="fr24-file" style="margin-left:6px;">Try another file</button>` +
       `</div>`;
   } else {
     statusEl.textContent =

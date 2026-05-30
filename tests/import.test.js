@@ -2367,11 +2367,13 @@ describe('Transit → Trip navigation', () => {
     expect(fn).toMatch(/click to open/);
   });
 
-  test('renderTransitsList card has onclick=openTripById when linked', () => {
+  test('renderTransitsList card has data-click=openTripById when linked', () => {
     const fn = indexHtml.match(/function renderTransitsList\([\s\S]*?\n\}/)[0];
-    expect(fn).toMatch(/onclick="openTripById\('\$\{esc\(t\.tripId\)\}'\)"/);
+    expect(fn).toMatch(/data-click="openTripById"\s+data-arg0="\$\{esc\(t\.tripId\)\}"/);
     // edit/delete buttons must stop propagation so they don't trigger the card click
-    expect(fn).toMatch(/event\.stopPropagation\(\)/);
+    // — post-onclick-refactor (2026-05-30) this is the data-stop="1" flag the
+    // dispatcher reads BEFORE running the action.
+    expect(fn).toMatch(/data-stop="1"/);
     // Trip chip is rendered when linked
     expect(fn).toMatch(/transit-trip-chip/);
   });
@@ -2581,7 +2583,7 @@ describe('Countries-visited stats section (source invariants)', () => {
   });
 
   test('flag cards include onclick + aria-label (a11y)', () => {
-    expect(indexHtml).toMatch(/flag-card[\s\S]{0,300}onclick="viewCountryOnMap/);
+    expect(indexHtml).toMatch(/flag-card[\s\S]{0,300}data-click="viewCountryOnMap/);
     expect(indexHtml).toMatch(/flag-emoji[^>]*aria-label/);
   });
 });

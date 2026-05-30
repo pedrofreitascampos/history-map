@@ -19,6 +19,12 @@ test('marker diff: category filter touches only deltas, untouched markers keep i
   const token = await loginAs(request);
   const headers = authHeaders(token);
 
+  // Sweep any leftovers from earlier specs — assertion is sensitive to count.
+  const existing = await (await request.get('/api/locations', { headers })).json();
+  for (const l of existing) {
+    await request.delete('/api/locations/' + (l._id || l.id), { headers });
+  }
+
   const seeds = [
     { name: 'E2E-R1', lat: 38.71, lng: -9.14, category: 'restaurant', status: 'been' },
     { name: 'E2E-R2', lat: 38.72, lng: -9.13, category: 'restaurant', status: 'been' },

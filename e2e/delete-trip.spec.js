@@ -26,7 +26,7 @@ test('delete trip removes it from server state', async ({ page, request }) => {
   // renderTripManager populates, including the delete button for each row).
   await page.evaluate(() => window.openTripManager());
 
-  const deleteBtn = page.locator(`#trips-manager-list button[onclick="deleteTrip('${tripId}')"]`);
+  const deleteBtn = page.locator(`#trips-manager-list button[data-click="deleteTrip"][data-arg0="${tripId}"]`);
   await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
   await deleteBtn.click();
 

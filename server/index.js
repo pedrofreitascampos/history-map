@@ -70,9 +70,11 @@ app.use(helmet({
     // Inline <script> blocks must carry the per-request nonce — 'unsafe-inline'
     // is OFF on script-src, so a stored XSS can no longer ship a
     // <script>alert(1)</script> (the browser will refuse without the
-    // unguessable nonce). script-src-attr KEEPS 'unsafe-inline' because the
-    // codebase has hundreds of onclick="…" handlers; converting those to
-    // addEventListener is the next-tier refactor.
+    // unguessable nonce). script-src-attr is now LOCKED to 'none': every
+    // former `onclick=…` handler in the codebase has been migrated to
+    // `data-click=…` + a document-level dispatcher, so no inline JS attrs
+    // remain. A stored XSS that lands `<button onclick="alert(1)">` is
+    // silently ignored by the browser.
     //
     // style-src and style-src-attr stay permissive: Leaflet (and other map
     // libs) inject inline <style> blocks at runtime to set cursors / panes /
@@ -84,7 +86,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, "https://unpkg.com", "https://cdn.jsdelivr.net", "https://accounts.google.com"],
-      scriptSrcAttr: ["'unsafe-inline'"],
+      scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
       styleSrcAttr: ["'unsafe-inline'"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
