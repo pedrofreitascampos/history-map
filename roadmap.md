@@ -13,20 +13,9 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 ### Security (audit 2026-05-30, reconciled against shipped work)
 
-The 2026-05-30 audit produced 12 findings. Reconciled against actual code:
-**7 already resolved** (see Resolved section). **3 still open + 1 process item:**
-
-#### MEDIUM
-
-- [ ] **[M-3] `_googleUrl` rendered as `href` without URL-scheme validation.** `public/index.html:2934` (`getGoogleMapsUrl` returns `loc._googleUrl` raw), used at `2979` (`<a href="${esc(gmapsUrl)}">`) and `3848` (`gmapsLink.href = gmapsUrl`). `esc()` HTML-escapes but **does not block `javascript:` URIs** — `esc('javascript:alert(1)')` is unchanged. Bulk-import JSON with `_googleUrl: "javascript:..."` becomes click-XSS. **Fix:** in `getGoogleMapsUrl`, return `loc._googleUrl` only if it `startsWith('https://')` (or `http://`); otherwise fall through to the placeId/lat-lng branches. Also enforce in `LOCATION_FIELDS` sanitizer on the write path.
-
-- [ ] **[M-5] `express.json` body limit is 10MB globally.** `server/index.js:99`. Authenticated users can DoS the 512MB Render instance with repeated 10MB bodies. **Fix:** drop global to 1MB; mount a separate `express.json({limit:'10mb'})` only on the bulk-import routes (`POST /api/locations/bulk`, `POST /api/transits/bulk`, `POST /api/restore-backup`).
-
-#### LOW
-
-- [ ] **[L-3] `render.yaml` uses `npm install`, not `npm ci`.** `render.yaml:6`. With `^` SemVer ranges in `package.json`, `npm install` may pull patch upgrades silently; `npm ci` strictly honors the lockfile. **Fix:** change `buildCommand: npm install` → `buildCommand: npm ci`.
-
-- [ ] **[L-4] `render.yaml` missing `ALLOWED_EMAILS` + `ALLOWED_ORIGINS`.** `render.yaml:8-16`. A fresh deploy has open registration (no allowlist) **and** open CORS (production fallback is `false`, so this is actually closed by default — but a misconfigured `ALLOWED_ORIGINS=*` typo is easy). **Fix:** add both with `sync: false` so a fresh service is rejected at deploy time until set.
+The 2026-05-30 audit produced 12 findings. All 11 actionable findings are
+now resolved; H-2 has a partial fix shipped with a deferred long-term piece.
+See Resolved table below for the full reconciliation.
 
 ### H-2 deferred decision
 
@@ -89,6 +78,10 @@ touches every `api()` call site + needs CSRF on state-changing routes.
 | **[M-4]** `loc.address` rendered unescaped at 4961/5630 | ✅ Phase A. Audit line numbers are stale; current render sites (`4529`, `6689`) use `esc()`. |
 | **[L-1]** Password min length 4 | ✅ Phase B `c9f35aa`. `server/index.js:188` checks `< 8`. |
 | **[L-2]** `data/admin1-simplified.json` not in `.gitignore` | ✅ Already present (`.gitignore:3`). |
+| **[M-3]** `_googleUrl` `javascript:` URI via `getGoogleMapsUrl` | ✅ `e4d0b4f`. `getGoogleMapsUrl` requires `^https?://`; server `sanitizeLocationUpdate` strips bad URIs on write. |
+| **[M-5]** `express.json` 10MB global body limit | ✅ `e4d0b4f`. Global dropped to 1MB; path-mounted 10MB on `/api/locations/bulk` + `/api/transits/bulk`. |
+| **[L-3]** `render.yaml` `npm install` not `npm ci` | ✅ `e4d0b4f`. Switched to `npm ci` (lockfile-strict). |
+| **[L-4]** `render.yaml` missing `ALLOWED_EMAILS` + `ALLOWED_ORIGINS` | ✅ `e4d0b4f`. Both declared with `sync: false`. |
 
 ## Major shipped batches (chronological)
 
