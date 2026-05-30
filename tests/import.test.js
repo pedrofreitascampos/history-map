@@ -2958,3 +2958,28 @@ describe('render.yaml has lockfile-strict build + auth env vars', () => {
     expect(renderYaml).toMatch(/key:\s*ALLOWED_ORIGINS[\s\S]{0,80}sync:\s*false/);
   });
 });
+
+describe('hover-bg CSS-ified — no dispatcher bridge, no inline data-mouseover/out', () => {
+  test('the .hover-bg-tertiary :hover rule exists in the stylesheet', () => {
+    expect(indexHtml).toMatch(/\.hover-bg-tertiary:hover\s*\{\s*background:\s*var\(--bg-tertiary\)/);
+  });
+
+  test('no data-mouseover / data-mouseout attributes remain in the markup', () => {
+    expect(indexHtml).not.toMatch(/data-mouseover\s*=/);
+    expect(indexHtml).not.toMatch(/data-mouseout\s*=/);
+    expect(indexHtml).not.toMatch(/data-bg-in\s*=/);
+    expect(indexHtml).not.toMatch(/data-bg-out\s*=/);
+  });
+
+  test('hoverIn / hoverOut are removed from the ACTIONS dispatcher', () => {
+    expect(indexHtml).not.toMatch(/hoverIn\s*:/);
+    expect(indexHtml).not.toMatch(/hoverOut\s*:/);
+  });
+
+  test('the four converted sites carry the hover-bg-tertiary class', () => {
+    expect(indexHtml.match(/hover-bg-tertiary/g) || []).toHaveLength(
+      // 1 CSS rule + 4 markup sites = 5 occurrences total
+      5
+    );
+  });
+});

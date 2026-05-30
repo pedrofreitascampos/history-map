@@ -718,6 +718,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   padding: 8px; border-radius: var(--radius);
 }
 .top-rated-item:hover { background: var(--bg-tertiary); }
+.hover-bg-tertiary:hover { background: var(--bg-tertiary); }
 .top-rated-item .tr-emoji { font-size: 18px; }
 .top-rated-item .tr-name { flex: 1; font-size: 13px; }
 .top-rated-item .tr-rating { color: var(--accent); font-weight: 600; font-size: 13px; }
@@ -2268,12 +2269,6 @@ const ACTIONS = {
   confirmBulkGoogleSync: (el) => {
     showConfirm(el.dataset.arg0, async () => withLoading(el, bulkGoogleSync), 'Sync');
   },
-  // Hover visuals: distinct in/out background values, each carried by its
-  // own data attr so the same element can wire both events without a clash.
-  // Legacy bridge — the right fix is a CSS :hover rule, deferred.
-  hoverIn: (el) => { el.style.background = el.dataset.bgIn || ''; },
-  hoverOut: (el) => { el.style.background = el.dataset.bgOut || ''; },
-  // Focus blur for masked password-like fields handled by clearIfMasked.
 };
 
 function _readPositionalArgs(el) {
@@ -3575,9 +3570,8 @@ function _renderBulkItem(loc) {
     : '';
   const trip = stateIndex.tripById.get(loc.tripId);
   const tooltip = esc(_bulkItemTooltip(loc));
-  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;cursor:pointer;"
+  return `<div class="hover-bg-tertiary" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;height:${BULK_ITEM_H}px;box-sizing:border-box;cursor:pointer;"
     title="${tooltip}"
-    data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out=""
     data-click="editLocOrCheckbox" data-arg0="${locId}">
     <input type="checkbox" class="bulk-cb" value="${locId}" ${checked} data-click="toggleBulkCb" data-arg0="this" data-click="noop" data-stop="1">
     <span style="font-size:16px;">${c.emoji}</span>
@@ -3810,8 +3804,7 @@ async function mapSearch() {
       const cat = CATEGORIES[r.category] || CATEGORIES.location;
       const ratingBadge = r.googleRating ? `<span style="font-size:10px;color:var(--accent);">⭐${r.googleRating}</span>` : '';
       const priceBadge = r.priceLevel ? `<span style="font-size:10px;color:var(--text-muted);">${'€'.repeat(r.priceLevel)}</span>` : '';
-      return `<div class="search-result-item" style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;"
-        data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="">
+      return `<div class="search-result-item hover-bg-tertiary" style="display:flex;align-items:center;gap:6px;padding:8px 6px;border-radius:var(--radius);cursor:pointer;font-size:12px;transition:background 0.15s;">
         <button data-click="flyToSearchResult" data-arg0="${i}" style="flex:1;min-width:0;background:none;border:none;color:inherit;cursor:pointer;text-align:left;padding:0;font-family:inherit;">
           <div style="font-weight:500;font-size:12px;">${cat.emoji} ${esc(r.name)} ${ratingBadge} ${priceBadge}</div>
           <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.address)}</div>
@@ -4076,7 +4069,7 @@ async function searchLocation(query) {
     resultsDiv.innerHTML = data.map((r, i) => {
       const cat = osmToCategory(r.class, r.type) || inferCategory(r.display_name);
       const catInfo = CATEGORIES[cat] || CATEGORIES.location;
-      return `<button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;text-align:left;color:var(--text-primary);font-size:12px;border-bottom:1px solid var(--border);" data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="none" data-click="pickSearchResult" data-arg0="${i}">
+      return `<button type="button" class="hover-bg-tertiary" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;text-align:left;color:var(--text-primary);font-size:12px;border-bottom:1px solid var(--border);" data-click="pickSearchResult" data-arg0="${i}">
         <span style="font-size:16px;">${catInfo.emoji}</span>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.name || r.display_name.split(',')[0])}</div>
@@ -6889,7 +6882,7 @@ function renderColAddItems(items) {
   if (items.length === 0) return '<span style="font-size:12px;color:var(--text-muted);">No matching locations.</span>';
   return items.map(l => {
     const c = CATEGORIES[l.category] || CATEGORIES.location;
-    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;" data-mouseover="hoverIn" data-bg-in="var(--bg-tertiary)" data-mouseout="hoverOut" data-bg-out="transparent">
+    return `<label class="hover-bg-tertiary" style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:12px;">
       <input type="checkbox" class="col-bulk-cb" value="${l.id}"> ${c.emoji} ${esc(l.name)} <span style="color:var(--text-muted);font-size:10px;margin-left:auto;">${c.label}</span>
     </label>`;
   }).join('');
