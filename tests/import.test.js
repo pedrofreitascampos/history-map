@@ -78,6 +78,10 @@ const code = [
   extractFunction('transitGreatCircleKm'),
   extractConst('DECOMMISSIONED_AIRPORTS'),
   extractConst('TRANSIT_MODE_META'),
+  extractConst('TRANSIT_DISTANCE_BUCKETS'),
+  extractConst('DISTANCE_BUCKET_COLORS'),
+  extractFunction('distanceBucket'),
+  extractFunction('transitDistanceColor'),
   extractFunction('transitMeta'),
   extractFunction('parseFr24Csv'),
   extractFunction('parseCsvLine'),
@@ -2252,6 +2256,93 @@ describe('computeTransitStats', () => {
     for (let i = 0; i < 20; i++) transits.push({ mode: 'flight', airline: 'Airline ' + i, distanceKm: 100 });
     const s = compute(transits);
     expect(s.topAirlines.length).toBe(8);
+  });
+});
+
+// 2026-05-30: per-mode distance buckets drive line color on the transit map
+// and replay v2. Single green/amber/red scale across all modes; thresholds
+// differ so a "long" flight (≥6000km) and a "long" car drive (≥1000km) read
+// equally hot.
+describe('distanceBucket + transitDistanceColor', () => {
+  const bucket = (mode, km) => vm.runInContext(`distanceBucket(${JSON.stringify(mode)}, ${km})`, ctx);
+  const color  = (mode, km) => vm.runInContext(`transitDistanceColor(${JSON.stringify(mode)}, ${km})`, ctx);
+
+  test('flight thresholds: <1500 short, <6000 medium, ≥6000 long', () => {
+    expect(bucket('flight', 500)).toBe('short');
+    expect(bucket('flight', 1499)).toBe('short');
+    expect(bucket('flight', 1500)).toBe('medium');
+    expect(bucket('flight', 5999)).toBe('medium');
+    expect(bucket('flight', 6000)).toBe('long');
+    expect(bucket('flight', 11000)).toBe('long');
+  });
+
+  test('car thresholds: <200 short, <1000 medium, ≥1000 long', () => {
+    expect(bucket('car', 50)).toBe('short');
+    expect(bucket('car', 200)).toBe('medium');
+    expect(bucket('car', 999)).toBe('medium');
+    expect(bucket('car', 1000)).toBe('long');
+  });
+
+  test('train thresholds: <300 / <1500 / ≥1500', () => {
+    expect(bucket('train', 100)).toBe('short');
+    expect(bucket('train', 500)).toBe('medium');
+    expect(bucket('train', 2000)).toBe('long');
+  });
+
+  test('ferry thresholds: <50 / <300 / ≥300', () => {
+    expect(bucket('ferry', 20)).toBe('short');
+    expect(bucket('ferry', 100)).toBe('medium');
+    expect(bucket('ferry', 400)).toBe('long');
+  });
+
+  test('returns null for unknown mode or invalid distance', () => {
+    expect(bucket('teleport', 100)).toBeNull();
+    expect(bucket('flight', null)).toBeNull();
+    expect(bucket('flight', NaN)).toBeNull();
+    expect(bucket('flight', -1)).toBeNull();
+  });
+
+  test('color short=green, medium=amber, long=red across all modes', () => {
+    expect(color('flight', 500)).toBe('#22c55e');
+    expect(color('flight', 3000)).toBe('#f59e0b');
+    expect(color('flight', 8000)).toBe('#ef4444');
+    expect(color('car', 50)).toBe('#22c55e');
+    expect(color('car', 500)).toBe('#f59e0b');
+    expect(color('car', 1500)).toBe('#ef4444');
+  });
+
+  test('color falls back to mode base color when distance is unknown/invalid', () => {
+    // Mode color for flight is #60a5fa (blue) — see TRANSIT_MODE_META
+    expect(color('flight', null)).toBe('#60a5fa');
+    expect(color('flight', undefined)).toBe('#60a5fa');
+    expect(color('teleport', 100)).toBe('#888'); // unknown mode → fallback
+  });
+
+  test('TRANSIT_MODE_META carries a dash property per mode', () => {
+    const meta = JSON.parse(vm.runInContext('JSON.stringify(TRANSIT_MODE_META)', ctx));
+    expect(meta.flight.dash).toBeNull();
+    expect(meta.car.dash).toBe('10,5');
+    expect(meta.train.dash).toBe('6,4');
+    expect(meta.ferry.dash).toBe('2,6');
+  });
+});
+
+describe('renderTransitsMap + buildReplayTransitLine use distance color (source invariants)', () => {
+  test('renderTransitsMap passes transitDistanceColor as the line color', () => {
+    const fn = indexHtml.match(/function renderTransitsMap\([\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/transitDistanceColor\(t\.mode,\s*t\.distanceKm\)/);
+    // dashArray drives off m.dash now (not the inline ternary)
+    expect(fn).toMatch(/dashArray:\s*m\.dash/);
+  });
+
+  test('buildReplayTransitLine uses transitDistanceColor + m.dash', () => {
+    const fn = indexHtml.match(/function buildReplayTransitLine\([\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/transitDistanceColor\(frame\.mode/);
+    expect(fn).toMatch(/dashArray:\s*m\.dash/);
+  });
+
+  test('transit page has the color legend chip block', () => {
+    expect(indexHtml).toMatch(/id="transit-legend"[\s\S]{0,400}short[\s\S]{0,200}medium[\s\S]{0,200}long/);
   });
 });
 

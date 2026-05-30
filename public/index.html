@@ -1784,6 +1784,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <!-- Stats strip -->
   <div id="transit-stats-strip"></div>
 
+  <!-- Distance-color legend (lines on the map are colored by per-mode distance bucket) -->
+  <div id="transit-legend" style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-bottom:12px; font-size:12px; color:var(--text-secondary);">
+    <span>Line color:</span>
+    <span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:20px; height:3px; background:#22c55e; border-radius:2px;"></span>short</span>
+    <span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:20px; height:3px; background:#f59e0b; border-radius:2px;"></span>medium</span>
+    <span style="display:inline-flex; align-items:center; gap:6px;"><span style="display:inline-block; width:20px; height:3px; background:#ef4444; border-radius:2px;"></span>long</span>
+    <span style="margin-left:12px; color:var(--text-muted);">Style: ✈ solid · 🚗 dashed · 🚆 short-dash · ⛴ dotted</span>
+  </div>
+
   <!-- Top-N leaderboards: airlines, airports, aircraft -->
   <div id="transit-leaderboards"></div>
 
@@ -5435,15 +5444,20 @@ function buildReplayMarker(frame) {
 
 function buildReplayTransitLine(frame) {
   const m = transitMeta(frame.mode);
+  // Replay uses the same distance-encoded color as the static transit map so
+  // the same leg looks identical between the two views.
+  const km = frame.distanceKm
+    || (Number.isFinite(frame.fromLat) ? haversineKm(frame.fromLat, frame.fromLng, frame.toLat, frame.toLng) : 0);
+  const lineColor = transitDistanceColor(frame.mode, km);
   const segs = replayTransitPathSegments(frame);
   const lines = [];
   for (const seg of segs) {
     if (seg.length < 2) continue;
     lines.push(L.polyline(seg, {
-      color: m.color,
+      color: lineColor,
       weight: 2,
       opacity: 0.6,
-      dashArray: frame.mode === 'train' ? '6,4' : (frame.mode === 'ferry' ? '2,6' : null),
+      dashArray: m.dash,
     }));
   }
   return lines;
@@ -5793,12 +5807,54 @@ function transitGreatCircleKm(lat1, lng1, lat2, lng2) {
 }
 
 const TRANSIT_MODE_META = {
-  flight: { emoji: '✈', color: '#60a5fa', label: 'Flight' },
-  car:    { emoji: '🚗', color: '#4ade80', label: 'Car' },
-  train:  { emoji: '🚆', color: '#f472b6', label: 'Train' },
-  ferry:  { emoji: '⛴', color: '#22d3ee', label: 'Ferry' },
+  // `dash`: Leaflet polyline dashArray. Flight = solid (great-circle arcs read
+  // cleanly), ground/water modes use mode-distinctive dashing so the line
+  // STYLE encodes mode while line COLOR encodes distance.
+  flight: { emoji: '✈', color: '#60a5fa', label: 'Flight', dash: null },
+  car:    { emoji: '🚗', color: '#4ade80', label: 'Car',    dash: '10,5' },
+  train:  { emoji: '🚆', color: '#f472b6', label: 'Train',  dash: '6,4'  },
+  ferry:  { emoji: '⛴', color: '#22d3ee', label: 'Ferry',  dash: '2,6'  },
 };
-function transitMeta(mode) { return TRANSIT_MODE_META[mode] || { emoji: '•', color: '#888', label: mode }; }
+function transitMeta(mode) { return TRANSIT_MODE_META[mode] || { emoji: '•', color: '#888', label: mode, dash: null }; }
+
+// Per-mode distance thresholds. Boundaries are inclusive-upper for "short" and
+// "medium"; anything ≥ medium is "long". Calibrated to typical travel ranges:
+//   flight: <1500 short, <6000 medium, ≥6000 long (intercontinental)
+//   car:    <200 short, <1000 medium, ≥1000 long (road trip)
+//   train:  <300 short, <1500 medium, ≥1500 long
+//   ferry:  <50 short,  <300 medium,  ≥300 long
+// A single color scale is applied across all modes so the user sees "red ==
+// far for that mode" regardless of which mode the row is.
+const TRANSIT_DISTANCE_BUCKETS = {
+  flight: { short: 1500, medium: 6000 },
+  car:    { short: 200,  medium: 1000 },
+  train:  { short: 300,  medium: 1500 },
+  ferry:  { short: 50,   medium: 300  },
+};
+const DISTANCE_BUCKET_COLORS = {
+  short:  '#22c55e', // green  — same-region / short hop
+  medium: '#f59e0b', // amber  — continental / road trip
+  long:   '#ef4444', // red    — intercontinental / epic
+};
+
+// Categorize a transit by per-mode distance. Returns 'short' | 'medium' |
+// 'long' or null if mode is unknown or distance is invalid.
+function distanceBucket(mode, km) {
+  if (!Number.isFinite(km) || km < 0) return null;
+  const b = TRANSIT_DISTANCE_BUCKETS[mode];
+  if (!b) return null;
+  if (km < b.short)  return 'short';
+  if (km < b.medium) return 'medium';
+  return 'long';
+}
+
+// Pick a stroke color for a transit row. Falls back to the mode's base color
+// when no distance is recorded.
+function transitDistanceColor(mode, km) {
+  const bucket = distanceBucket(mode, km);
+  if (!bucket) return transitMeta(mode).color;
+  return DISTANCE_BUCKET_COLORS[bucket];
+}
 
 // ─── FR24 CSV Import Helpers ───────────────────────────────────────────────
 
@@ -8928,25 +8984,28 @@ function renderTransitsMap(transits) {
   const allPoints = [];
   transits.forEach(t => {
     const m = transitMeta(t.mode);
+    // Line COLOR encodes per-mode distance bucket (green / amber / red).
+    // Line STYLE (dashArray) encodes mode. Endpoint markers stay in the
+    // mode's base color so the mode is readable at the endpoints.
+    const lineColor = transitDistanceColor(t.mode, t.distanceKm);
     if (t.mode === 'flight') {
       const arc = greatCircleArc(t.fromLat, t.fromLng, t.toLat, t.toLng, 64);
       const segs = splitAntiMeridian(arc);
       segs.forEach(seg => {
         if (seg.length < 2) return;
-        const line = L.polyline(seg, { color: m.color, weight: 2, opacity: 0.8 }).addTo(_transitMap);
+        const line = L.polyline(seg, { color: lineColor, weight: 2, opacity: 0.8, dashArray: m.dash }).addTo(_transitMap);
         _transitMapLayers.push(line);
         seg.forEach(p => allPoints.push(p));
       });
     } else {
       // car/train/ferry: straight line for now (Phase 1)
       const line = L.polyline([[t.fromLat, t.fromLng], [t.toLat, t.toLng]], {
-        color: m.color, weight: 2, opacity: 0.8,
-        dashArray: t.mode === 'train' ? '6,4' : (t.mode === 'ferry' ? '2,6' : null),
+        color: lineColor, weight: 2, opacity: 0.8, dashArray: m.dash,
       }).addTo(_transitMap);
       _transitMapLayers.push(line);
       allPoints.push([t.fromLat, t.fromLng], [t.toLat, t.toLng]);
     }
-    // Endpoint markers
+    // Endpoint markers stay in mode color (encodes the mode at a glance).
     const fromMarker = L.circleMarker([t.fromLat, t.fromLng], { radius: 4, color: m.color, weight: 2, fillOpacity: 1 }).addTo(_transitMap);
     const toMarker = L.circleMarker([t.toLat, t.toLng], { radius: 4, color: m.color, weight: 2, fillOpacity: 1 }).addTo(_transitMap);
     fromMarker.bindTooltip(esc(t.fromName || ''));
