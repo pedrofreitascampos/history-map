@@ -2396,7 +2396,10 @@ describe('formatTransitMinutes', () => {
 // See: enrichInBackground's onResult was missing `async` (broke Sign In).
 describe('index.html inline script', () => {
   test('parses without syntax errors', () => {
-    const scripts = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    // Inline <script> may carry attributes (CSP nonce since 2026-05-30) —
+    // match opening tags with optional attrs but exclude `<script src="…">`
+    // which references external CDN content.
+    const scripts = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)].map(m => m[2]);
     expect(scripts.length).toBeGreaterThan(0);
     for (const src of scripts) {
       // new vm.Script compiles (parses) without executing — throws SyntaxError if invalid.
@@ -2760,6 +2763,86 @@ describe('No CSS font-size is below 12px', () => {
     const tabMatch = indexHtml.match(/data-view="transits-view"[\s\S]{0,200}/);
     expect(tabMatch).toBeTruthy();
     expect(tabMatch[0]).toContain('✈️');
+  });
+});
+
+// ─── CSP nonce refactor (2026-05-30) ─────────────────────
+describe('CSP nonce wiring — inline <script> carries placeholder', () => {
+  test('every inline <script> (no src=) has nonce="__CSP_NONCE__"', () => {
+    // External CDN scripts (with src=) are URL-allowlisted in CSP, no nonce needed.
+    // Inline scripts MUST carry the placeholder or they get blocked by CSP and
+    // the page dies (login first — see feedback_inline_script_syntax memory).
+    const inlineScriptOpenTags = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)]
+      .map(m => m[0]);
+    expect(inlineScriptOpenTags.length).toBeGreaterThan(0);
+    for (const tag of inlineScriptOpenTags) {
+      expect(tag).toMatch(/nonce="__CSP_NONCE__"/);
+    }
+  });
+
+  test('inline <style> carries NO nonce — style-src stays permissive because Leaflet injects styles at runtime', () => {
+    // Per CSP-3, mixing 'unsafe-inline' with a nonce in style-src causes
+    // modern browsers to IGNORE 'unsafe-inline' and enforce nonces strictly.
+    // Leaflet injects nonceless inline styles for cursors/panes — so we can't
+    // have both. Keep style-src permissive (no nonce) until we have a strict-
+    // dynamic story for third-party CSS.
+    const styleOpenTags = [...indexHtml.matchAll(/<style([^>]*)>/g)].map(m => m[0]);
+    expect(styleOpenTags.length).toBeGreaterThan(0);
+    for (const tag of styleOpenTags) {
+      expect(tag).not.toMatch(/nonce=/);
+    }
+  });
+});
+
+describe('CSP nonce wiring — server middleware + templated index.html', () => {
+  test('server generates res.locals.cspNonce before Helmet', () => {
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    const nonceMiddleware = serverSrc.indexOf('res.locals.cspNonce');
+    const helmetCall = serverSrc.indexOf('app.use(helmet(');
+    expect(nonceMiddleware).toBeGreaterThan(-1);
+    expect(helmetCall).toBeGreaterThan(-1);
+    // Nonce must be assigned BEFORE Helmet so the CSP header generator can read it
+    expect(nonceMiddleware).toBeLessThan(helmetCall);
+    expect(serverSrc).toMatch(/crypto\.randomBytes\(\d+\)\.toString\(['"]base64['"]\)/);
+  });
+
+  test('Helmet CSP scriptSrc references the nonce via a function-valued directive', () => {
+    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    // scriptSrc must contain a function that emits 'nonce-…' and NO 'unsafe-inline'
+    expect(serverSrc).toMatch(/scriptSrc:\s*\[[^\]]*\(req,\s*res\)\s*=>\s*`'nonce-\$\{res\.locals\.cspNonce\}'`/);
+    const scriptSrcLine = serverSrc.match(/scriptSrc:\s*\[[^\]]+\]/)[0];
+    expect(scriptSrcLine).not.toMatch(/'unsafe-inline'/);
+    // styleSrc stays permissive (see comment in server/index.js) — Leaflet
+    // injects nonceless inline styles at runtime.
+    const styleSrcLine = serverSrc.match(/styleSrc:\s*\[[^\]]+\]/)[0];
+    expect(styleSrcLine).toMatch(/'unsafe-inline'/);
+  });
+
+  test('GET / templates the nonce into the served HTML and sets a matching CSP header', async () => {
+    const res = await request(app).get('/').expect(200);
+    // The served HTML must NOT contain the literal placeholder — all replaced.
+    expect(res.text).not.toContain('__CSP_NONCE__');
+    // The CSP header must contain a nonce-… directive
+    const csp = res.headers['content-security-policy'] || '';
+    const cspNonceMatch = csp.match(/'nonce-([A-Za-z0-9+/=]+)'/);
+    expect(cspNonceMatch).toBeTruthy();
+    // The same nonce must appear in the served HTML (on the inline script + style tags)
+    const nonce = cspNonceMatch[1];
+    expect(res.text).toContain(`nonce="${nonce}"`);
+  });
+
+  test('two distinct GET / requests return DIFFERENT nonces (per-request, not pinned)', async () => {
+    const a = await request(app).get('/');
+    const b = await request(app).get('/');
+    const nonceA = (a.headers['content-security-policy'] || '').match(/'nonce-([^']+)'/)[1];
+    const nonceB = (b.headers['content-security-policy'] || '').match(/'nonce-([^']+)'/)[1];
+    expect(nonceA).not.toBe(nonceB);
+  });
+
+  test('SPA catch-all also serves the templated HTML', async () => {
+    const res = await request(app).get('/some/spa/route').expect(200);
+    expect(res.text).not.toContain('__CSP_NONCE__');
+    expect(res.headers['content-type']).toMatch(/html/);
   });
 });
 

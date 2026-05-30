@@ -53,20 +53,36 @@ function audit(event, details, req) {
 
 // Middleware
 app.set('trust proxy', 1); // Trust first proxy (Render)
+
+// Per-request CSP nonce. Must run BEFORE Helmet so the CSP header generator
+// below can reference it via res.locals. Also templated into the served
+// index.html so every inline <script> and <style> block carries the matching
+// nonce attribute — without it the browser blocks the script and login dies
+// (boot.spec.js + a source-grep invariant guard the placeholder presence).
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use(helmet({
   contentSecurityPolicy: {
-    // 'unsafe-inline' is required because the app uses many inline event handlers
-    // (onclick="…") and inline <style>/<script> blocks. Removing it would
-    // require a full refactor to nonces — captured separately in roadmap.
-    // CSP3 browsers split script-src into script-src-elem (for <script> tags)
-    // and script-src-attr (for onclick handlers). 'unsafe-inline' on the
-    // unified script-src does NOT always cascade to script-src-attr, so we
-    // set both explicitly. Same for style-src-attr (inline style="…").
-    // What we DO still get: strict origin allowlist on every fetch destination,
-    // so a stored XSS can't reach attacker-controlled servers.
+    // Inline <script> blocks must carry the per-request nonce — 'unsafe-inline'
+    // is OFF on script-src, so a stored XSS can no longer ship a
+    // <script>alert(1)</script> (the browser will refuse without the
+    // unguessable nonce). script-src-attr KEEPS 'unsafe-inline' because the
+    // codebase has hundreds of onclick="…" handlers; converting those to
+    // addEventListener is the next-tier refactor.
+    //
+    // style-src and style-src-attr stay permissive: Leaflet (and other map
+    // libs) inject inline <style> blocks at runtime to set cursors / panes /
+    // tile transforms with no nonce hook we can supply. Per CSP-3, mixing
+    // 'unsafe-inline' with a nonce source causes modern browsers to ignore
+    // 'unsafe-inline' — so we can't have both. Style injection is much lower
+    // severity than script injection (no code execution), and a strict
+    // style-src would block third-party map code without a clear replacement.
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://cdn.jsdelivr.net", "https://accounts.google.com"],
+      scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, "https://unpkg.com", "https://cdn.jsdelivr.net", "https://accounts.google.com"],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
       styleSrcAttr: ["'unsafe-inline'"],
@@ -127,8 +143,28 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Static files
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Serve the SPA shell with the per-request CSP nonce templated into the
+// inline <script>/<style> placeholders. Read once at startup and cached in
+// memory — a per-request fs.readFile would be wasteful given index.html
+// changes only on deploy. express.static still serves every other static
+// asset (favicon, …) — { index: false } keeps it from auto-serving index.html
+// for `/`, which would bypass the nonce templating.
+const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
+let _indexTemplate = null;
+function getIndexTemplate() {
+  if (_indexTemplate === null) {
+    _indexTemplate = fs.readFileSync(INDEX_HTML_PATH, 'utf-8');
+  }
+  return _indexTemplate;
+}
+function serveIndex(req, res) {
+  const html = getIndexTemplate().replace(/__CSP_NONCE__/g, res.locals.cspNonce);
+  res.type('html').send(html);
+}
+app.get('/', serveIndex);
+
+// Static files (excluding index.html — see above)
+app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
 // ── JWT lifecycle ────────────────────────────────────────
 // Shortened from 90d to 30d after the 4-domain audit (any XSS hands an
@@ -1041,9 +1077,8 @@ app.get('/api/admin/backups/:filename', auth, requireAdmin, (req, res) => {
 
 // ── Catch-all for SPA ────────────────────────────────────
 // MUST be the last route — anything defined after this is dead code.
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
+// Same serveIndex handler as `/` so SPA-routed URLs get the CSP nonce too.
+app.get('*', serveIndex);
 
 if (require.main === module) {
   app.listen(PORT, () => {

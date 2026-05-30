@@ -49,6 +49,17 @@ touches every `api()` call site + needs CSRF on state-changing routes.
 
 ### Wishlist (P1+)
 
+- **Google data — easier ingestion path.** Today's import surfaces touch Google
+  data only at the edges: Google Timeline JSON import (locations + trips),
+  Google Saved Places JSON import (parseGoogleSavedPlaces — Place IDs from
+  starred list URLs), and per-location Google Places sync (rating + price +
+  user count). What's missing is a smooth "give me everything I've put into
+  Google Maps" path. Research spike needed: (a) Google Takeout still the
+  authoritative dump path — what schemas does it ship today vs. when the
+  Timeline parser was written; (b) is there a partner-program/Saved-Places
+  API that would let us pull stars + want-to-go + custom lists directly with
+  OAuth scope upgrade; (c) sharable-list URL scraping as a stopgap. Tracked
+  alongside the existing Maps-saved-lists writeback blocker.
 - **Top-rated Google Places by category** — discovery: places near a region
   with >1000 ratings, filtered by category, one-click bucket-list add.
 - **Time Out / website import** — generic web-scrape importer with per-site
