@@ -1110,6 +1110,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .transit-stat-card .tsc-mode { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .transit-stat-card .tsc-km { font-size: 18px; font-weight: 600; color: var(--text-primary); }
 .transit-stat-card .tsc-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.transit-trip-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 8px; padding: 2px 8px;
+  font-size: 11px; color: var(--accent);
+  background: var(--accent-dim); border: 1px solid var(--accent-dim);
+  border-radius: 999px; cursor: pointer; vertical-align: middle;
+}
+.transit-trip-chip:hover { border-color: var(--accent); }
 /* Top-N leaderboards (airlines / airports / aircraft) below the stats strip */
 .transit-leaderboards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .transit-leaderboard-panel { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
@@ -8948,16 +8956,23 @@ function renderTransitsList(transits) {
     const dist = t.distanceKm ? `${Math.round(t.distanceKm).toLocaleString()} km` : '';
     const dur = t.durationMin ? `${Math.floor(t.durationMin / 60)}h${(t.durationMin % 60) ? ' ' + (t.durationMin % 60) + 'm' : ''}` : '';
     const flightId = t.flightNumber ? esc(t.flightNumber) : '';
+    const linkedTrip = t.tripId ? stateIndex.tripById.get(t.tripId) : null;
+    const tripChip = linkedTrip
+      ? `<span class="transit-trip-chip" onclick="event.stopPropagation(); openTripById('${esc(t.tripId)}')" title="Open trip">🧳 ${esc(linkedTrip.name)}</span>`
+      : '';
+    const cardClickAttr = linkedTrip
+      ? ` onclick="openTripById('${esc(t.tripId)}')" style="cursor:pointer;" title="Open trip: ${esc(linkedTrip.name)}"`
+      : '';
     return `
-      <div class="transit-card">
+      <div class="transit-card"${cardClickAttr}>
         <div class="icon" style="color:${m.color}">${m.emoji}</div>
         <div class="meta">
-          <div class="route">${esc(t.fromName || '?')} → ${esc(t.toName || '?')}</div>
+          <div class="route">${esc(t.fromName || '?')} → ${esc(t.toName || '?')} ${tripChip}</div>
           <div class="sub">
             ${esc(t.date || '')} ${flightId ? '· ' + flightId : ''} ${dist ? '· ' + dist : ''} ${dur ? '· ' + dur : ''} ${t.notes ? '· ' + esc(t.notes) : ''}
           </div>
         </div>
-        <div class="actions">
+        <div class="actions" onclick="event.stopPropagation();">
           <button class="btn btn-secondary" onclick="openTransitModal('${esc(t.id)}')" aria-label="Edit transit">✎</button>
           <button class="btn btn-secondary" onclick="deleteTransit('${esc(t.id)}')" aria-label="Delete transit">🗑</button>
         </div>
@@ -8978,6 +8993,24 @@ function clearTransitMapLayers() {
   _transitMapLayers = [];
 }
 
+// Switch to the Trips view and open the given trip in the detail panel.
+// Used by the transit map polyline + transit list card click handlers.
+function openTripById(tripId) {
+  if (!tripId) {
+    showToast('This transit isn\'t linked to a trip', 'info');
+    return;
+  }
+  const trip = stateIndex.tripById.get(tripId);
+  if (!trip) {
+    showToast('Linked trip was deleted', 'warn');
+    return;
+  }
+  switchView('trips-view');
+  const sel = document.getElementById('trip-selector');
+  if (sel) sel.value = tripId;
+  selectTrip(tripId);
+}
+
 function renderTransitsMap(transits) {
   initTransitMap();
   clearTransitMapLayers();
@@ -8988,13 +9021,26 @@ function renderTransitsMap(transits) {
     // Line STYLE (dashArray) encodes mode. Endpoint markers stay in the
     // mode's base color so the mode is readable at the endpoints.
     const lineColor = transitDistanceColor(t.mode, t.distanceKm);
+    const linkedTrip = t.tripId ? stateIndex.tripById.get(t.tripId) : null;
+    const tooltipText = linkedTrip
+      ? `${t.fromName || ''} → ${t.toName || ''} · 🧳 ${linkedTrip.name} (click to open)`
+      : `${t.fromName || ''} → ${t.toName || ''}`;
+    const attachLineBehavior = (line) => {
+      _transitMapLayers.push(line);
+      line.bindTooltip(esc(tooltipText), { sticky: true });
+      if (linkedTrip) {
+        // Cursor + click → open the linked trip
+        line.on('mouseover', () => { const el = line.getElement(); if (el) el.style.cursor = 'pointer'; });
+        line.on('click', () => openTripById(t.tripId));
+      }
+    };
     if (t.mode === 'flight') {
       const arc = greatCircleArc(t.fromLat, t.fromLng, t.toLat, t.toLng, 64);
       const segs = splitAntiMeridian(arc);
       segs.forEach(seg => {
         if (seg.length < 2) return;
         const line = L.polyline(seg, { color: lineColor, weight: 2, opacity: 0.8, dashArray: m.dash }).addTo(_transitMap);
-        _transitMapLayers.push(line);
+        attachLineBehavior(line);
         seg.forEach(p => allPoints.push(p));
       });
     } else {
@@ -9002,7 +9048,7 @@ function renderTransitsMap(transits) {
       const line = L.polyline([[t.fromLat, t.fromLng], [t.toLat, t.toLng]], {
         color: lineColor, weight: 2, opacity: 0.8, dashArray: m.dash,
       }).addTo(_transitMap);
-      _transitMapLayers.push(line);
+      attachLineBehavior(line);
       allPoints.push([t.fromLat, t.fromLng], [t.toLat, t.toLng]);
     }
     // Endpoint markers stay in mode color (encodes the mode at a glance).

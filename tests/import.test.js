@@ -2346,6 +2346,36 @@ describe('renderTransitsMap + buildReplayTransitLine use distance color (source 
   });
 });
 
+// 2026-05-30: click a transit (polyline on the map OR card in the list) opens
+// the linked trip in the Trips view.
+describe('Transit → Trip navigation', () => {
+  test('openTripById exists and switches to trips-view + selectTrip', () => {
+    const fn = indexHtml.match(/function openTripById\([\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/switchView\(['"]trips-view['"]\)/);
+    expect(fn).toMatch(/selectTrip\(tripId\)/);
+    // Fail gracefully when no tripId or trip was deleted
+    expect(fn).toMatch(/showToast\([\s\S]{0,60}linked to a trip/);
+    expect(fn).toMatch(/showToast\([\s\S]{0,60}Linked trip was deleted/);
+  });
+
+  test('renderTransitsMap attaches click → openTripById when transit.tripId exists', () => {
+    const fn = indexHtml.match(/function renderTransitsMap\([\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/linkedTrip\s*=\s*t\.tripId/);
+    expect(fn).toMatch(/line\.on\(['"]click['"],\s*\(\)\s*=>\s*openTripById\(t\.tripId\)/);
+    // Tooltip mentions "click to open" when linked
+    expect(fn).toMatch(/click to open/);
+  });
+
+  test('renderTransitsList card has onclick=openTripById when linked', () => {
+    const fn = indexHtml.match(/function renderTransitsList\([\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/onclick="openTripById\('\$\{esc\(t\.tripId\)\}'\)"/);
+    // edit/delete buttons must stop propagation so they don't trigger the card click
+    expect(fn).toMatch(/event\.stopPropagation\(\)/);
+    // Trip chip is rendered when linked
+    expect(fn).toMatch(/transit-trip-chip/);
+  });
+});
+
 describe('formatTransitMinutes', () => {
   const fmt = (min) => vm.runInContext(`formatTransitMinutes(${JSON.stringify(min)})`, ctx);
 
