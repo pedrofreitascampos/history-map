@@ -40,9 +40,14 @@ touches every `api()` call site + needs CSRF on state-changing routes.
 - **Marker layer-diff** — ✅ shipped 2026-05-30 (commit `d1b37ba`).
 - **FR24 "not an export" guard** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
 - **LOW polish bundle** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
-- **CSP nonce refactor** — currently `'unsafe-inline'` on script-src/style-src
-  because the whole frontend is one inline `<script>` + many `onclick=`.
-  Migrating to nonces is the highest-risk single change in the codebase.
+- **CSP nonce refactor** — ✅ partial shipped 2026-05-30 (commit `aa479d5`).
+  `script-src` now requires a per-request nonce; `'unsafe-inline'` removed.
+  Residuals (intentionally deferred): `script-src-attr` still permissive
+  (hundreds of `onclick=` handlers — needs an event-delegation refactor);
+  `style-src` stays permissive because Leaflet injects nonceless inline
+  styles at runtime (per CSP-3, mixing `'unsafe-inline'` with a nonce in
+  style-src causes browsers to ignore `'unsafe-inline'` — no strict-dynamic
+  story for third-party CSS).
 - **Bootstrap map/collections/trips DBs** — waiting on user inputs. Existing
   bootstrap surfaces: bulk JSON/CSV/KML, Google Timeline, OSM enrich, Google
   Places sync, FR24 (transits + auto-airport stops).
