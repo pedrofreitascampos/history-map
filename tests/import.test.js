@@ -76,6 +76,7 @@ const code = [
   extractFunction('greatCircleArc'),
   extractFunction('splitAntiMeridian'),
   extractFunction('transitGreatCircleKm'),
+  extractConst('DECOMMISSIONED_AIRPORTS'),
   extractConst('TRANSIT_MODE_META'),
   extractFunction('transitMeta'),
   extractFunction('parseFr24Csv'),
@@ -1959,7 +1960,29 @@ describe('buildIataIndex', () => {
       YYYY: { name: 'No IATA', lat: 0, lon: 0 },
     });
     expect(idx.LIS).toBeDefined();
-    expect(Object.keys(idx)).toHaveLength(1);
+    // Empty / missing iata are skipped (only the LIS row is from the input).
+    // The decommissioned-airports patch is merged in afterwards, so the total
+    // count is LIS + the patch entries (not 1).
+    expect(idx['']).toBeUndefined();
+  });
+
+  // Regression (2026-05-30): historical FR24 logbooks contain SXF (Berlin
+  // Schönefeld) which OpenFlights dropped after its 2020 closure. Without the
+  // decommissioned patch, every pre-2020 Berlin flight failed to resolve.
+  test('decommissioned-airports patch fills SXF / TXL / THF when missing from live data', () => {
+    const idx = build({}); // No live data — patch must cover the gap
+    expect(idx.SXF).toBeDefined();
+    expect(idx.SXF.lat).toBeCloseTo(52.38, 1);
+    expect(idx.SXF.lon).toBeCloseTo(13.52, 1);
+    expect(idx.TXL).toBeDefined();
+    expect(idx.THF).toBeDefined();
+  });
+
+  test('live data wins over the decommissioned patch (no override)', () => {
+    const liveSxf = { iata: 'SXF', name: 'Live SXF', lat: 99.9, lon: 99.9 };
+    const idx = build({ XXXX: liveSxf });
+    expect(idx.SXF.name).toBe('Live SXF');
+    expect(idx.SXF.lat).toBe(99.9);
   });
 });
 
@@ -2009,6 +2032,21 @@ describe('resolveFr24Row', () => {
     expect(r.transit.toIata).toBe('SXF');
     expect(r.transit.durationMin).toBe(60);
     expect(r.transit.aircraft).toBe('Boeing 737-800 (B738)');
+  });
+
+  // 2026-05-30: airline must propagate to the transit (server allowlist
+  // already permits it but resolveFr24Row was dropping it on the floor).
+  test('propagates airline from the parsed row to transit.airline', () => {
+    const idx2 = {
+      LIS: { iata: 'LIS', name: 'Lisbon', lat: 38.78, lon: -9.13 },
+      JFK: { iata: 'JFK', name: 'JFK',    lat: 40.64, lon: -73.78 },
+    };
+    const row = { from: 'Lisbon (LIS)', to: 'JFK',
+      airline: 'TAP Air Portugal (TP/TAP)',
+      aircraft: 'A330', duration: '07:15:00' };
+    const r = vm.runInContext(`resolveFr24Row(${JSON.stringify(row)}, ${JSON.stringify(idx2)})`, ctx);
+    expect(r.ok).toBe(true);
+    expect(r.transit.airline).toBe('TAP Air Portugal (TP/TAP)');
   });
 });
 
@@ -2167,6 +2205,53 @@ describe('computeTransitStats', () => {
     expect(s.byMode.flight.km).toBe(0);
     expect(s.byMode.flight.min).toBe(0);
     expect(s.totalKm).toBe(0);
+  });
+
+  // 2026-05-30: airline / aircraft / airport leaderboards
+  test('topAirlines aggregates by airline string', () => {
+    const s = compute([
+      { mode: 'flight', airline: 'TAP Air Portugal', distanceKm: 100 },
+      { mode: 'flight', airline: 'TAP Air Portugal', distanceKm: 100 },
+      { mode: 'flight', airline: 'Ryanair', distanceKm: 100 },
+    ]);
+    expect(s.topAirlines[0]).toEqual({ airline: 'TAP Air Portugal', count: 2 });
+    expect(s.topAirlines[1]).toEqual({ airline: 'Ryanair', count: 1 });
+  });
+
+  test('topAircraft aggregates by aircraft string', () => {
+    const s = compute([
+      { mode: 'flight', aircraft: 'A320', distanceKm: 100 },
+      { mode: 'flight', aircraft: 'A320', distanceKm: 100 },
+      { mode: 'flight', aircraft: 'B737', distanceKm: 100 },
+    ]);
+    expect(s.topAircraft[0]).toEqual({ aircraft: 'A320', count: 2 });
+  });
+
+  test('topAirports counts each endpoint (from + to) separately', () => {
+    const s = compute([
+      { mode: 'flight', fromIata: 'LIS', toIata: 'JFK', fromName: 'Lisbon', toName: 'JFK', distanceKm: 100 },
+      { mode: 'flight', fromIata: 'JFK', toIata: 'LAX', fromName: 'JFK',    toName: 'LAX', distanceKm: 100 },
+    ]);
+    const jfk = s.topAirports.find(a => a.key === 'JFK');
+    expect(jfk.count).toBe(2);
+    const lis = s.topAirports.find(a => a.key === 'LIS');
+    expect(lis.count).toBe(1);
+  });
+
+  test('top-N leaderboards skip empty strings / missing fields', () => {
+    const s = compute([
+      { mode: 'flight', airline: '', aircraft: undefined, distanceKm: 100 },
+      { mode: 'flight', distanceKm: 100 },
+    ]);
+    expect(s.topAirlines).toEqual([]);
+    expect(s.topAircraft).toEqual([]);
+  });
+
+  test('leaderboards capped at 8', () => {
+    const transits = [];
+    for (let i = 0; i < 20; i++) transits.push({ mode: 'flight', airline: 'Airline ' + i, distanceKm: 100 });
+    const s = compute(transits);
+    expect(s.topAirlines.length).toBe(8);
   });
 });
 

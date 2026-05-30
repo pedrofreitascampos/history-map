@@ -1109,7 +1109,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .transit-stat-card.total { background: var(--bg-tertiary); border-color: var(--accent-dim); }
 .transit-stat-card .tsc-mode { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .transit-stat-card .tsc-km { font-size: 18px; font-weight: 600; color: var(--text-primary); }
-.transit-stat-card .tsc-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.transit-stat-card .tsc-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+/* Top-N leaderboards (airlines / airports / aircraft) below the stats strip */
+.transit-leaderboards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.transit-leaderboard-panel { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.transit-leaderboard-panel .tlb-title { margin: 0 0 8px 0; font-size: 13px; color: var(--text-secondary); font-weight: 600; }
+.transit-leaderboard-panel .tlb-list { list-style: none; margin: 0; padding: 0; }
+.transit-leaderboard-panel .tlb-row { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
+.transit-leaderboard-panel .tlb-row + .tlb-row { border-top: 1px solid var(--border); }
+.transit-leaderboard-panel .tlb-rank { color: var(--text-muted); font-size: 11px; text-align: right; }
+.transit-leaderboard-panel .tlb-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transit-leaderboard-panel .tlb-count { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 @media (max-width: 768px) {
   .transit-stat-strip { grid-template-columns: repeat(2, 1fr); }
 }
@@ -1773,6 +1783,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
   <!-- Stats strip -->
   <div id="transit-stats-strip"></div>
+
+  <!-- Top-N leaderboards: airlines, airports, aircraft -->
+  <div id="transit-leaderboards"></div>
 
   <!-- Filters -->
   <div id="transit-filters" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center;">
@@ -5912,6 +5925,18 @@ function parseDurationMinutes(s) {
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
+// Curated patch for historically-important airports the live OpenFlights
+// snapshot doesn't carry. FR24 logbooks routinely contain pre-2021 SXF/TXL
+// rows, pre-2008 THF, pre-1995 STT (old Stapleton was DEN — kept as note),
+// etc. Without these, every historical flight to/from these IATAs failed
+// resolution. Keys lowercased deliberately match the iata code (uppercase
+// 3-letter); merged AFTER the live data so any live entry wins.
+const DECOMMISSIONED_AIRPORTS = {
+  SXF: { iata: 'SXF', name: 'Berlin-Schönefeld (decommissioned 2020 → BER)', lat: 52.380001, lon: 13.522500, decommissioned: true },
+  TXL: { iata: 'TXL', name: 'Berlin-Tegel (decommissioned 2020 → BER)',     lat: 52.5597,   lon: 13.2877,   decommissioned: true },
+  THF: { iata: 'THF', name: 'Berlin-Tempelhof (decommissioned 2008)',       lat: 52.4729,   lon: 13.4039,   decommissioned: true },
+};
+
 // Build an IATA → airport-record map from the OpenFlights JSON (which is ICAO-keyed).
 function buildIataIndex(airportsObj) {
   const out = {};
@@ -5921,6 +5946,11 @@ function buildIataIndex(airportsObj) {
       // Prefer first occurrence; OpenFlights has near-duplicates for some codes
       if (!out[a.iata]) out[a.iata] = a;
     }
+  }
+  // Fill historical gaps (closed airports the live snapshot dropped) without
+  // overriding any live entry.
+  for (const iata of Object.keys(DECOMMISSIONED_AIRPORTS)) {
+    if (!out[iata]) out[iata] = DECOMMISSIONED_AIRPORTS[iata];
   }
   return out;
 }
@@ -5946,6 +5976,7 @@ function resolveFr24Row(row, iataIndex) {
     toName: toA.name ? `${toA.name}` : toIata,
     toLat: toA.lat, toLng: toA.lon, toIata,
     flightNumber: row.flightNumber,
+    airline: row.airline || '',
     aircraft: row.aircraft,
     seat: row.seat,
     distanceKm: Math.round(distanceKm),
@@ -6069,6 +6100,12 @@ function computeTransitStats(transits) {
   const byMode = {};
   for (const m of MODES) byMode[m] = { km: 0, min: 0, count: 0, routes: new Map() };
   let totalKm = 0, totalMin = 0;
+  // Cross-mode aggregates: airline / aircraft / airport (both endpoints).
+  // These are populated from any transit that has the field — flight rows are
+  // the main contributor in practice.
+  const airlines = new Map();
+  const aircraft = new Map();
+  const airports = new Map();  // key: iata||name → { count, km }
   for (const t of transits) {
     const m = byMode[t.mode];
     if (!m) continue;
@@ -6078,8 +6115,32 @@ function computeTransitStats(transits) {
     totalKm += km; totalMin += min;
     const key = `${t.fromIata || t.fromName || '?'} → ${t.toIata || t.toName || '?'}`;
     m.routes.set(key, (m.routes.get(key) || 0) + 1);
+    // Airlines
+    const al = (t.airline || '').trim();
+    if (al) airlines.set(al, (airlines.get(al) || 0) + 1);
+    // Aircraft
+    const ac = (t.aircraft || '').trim();
+    if (ac) aircraft.set(ac, (aircraft.get(ac) || 0) + 1);
+    // Airports (both endpoints — counts visits, not just unique airports)
+    for (const ep of [
+      { iata: t.fromIata, name: t.fromName },
+      { iata: t.toIata,   name: t.toName },
+    ]) {
+      const aKey = (ep.iata || ep.name || '').trim();
+      if (!aKey) continue;
+      const existing = airports.get(aKey) || { count: 0, name: ep.name || aKey };
+      existing.count++;
+      // Prefer the longer (named) display string
+      if (ep.name && (!existing.name || ep.name.length > existing.name.length)) existing.name = ep.name;
+      airports.set(aKey, existing);
+    }
   }
-  const out = { byMode: {}, totalKm, totalMin, totalCount: transits.length };
+  const out = {
+    byMode: {}, totalKm, totalMin, totalCount: transits.length,
+    topAirlines: [...airlines.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([airline, count]) => ({ airline, count })),
+    topAircraft: [...aircraft.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([aircraft, count]) => ({ aircraft, count })),
+    topAirports: [...airports.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8).map(([key, v]) => ({ key, name: v.name, count: v.count })),
+  };
   for (const m of MODES) {
     const b = byMode[m];
     out.byMode[m] = {
@@ -8782,8 +8843,38 @@ function renderTransitsView() {
   if (countEl) countEl.textContent = `${filtered.length} of ${state.transits.length}`;
   const stripEl = document.getElementById('transit-stats-strip');
   if (stripEl) stripEl.innerHTML = renderTransitsStatsStrip();
+  const boardsEl = document.getElementById('transit-leaderboards');
+  if (boardsEl) boardsEl.innerHTML = renderTransitLeaderboards();
   if (_transitViewMode === 'list') renderTransitsList(filtered);
   else renderTransitsMap(filtered);
+}
+
+// Top-N leaderboards for airlines, airports, aircraft. Rendered as three
+// stacked panels below the stats strip; each panel collapses when its data is
+// empty so users without flight data don't see a row of empty boxes.
+function renderTransitLeaderboards() {
+  const stats = computeTransitStats(state.transits);
+  const panels = [
+    { title: '✈ Top airlines',  items: stats.topAirlines, label: 'airline',  countSuffix: 'flight' },
+    { title: '🛬 Top airports',  items: stats.topAirports, label: 'airport',  countSuffix: 'visit'  },
+    { title: '🛩 Top aircraft',  items: stats.topAircraft, label: 'aircraft', countSuffix: 'flight' },
+  ].filter(p => p.items && p.items.length > 0);
+  if (panels.length === 0) return '';
+  return `<div class="transit-leaderboards">` + panels.map(p => `
+    <div class="transit-leaderboard-panel">
+      <h4 class="tlb-title">${p.title}</h4>
+      <ol class="tlb-list">
+        ${p.items.map((row, i) => {
+          const text = row.airline || row.aircraft || row.name || row.key || '—';
+          return `<li class="tlb-row">
+            <span class="tlb-rank">${i + 1}</span>
+            <span class="tlb-name" title="${esc(text)}">${esc(text)}</span>
+            <span class="tlb-count">${row.count} ${p.countSuffix}${row.count === 1 ? '' : 's'}</span>
+          </li>`;
+        }).join('')}
+      </ol>
+    </div>
+  `).join('') + `</div>`;
 }
 
 function renderTransitsList(transits) {
