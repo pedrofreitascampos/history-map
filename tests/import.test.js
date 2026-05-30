@@ -2766,6 +2766,99 @@ describe('No CSS font-size is below 12px', () => {
   });
 });
 
+// ─── H-2 HttpOnly cookie session (2026-05-30) ────────────
+describe('H-2 cookie auth — cookie issued, accepted, cleared', () => {
+  const TEST_USER = { username: 'cookie-test-user', password: 'cookie-test-pw-12345' };
+  let token;
+
+  beforeAll(async () => {
+    await db.users.remove({ username: TEST_USER.username }, { multi: true });
+  });
+
+  test('POST /auth/register sets HttpOnly hm_token cookie + returns token in body', async () => {
+    const res = await request(app).post('/api/auth/register').send(TEST_USER);
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeTruthy();
+    token = res.body.token;
+    const setCookie = res.headers['set-cookie'] || [];
+    const cookieLine = setCookie.find(c => c.startsWith('hm_token='));
+    expect(cookieLine).toBeTruthy(); // hm_token cookie must be set on register
+    expect(cookieLine).toMatch(/HttpOnly/i);
+    expect(cookieLine).toMatch(/SameSite=Strict/i);
+    // Path must be / so the cookie rides on every API request
+    expect(cookieLine).toMatch(/Path=\//i);
+  });
+
+  test('POST /auth/login also sets the cookie', async () => {
+    const res = await request(app).post('/api/auth/login').send(TEST_USER);
+    expect(res.status).toBe(200);
+    expect((res.headers['set-cookie'] || []).find(c => c.startsWith('hm_token='))).toBeTruthy();
+  });
+
+  test('GET /auth/me authenticates via Cookie header alone (no Authorization)', async () => {
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `hm_token=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.username).toBe(TEST_USER.username);
+  });
+
+  test('Authorization header still works (back-compat for CLI / tests)', async () => {
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.username).toBe(TEST_USER.username);
+  });
+
+  test('cookie wins when both present (no preference confusion)', async () => {
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `hm_token=${token}`)
+      .set('Authorization', 'Bearer not-a-real-token-12345');
+    // If header were preferred, this would 401. Cookie precedence → 200.
+    expect(res.status).toBe(200);
+  });
+
+  test('POST /auth/logout clears the cookie + revokes the jti', async () => {
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', `hm_token=${token}`);
+    expect(res.status).toBe(200);
+    const clear = (res.headers['set-cookie'] || []).find(c => c.startsWith('hm_token='));
+    expect(clear).toBeTruthy(); // logout must Set-Cookie to clear hm_token
+    // Cleared cookies set an expired date (Thu, 01 Jan 1970 …) or Max-Age=0
+    expect(clear).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/i);
+    // jti was revoked — same token must now 401 on any auth-gated route
+    const probe = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `hm_token=${token}`);
+    expect(probe.status).toBe(401);
+  });
+});
+
+describe('H-2 frontend — no localStorage(hm_token), no Authorization header', () => {
+  test('public/index.html no longer reads/writes hm_token in localStorage', () => {
+    // The HttpOnly cookie is unreadable from JS — there's nothing for the
+    // frontend to stash, and stashing the bearer in localStorage would
+    // re-open the XSS exfiltration window the migration was meant to close.
+    expect(indexHtml).not.toMatch(/localStorage\.(get|set|remove)Item\(\s*['"]hm_token/);
+  });
+
+  test('public/index.html does not stamp Authorization: Bearer anywhere', () => {
+    // The cookie travels via credentials:'same-origin'. Any leftover
+    // `Authorization: 'Bearer ' + …` would mean the frontend was still
+    // trying to read a token it no longer has.
+    expect(indexHtml).not.toMatch(/Authorization['"]?\s*:\s*['"]Bearer/);
+  });
+
+  test('api() helper uses credentials:"same-origin" so the cookie auto-attaches', () => {
+    // The single api() definition — if this regex stops matching, somebody
+    // changed the auth shape and the rest of the app will break with it.
+    expect(indexHtml).toMatch(/async\s+function\s+api\([\s\S]{0,400}credentials:\s*['"]same-origin['"]/);
+  });
+});
+
 // ─── CSP nonce refactor (2026-05-30) ─────────────────────
 describe('CSP nonce wiring — inline <script> carries placeholder', () => {
   test('every inline <script> (no src=) has nonce="__CSP_NONCE__"', () => {

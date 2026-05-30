@@ -7,6 +7,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 const { OAuth2Client } = require('google-auth-library');
 const db = require('./db');
 
@@ -120,6 +121,7 @@ app.use(cors({ origin: corsAllowed, credentials: false }));
 // exactly once at the appropriate limit.
 app.use(['/api/locations/bulk', '/api/transits/bulk'], express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
 
 // Rate limiting — disabled in test environment to allow full test suite runs
 const isTest = process.env.NODE_ENV === 'test';
@@ -199,6 +201,32 @@ function signToken(payload) {
   return jwt.sign({ ...payload, jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 }
 
+// ── HttpOnly session cookie (H-2) ────────────────────────
+// The cookie is the primary auth channel for the browser: it's not reachable
+// from JS (httpOnly) so an XSS can no longer exfiltrate the bearer. The
+// Authorization-header fallback is retained for supertest-driven tests and
+// for any non-browser API client (CLI scripts, etc.) — anywhere the token
+// has to travel back to the issuing client out-of-band.
+//
+// SameSite=Strict gives us CSRF protection for free: a third-party site
+// can't trigger an authenticated POST because the cookie won't ride along
+// on cross-origin navigations. The personal-app context has no embeds /
+// federated nav paths that depend on lax cookie behavior.
+const COOKIE_NAME = 'hm_token';
+const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // matches JWT_EXPIRY
+function setAuthCookie(res, token) {
+  res.cookie(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: '/',
+  });
+}
+function clearAuthCookie(res) {
+  res.clearCookie(COOKIE_NAME, { path: '/' });
+}
+
 // ── Auth middleware ──────────────────────────────────────
 function requireAdmin(req, res, next) {
   if (!ADMIN_EMAIL || !req.user?.username || req.user.username.toLowerCase() !== ADMIN_EMAIL) {
@@ -208,8 +236,10 @@ function requireAdmin(req, res, next) {
 }
 
 function auth(req, res, next) {
-  const m = req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
-  const token = m && m[1];
+  // Cookie first (browsers), Authorization header second (CLI / tests).
+  const cookieToken = req.cookies?.[COOKIE_NAME];
+  const headerMatch = req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
+  const token = cookieToken || (headerMatch && headerMatch[1]);
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -243,6 +273,7 @@ app.post('/api/auth/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const user = await db.users.insert({ username, password: hash, createdAt: new Date().toISOString() });
     const token = signToken({ id: user._id, username });
+    setAuthCookie(res, token);
     audit('register_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
@@ -263,6 +294,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const token = signToken({ id: user._id, username });
+    setAuthCookie(res, token);
     audit('login_success', { username }, req);
     res.json({ token, username });
   } catch (err) {
@@ -274,12 +306,15 @@ app.get('/api/auth/me', auth, (req, res) => {
   res.json({ username: req.user.username });
 });
 
-// Revoke the current token (server-side blocklist). Best-effort — frontend
-// drops localStorage regardless, but this kills the bearer for the rest of
-// its TTL on the server. Returns 401 if the token was already invalid/expired
+// Revoke the current token (server-side blocklist) AND clear the session
+// cookie. The frontend also drops any cached session-state flag, but this
+// kills the bearer server-side for the rest of its TTL — a copy of the
+// token (e.g. exfiltrated before the HttpOnly migration) can no longer
+// authenticate. Returns 401 if the token was already invalid/expired
 // (auth middleware handles that), 200 on successful revocation.
 app.post('/api/auth/logout', auth, (req, res) => {
   revokeJti(req.user.jti, req.user.exp);
+  clearAuthCookie(res);
   audit('logout', { username: req.user.username }, req);
   res.json({ ok: true });
 });
@@ -321,6 +356,7 @@ app.post('/api/auth/google', async (req, res) => {
       }
     }
     const token = signToken({ id: user._id, username: user.username });
+    setAuthCookie(res, token);
     audit('google_login_success', { email: user.username }, req);
     res.json({ token, username: user.username, picture: user.picture });
   } catch (err) {

@@ -2350,21 +2350,32 @@ let chartRatings, chartActivity;
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* AUTH & API LAYER                                                      */
 /* ═══════════════════════════════════════════════════════════════════════ */
-let authToken = localStorage.getItem('hm_token') || null;
+// H-2 (2026-05-30): the bearer token now lives in an HttpOnly cookie that
+// JS can't read. This flag just tracks whether we believe a session exists
+// on the server — true after a successful login/register/google-auth or a
+// 200 from /auth/me, false on boot until proven otherwise, false after
+// logout. The actual auth credential rides on every request via the cookie
+// (credentials: 'same-origin' below).
+let isAuthed = false;
 let authMode = 'login';
 
 function apiHeaders() {
-  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken };
+  return { 'Content-Type': 'application/json' };
 }
 
 async function api(method, path, body) {
-  const opts = { method, headers: apiHeaders() };
+  // credentials: 'same-origin' attaches the hm_token cookie automatically.
+  // We don't read or stamp the bearer ourselves — that's the whole point of
+  // the HttpOnly migration.
+  const opts = { method, headers: apiHeaders(), credentials: 'same-origin' };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
   if (res.status === 401) {
     const err = await res.json().catch(() => ({}));
-    // Only logout on token expiry, not on login/register credential errors
-    if (!path.startsWith('/auth/login') && !path.startsWith('/auth/register') && !path.startsWith('/auth/google')) {
+    // Only logout on session expiry, not on login/register credential errors,
+    // and not on /auth/me (which is also used at boot to probe whether a
+    // cookie session exists — a 401 there means "no session" not "expired").
+    if (!path.startsWith('/auth/login') && !path.startsWith('/auth/register') && !path.startsWith('/auth/google') && !path.startsWith('/auth/me')) {
       logout();
       throw new Error('Session expired');
     }
@@ -2396,8 +2407,7 @@ async function doAuth() {
   try {
     const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
     const data = await api('POST', endpoint, { username, password });
-    authToken = data.token;
-    localStorage.setItem('hm_token', authToken);
+    isAuthed = true;
     await startApp(data.username);
   } catch (err) {
     errEl.textContent = err.message;
@@ -2405,16 +2415,11 @@ async function doAuth() {
 }
 
 function logout() {
-  // Fire-and-forget server-side revocation. Direct fetch (not api()) so a 401
-  // can't trigger a recursive logout call. Local logout proceeds regardless.
-  if (authToken) {
-    fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + authToken },
-    }).catch(() => {});
-  }
-  authToken = null;
-  localStorage.removeItem('hm_token');
+  // Fire-and-forget server-side revocation + cookie clear. The cookie travels
+  // automatically via credentials: 'same-origin' — no Authorization header to
+  // stamp. Local state reset proceeds regardless of whether the request lands.
+  fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+  isAuthed = false;
   _placesEnabled = null;
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('auth-password').value = '';
@@ -2422,9 +2427,14 @@ function logout() {
 }
 
 async function checkAuth() {
-  if (!authToken) return false;
+  // Cookie-based session: we can't read the token from JS, so the only way
+  // to know if a session is live is to ask the server. /auth/me returns 200
+  // when the cookie is valid, 401 otherwise. The api() helper catches 401
+  // on other paths and calls logout(); here we swallow it manually because
+  // a 401 during boot just means "not logged in yet", not "session died".
   try {
     const data = await api('GET', '/auth/me');
+    isAuthed = true;
     return data.username;
   } catch { return false; }
 }
@@ -2472,8 +2482,7 @@ async function handleGoogleCredential(response) {
   errEl.textContent = '';
   try {
     const data = await api('POST', '/auth/google', { credential: response.credential });
-    authToken = data.token;
-    localStorage.setItem('hm_token', authToken);
+    isAuthed = true;
     await startApp(data.username);
   } catch (err) {
     errEl.textContent = err.message || 'Google sign-in failed';
@@ -7467,7 +7476,7 @@ function closeAccountModal() {
 
 async function downloadLatestBackup() {
   try {
-    const res = await fetch('/api/my-backup', { headers: { 'Authorization': 'Bearer ' + authToken } });
+    const res = await fetch('/api/my-backup', { credentials: 'same-origin' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Download failed' }));
       showToast(err.error || 'No backup available', 'warn');
@@ -7486,7 +7495,7 @@ async function downloadLatestBackup() {
 
 async function downloadUserBackup(filename) {
   try {
-    const res = await fetch('/api/my-backup/' + encodeURIComponent(filename), { headers: { 'Authorization': 'Bearer ' + authToken } });
+    const res = await fetch('/api/my-backup/' + encodeURIComponent(filename), { credentials: 'same-origin' });
     if (!res.ok) { showToast('Download failed', 'error'); return; }
     const blob = await res.blob();
     const a = document.createElement('a');
@@ -7499,7 +7508,7 @@ async function downloadUserBackup(filename) {
 
 async function downloadBackup(filename) {
   try {
-    const res = await fetch('/api/admin/backups/' + encodeURIComponent(filename), { headers: { 'Authorization': 'Bearer ' + authToken } });
+    const res = await fetch('/api/admin/backups/' + encodeURIComponent(filename), { credentials: 'same-origin' });
     if (!res.ok) { showToast('Download failed', 'error'); return; }
     const blob = await res.blob();
     const a = document.createElement('a');
