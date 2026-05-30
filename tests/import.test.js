@@ -2678,9 +2678,12 @@ describe('Countries-visited stats section (source invariants)', () => {
     expect(indexHtml).toMatch(/function viewCountryOnMap\([\s\S]{0,400}switchView\(['"]map-view['"]\)/);
   });
 
-  test('flag cards include onclick + aria-label (a11y)', () => {
+  test('flag cards include onclick + alt (a11y)', () => {
     expect(indexHtml).toMatch(/flag-card[\s\S]{0,300}data-click="viewCountryOnMap/);
-    expect(indexHtml).toMatch(/flag-emoji[^>]*aria-label/);
+    // Flag images come from flagcdn.com (regional-indicator emoji render as
+    // text on Windows). Alt text carries the country name for screen readers.
+    expect(indexHtml).toMatch(/flag-img[^>]*alt="\$\{esc\(c\.name\)\} flag"/);
+    expect(indexHtml).toMatch(/flagcdn\.com\/w80/);
   });
 });
 

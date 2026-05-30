@@ -672,6 +672,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 .flag-card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .flag-card .flag-emoji { font-size: 32px; line-height: 1; }
+.flag-card .flag-img {
+  width: 48px; height: 36px;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  object-fit: cover;
+}
 .flag-card .flag-name { font-size: 12px; color: var(--text-primary); text-align: center; font-weight: 500; }
 .flag-card .flag-count { font-size: 12px; color: var(--text-muted); }
 .flag-card.flag-unknown .flag-emoji { opacity: 0.55; }
@@ -2754,7 +2760,9 @@ function initMap() {
   map.on('baselayerchange', e => { window._activeBaseLayer = e.layer; });
 
   markersLayer = L.markerClusterGroup({
-    maxClusterRadius: 40,
+    maxClusterRadius: 30,
+    disableClusteringAtZoom: 15,
+    spiderfyOnMaxZoom: false,
     iconCreateFunction: function(cluster) {
       const count = cluster.getChildCount();
       return L.divIcon({
@@ -3086,6 +3094,16 @@ function showMultiPrompt(fields) {
 function getGoogleMapsUrl(loc) {
   if (loc._googleUrl && /^https?:\/\//i.test(loc._googleUrl)) return loc._googleUrl;
   if (loc._googlePlaceId) return `https://www.google.com/maps/place/?q=place_id:${loc._googlePlaceId}`;
+  // Prefer name+address search over raw coords so the result lands on the
+  // actual Google place pin (with the business card / reviews / photos)
+  // instead of a generic "dropped pin" at the coordinate. Coords are the
+  // last-resort fallback for entries with no name (rare).
+  const namePart = (loc.name || '').trim();
+  const addrPart = (loc.address || '').trim();
+  if (namePart) {
+    const q = encodeURIComponent(addrPart ? `${namePart}, ${addrPart}` : namePart);
+    return `https://www.google.com/maps/search/?api=1&query=${q}`;
+  }
   if (loc.lat && loc.lng) return `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
   return '';
 }
@@ -3129,21 +3147,25 @@ function createPopupContent(loc) {
   const priceStr = loc.priceLevel ? ' · ' + '€'.repeat(loc.priceLevel) : '';
   const tagChips = (loc.tags || []).map(t => `<span class="popup-tag">${esc(t)}</span>`).join('');
   const gmapsUrl = getGoogleMapsUrl(loc);
-  const gmapsLink = gmapsUrl ? `<a href="${esc(gmapsUrl)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:12px;">📍 Open in Google Maps</a>` : '';
+  const gmapsIcon = gmapsUrl
+    ? `<a href="${esc(gmapsUrl)}" target="_blank" rel="noopener" aria-label="Open in Google Maps" title="Open in Google Maps" style="color:var(--text-muted);text-decoration:none;font-size:14px;line-height:1;padding:4px;display:inline-flex;align-items:center;">🗺️</a>`
+    : '';
   const wantStr = loc.status === 'bucket' && loc.bucketStrength > 0
     ? `<div class="popup-meta" style="color:#ec4899;">${'♥'.repeat(loc.bucketStrength)}${'♡'.repeat(5 - loc.bucketStrength)} <span style="color:var(--text-muted);font-size:12px;">Want-to-go</span></div>`
     : '';
 
   const isBeen = loc.status === 'been';
   return `<div class="popup-inner" style="position:relative;">
-    <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
-    <h3>${cat.emoji} ${esc(loc.name)}</h3>
+    <div style="position:absolute;top:6px;right:6px;display:flex;gap:2px;align-items:center;">
+      ${gmapsIcon}
+      <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
+    </div>
+    <h3 style="padding-right:48px;">${cat.emoji} ${esc(loc.name)}</h3>
     <div class="popup-cat">${cat.label}${priceStr}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
       <div class="popup-rating-item">Mine: <span>${myStars}</span></div>
     </div>
-    ${gmapsLink ? `<div class="popup-meta">${gmapsLink}</div>` : ''}
     ${wantStr}
     ${tagChips ? `<div class="popup-tags">${tagChips}</div>` : ''}
     ${visitDates ? `<div class="popup-meta">📅 ${visitDates}</div>` : ''}
@@ -3387,8 +3409,8 @@ function viewCountryOnMap(iso2) {
   }
   switchView('map-view');
   if (points.length === 0 || !window.map) return;
-  if (points.length === 1) { map.setView(points[0], 8); return; }
-  map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 9 });
+  if (points.length === 1) { map.setView(points[0], 11); return; }
+  map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 12 });
 }
 
 function clearCategoryFilter() {
@@ -4848,13 +4870,18 @@ function renderStats() {
       flagsEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;grid-column:1/-1;">No countries visited yet. Mark places as Been to fill your map.</p>';
       if (countEl) countEl.textContent = '';
     } else {
-      const cards = countryRanked.map(c =>
-        `<div class="flag-card" data-click="viewCountryOnMap" data-arg0="${esc(c.code)}" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
-          <span class="flag-emoji" aria-label="${esc(c.name)} flag">${countryCodeToFlag(c.code)}</span>
+      const cards = countryRanked.map(c => {
+        // Regional-indicator emoji (🇵🇹) renders as text "PT" on Windows because
+        // Segoe UI Emoji deliberately omits flag glyphs. Switching to flagcdn.com
+        // SVG so every platform shows real flags. Wrapped in a span carrying the
+        // regional-indicator as an aria-label for screen readers.
+        const isoLower = esc(c.code.toLowerCase());
+        return `<div class="flag-card" data-click="viewCountryOnMap" data-arg0="${esc(c.code)}" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
+          <img class="flag-img" src="https://flagcdn.com/w80/${isoLower}.png" srcset="https://flagcdn.com/w160/${isoLower}.png 2x" alt="${esc(c.name)} flag" width="48" height="36" loading="lazy">
           <span class="flag-name">${esc(c.name)}</span>
           <span class="flag-count">${c.count} place${c.count === 1 ? '' : 's'}</span>
-        </div>`
-      );
+        </div>`;
+      });
       const unknownEntries = Object.entries(unknownRegions);
       if (unknownEntries.length > 0) {
         const totalUnknown = unknownEntries.reduce((sum, [, n]) => sum + n, 0);
@@ -5872,11 +5899,16 @@ function selectTrip(tripId) {
     drawRoadRoutes(tripLocs, trip.color || '#ffc144', myVersion);
   }
 
-  tripMap.fitBounds(bounds, { padding: [40, 40] });
-
-  // Build sidebar detail
+  // Build sidebar detail first so the map container has its final width before
+  // we size the Leaflet view. invalidateSize() THEN fitBounds() — the previous
+  // order was fitBounds-then-invalidateSize-100ms-later, which left the bounds
+  // calc using a stale (often zero-width) container size on first open, so the
+  // map didn't zoom into the trip's locations.
   renderTripDetail(trip, tripLocs);
-  setTimeout(() => tripMap.invalidateSize(), 100);
+  setTimeout(() => {
+    tripMap.invalidateSize();
+    tripMap.fitBounds(bounds, { padding: [40, 40] });
+  }, 0);
 }
 
 function drawStraightPath(tripLocs, color) {
