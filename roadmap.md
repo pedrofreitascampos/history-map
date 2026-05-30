@@ -41,10 +41,9 @@ table below for the per-finding reconciliation.
   dynamic-for-CSS story (or migrate off Leaflet inline styles), this
   residual remains as accepted defense-in-depth gap. Lower severity than
   script injection — style injection cannot execute code.
-- **CSS-ify legacy hover-bg ACTIONS** (low priority). The 4 hoverIn /
-  hoverOut sites use inline JS to toggle a background colour on mouseover/
-  mouseout. The right fix is a `:hover` rule. Bridge action in place so the
-  visual behaviour is preserved.
+- **CSS-ify legacy hover-bg ACTIONS** — ✅ shipped 2026-05-30 (commit `342cf0d`).
+  Single `.hover-bg-tertiary:hover` rule replaces the 4 bridged sites; `hoverIn`
+  / `hoverOut` removed from the dispatcher. Pure presentational refactor.
 - **Bootstrap map/collections/trips DBs** — waiting on user inputs. Existing
   bootstrap surfaces: bulk JSON/CSV/KML, Google Timeline, OSM enrich, Google
   Places sync, FR24 (transits + auto-airport stops).
@@ -114,4 +113,6 @@ See memory roadmap for full commit-level detail. Headline batches:
   **H-2 HttpOnly cookies migration** (`ade84d8`), **full onclick refactor
   + `script-src-attr 'none'`** (`c9f7ec9` — 217 inline handlers → document-
   level capture-phase dispatcher; +3 e2e specs: view-switch, edit-modal,
-  filter-category). **Session totals: 552 jest + 8 e2e green.**
+  filter-category), **CSS-ify hover-bg bridge** (`342cf0d` — `.hover-bg-tertiary`
+  rule replaces the last 4 inline data-mouseover/out sites). **Session totals:
+  556 jest + 8 e2e green.**
