@@ -213,3 +213,20 @@ See memory roadmap for full commit-level detail. Headline batches:
     2 skip with documented reason — no-key path requires separate module
     instance, covered by narrate-nokey.test.js).
   - **Session totals: 594 jest + 8 e2e green (3 skip).**
+  - **Batch 7** (this commit): Live autocomplete on sidebar Add/Search inputs.
+    Both `#quick-add-input` and `#map-search-input` now fire debounced (250ms)
+    typeahead via `/api/places/search` when Google is configured, with Nominatim
+    (`nominatim.openstreetmap.org`) fallback. Results render inline below both
+    inputs (reusing `#map-search-results`) with rating + price + address chips.
+    Each result has "+ Add" (opens add modal pre-filled with name/address/coords/
+    googleRating/priceLevel) and "📍" (pans map to result, keeps results open).
+    Race protection: in-flight results discarded if the input query has moved on
+    (`AbortController` + value-mismatch guard). `liveSearchInput` added to `ACTIONS`
+    (receives `el, e` to read `data-livesearch-source`; avoids `data-arg0` collision
+    with the existing `enterKey` handler on the same elements). `_liveSearchDebounce`
+    + `_liveSearchAbort` module-level vars. Dispatcher bugfix note: `466c897` already
+    fixed `_runAction` unconditionally calling `e.preventDefault()` for `data-prevent`
+    (was blocking typing). 9 new regression tests in `import.test.js` (dispatcher
+    wiring, livesearch-source attrs, escape, no-inline-onclick, race-check, modal
+    pre-fill, map.setView).
+  - **Session totals: 607 jest + 8 e2e green (3 skip).**

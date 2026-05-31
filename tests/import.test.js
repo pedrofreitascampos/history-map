@@ -3217,3 +3217,56 @@ describe('_runAction must NOT preventDefault unconditionally (sidebar typing reg
     }
   });
 });
+
+describe('Sidebar live autocomplete (2026-05-31)', () => {
+  test('both inputs carry data-input="liveSearchInput" with livesearch-source', () => {
+    expect(indexHtml).toMatch(/id="quick-add-input"[\s\S]{0,400}data-input="liveSearchInput"[\s\S]{0,120}data-livesearch-source="quick-add"/);
+    expect(indexHtml).toMatch(/id="map-search-input"[\s\S]{0,400}data-input="liveSearchInput"[\s\S]{0,120}data-livesearch-source="map-search"/);
+  });
+
+  test('both inputs still carry enterKey + original arg0 (no regression)', () => {
+    expect(indexHtml).toMatch(/id="quick-add-input"[\s\S]{0,400}data-keydown="enterKey"[\s\S]{0,200}data-arg0="quickAddPlace"/);
+    expect(indexHtml).toMatch(/id="map-search-input"[\s\S]{0,400}data-keydown="enterKey"[\s\S]{0,200}data-arg0="mapSearch"/);
+  });
+
+  test('ACTIONS.liveSearchInput reads livesearchSource and debounces to _runLiveSearch', () => {
+    expect(indexHtml).toMatch(/liveSearchInput:\s*\(el\)[\s\S]{0,200}livesearchSource[\s\S]{0,200}clearTimeout\(_liveSearchDebounce\)[\s\S]{0,200}_runLiveSearch\(source\)/);
+  });
+
+  test('_runLiveSearch prefers Google when shouldUseGoogle, falls back to Nominatim', () => {
+    expect(indexHtml).toMatch(/function _runLiveSearch[\s\S]{0,1500}shouldUseGoogle\(\)[\s\S]{0,200}\/places\/search[\s\S]{0,800}nominatim\.openstreetmap\.org/);
+  });
+
+  test('results render with + Add and 📍 (go) buttons wired via dispatcher', () => {
+    expect(indexHtml).toMatch(/data-click="liveResultAdd"[\s\S]{0,40}data-arg0="\$\{i\}"/);
+    expect(indexHtml).toMatch(/data-click="liveResultGo"[\s\S]{0,40}data-arg0="\$\{i\}"/);
+  });
+
+  test('liveResultAdd opens add modal and pre-fills name+address+coords from picker', () => {
+    expect(indexHtml).toMatch(/function liveResultAdd[\s\S]{0,400}openAddModal\([\s\S]{0,100}\)[\s\S]{0,400}loc-name[\s\S]{0,80}loc-address/);
+  });
+
+  test('liveResultGo pans/zooms map to the picked result', () => {
+    expect(indexHtml).toMatch(/function liveResultGo[\s\S]{0,200}map\.setView\(\[r\.lat,\s*r\.lng\]/);
+  });
+
+  test('escapes user/API strings (name + address + error) via esc()', () => {
+    expect(indexHtml).toMatch(/_runLiveSearch[\s\S]*?esc\(r\.name\)[\s\S]*?esc\(r\.address[\s\S]*?<\/div>/);
+  });
+
+  test('all data-click in live result rows are dispatcher-pattern (no inline onclick)', () => {
+    const start = indexHtml.indexOf('function _runLiveSearch');
+    const end = indexHtml.indexOf('function liveResultAdd');
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const body = indexHtml.substring(start, end);
+    expect(body).not.toMatch(/\bonclick=/);
+  });
+
+  test('race protection: input.value.trim() !== q check present in _runLiveSearch', () => {
+    const start = indexHtml.indexOf('function _runLiveSearch');
+    expect(start).toBeGreaterThan(0);
+    const body = indexHtml.substring(start, start + 2000);
+    expect(body).toMatch(/input\.value\.trim\(\)\s*!==?\s*q/);
+  });
+});

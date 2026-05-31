@@ -1448,7 +1448,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <input type="text" class="form-input" id="quick-add-input" placeholder="Add place"
           aria-label="Add a new place"
           style="flex:1;font-size:12px;padding:6px 10px;"
-          data-keydown="enterKey" data-arg0="quickAddPlace" data-prevent="1">
+          data-keydown="enterKey" data-arg0="quickAddPlace" data-prevent="1"
+          data-input="liveSearchInput" data-livesearch-source="quick-add">
         <button class="add-small-btn" data-click="quickAddPlace" title="Add place" aria-label="Add place"
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">+</button>
       </div>
@@ -1456,7 +1457,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <input type="text" class="form-input" id="map-search-input" placeholder="Search place"
           aria-label="Search for a place"
           style="flex:1;font-size:12px;padding:6px 10px;"
-          data-keydown="enterKey" data-arg0="mapSearch" data-prevent="1">
+          data-keydown="enterKey" data-arg0="mapSearch" data-prevent="1"
+          data-input="liveSearchInput" data-livesearch-source="map-search">
         <button class="add-small-btn" data-click="mapSearch" title="Search" aria-label="Search"
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
@@ -2336,6 +2338,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 // reachable via stored-XSS injection of arbitrary HTML. After this
 // refactor a CSP injection that lands a `<button onclick="…">` is
 // silently ignored by the browser.
+
+// Live-search debounce + abort handles (shared across ACTIONS and helper fns).
+let _liveSearchDebounce = null;
+let _liveSearchAbort = null;
+
 const ACTIONS = {
   // Placeholder action used when an element only carries data-stop/data-prevent.
   noop: () => {},
@@ -2400,6 +2407,12 @@ const ACTIONS = {
   // string-encoded data-arg-N pipeline.
   confirmBulkGoogleSync: (el) => {
     showConfirm(el.dataset.arg0, async () => withLoading(el, bulkGoogleSync), 'Sync');
+  },
+  // Sidebar live autocomplete — needs (el, e) to read data-livesearch-source.
+  liveSearchInput: (el) => {
+    const source = el.dataset.livesearchSource || el.id;
+    clearTimeout(_liveSearchDebounce);
+    _liveSearchDebounce = setTimeout(() => _runLiveSearch(source), 250);
   },
 };
 
@@ -4001,6 +4014,103 @@ async function addSearchResultAsLocation(idx) {
   renderModalTags();
   updatePriceVisibility();
   document.getElementById('map-search-results').innerHTML = '';
+}
+
+// ── Live sidebar autocomplete (debounced, race-safe) ───────────────────────
+async function _runLiveSearch(source) {
+  const inputId = source === 'quick-add' ? 'quick-add-input' : 'map-search-input';
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const q = input.value.trim();
+  const resultsEl = document.getElementById('map-search-results');
+  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+
+  // Abort any in-flight request before kicking off a new one
+  if (_liveSearchAbort) { try { _liveSearchAbort.abort(); } catch (_) {} }
+  _liveSearchAbort = new AbortController();
+
+  resultsEl.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:var(--text-muted);">Searching…</div>';
+
+  let results = [];
+  let provider = 'osm';
+  try {
+    const useGoogle = await shouldUseGoogle();
+    const center = map.getCenter();
+    if (useGoogle) {
+      provider = 'google';
+      results = await api('GET', `/places/search?q=${encodeURIComponent(q)}&lat=${center.lat}&lng=${center.lng}`);
+    } else {
+      // Nominatim fallback
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10`;
+      const r = await fetch(url, { signal: _liveSearchAbort.signal });
+      if (!r.ok) throw new Error('Nominatim ' + r.status);
+      const json = await r.json();
+      results = (json || []).map(it => ({
+        name: (it.display_name || '').split(',')[0].trim() || it.display_name || '?',
+        address: it.display_name || '',
+        lat: parseFloat(it.lat),
+        lng: parseFloat(it.lon),
+      }));
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    resultsEl.innerHTML = `<div style="padding:6px 8px;font-size:12px;color:var(--danger);">Search failed: ${esc(err.message)}</div>`;
+    return;
+  }
+
+  // Race protection: discard if the input has moved on
+  if (input.value.trim() !== q) return;
+
+  if (!results.length) {
+    resultsEl.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:var(--text-muted);">No matches</div>';
+    return;
+  }
+
+  window._liveSearchResults = results;
+  window._liveSearchProvider = provider;
+  resultsEl.innerHTML = results.slice(0, 8).map((r, i) => {
+    const ratingChip = r.googleRating ? `⭐ ${r.googleRating} (${(r.userRatingsTotal || 0).toLocaleString()})` : '';
+    const priceChip = r.priceLevel ? '€'.repeat(r.priceLevel) : '';
+    const metaParts = [ratingChip, priceChip, esc(r.address || '')].filter(Boolean);
+    return `<div class="live-result-row" style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px;">
+      <div style="display:flex;gap:6px;align-items:flex-start;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</div>
+          <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${metaParts.join(' · ')}
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="add-small-btn" data-click="liveResultAdd" data-arg0="${i}" title="Add to my places"
+            style="padding:3px 8px;font-size:12px;">+ Add</button>
+          <button class="add-small-btn" data-click="liveResultGo" data-arg0="${i}" title="Show on map"
+            style="padding:3px 8px;font-size:12px;">📍</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function liveResultAdd(idxStr) {
+  const r = (window._liveSearchResults || [])[parseInt(idxStr, 10)];
+  if (!r) return;
+  // Open add modal then pre-fill — mirror addSearchResultAsLocation pattern.
+  openAddModal(r.lat, r.lng);
+  const setIfExists = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  setIfExists('loc-name', r.name);
+  setIfExists('loc-address', r.address || '');
+  // lat/lng already set by openAddModal(r.lat, r.lng) above
+  if (r.googleRating) setIfExists('loc-google-rating', r.googleRating);
+  if (r.priceLevel) { state.modalPrice = r.priceLevel; setModalPrice(r.priceLevel); }
+  if (r.placeId) state._liveSearchGooglePlaceId = r.placeId;
+  document.getElementById('map-search-results').innerHTML = '';
+}
+
+function liveResultGo(idxStr) {
+  const r = (window._liveSearchResults || [])[parseInt(idxStr, 10)];
+  if (!r || !Number.isFinite(r.lat) || !Number.isFinite(r.lng)) return;
+  map.setView([r.lat, r.lng], 15);
+  // Don't clear results — user may want to compare or pick another
 }
 
 function toggleSidebar() {
