@@ -3044,7 +3044,7 @@ function initMap() {
 
   markersLayer = L.markerClusterGroup({
     maxClusterRadius: 30,
-    disableClusteringAtZoom: 15,
+    disableClusteringAtZoom: 12,
     spiderfyOnMaxZoom: false,
     iconCreateFunction: function(cluster) {
       const count = cluster.getChildCount();
