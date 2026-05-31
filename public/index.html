@@ -1533,12 +1533,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
 
-    <div class="filter-section">
+    <div class="filter-section" id="rating-filter-section">
       <h4>My Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
         <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="rating-value" data-click="applyFilters">
         <span class="rating-value" id="rating-value">0</span>
+      </div>
+    </div>
+
+    <div class="filter-section" id="bucket-strength-filter-section">
+      <h4>Want-to-Go Strength</h4>
+      <div class="rating-filter">
+        <label>Min</label>
+        <input type="range" class="rating-slider" id="bucket-strength-filter" min="0" max="5" step="1" value="0" data-input="syncToText" data-target="bucket-strength-value" data-click="applyFilters">
+        <span class="rating-value" id="bucket-strength-value">0</span>
       </div>
     </div>
 
@@ -2016,7 +2025,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="modal-divider"><span>Memory</span></div>
 
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" id="rating-group">
           <label>My Rating</label>
           <div class="star-rating" id="my-rating" role="radiogroup" aria-label="My rating">
             <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" data-click="setRating" data-arg0="1">★</span>
@@ -2647,7 +2656,7 @@ let state = {
   trips: [],
   collections: [],
   transits: [],
-  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, tags: new Set(), priceLevels: new Set() },
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, minBucketStrength: 0, tags: new Set(), priceLevels: new Set() },
   editingId: null,
   modalPeople: [],
   modalVisits: [],
@@ -3431,12 +3440,13 @@ function createPopupContent(loc) {
   const photoBadge = (loc.media && loc.media.length > 0)
     ? `<span style="font-size:12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;padding:1px 7px;color:var(--text-secondary);">📷 ${loc.media.length}</span>`
     : '';
+  // Top-right hosts ONLY the Google Maps icon. Leaflet renders its own
+  // close button (×) at top-right; the delete button used to sit next to
+  // it, which read like a second close button. Delete now lives in the
+  // action row at the bottom as a small 🗑️ button.
   return `<div class="popup-inner" style="position:relative;">
-    <div style="position:absolute;top:6px;right:6px;display:flex;gap:2px;align-items:center;">
-      ${gmapsIcon}
-      <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
-    </div>
-    <h3 style="padding-right:48px;">${cat.emoji} ${esc(loc.name)}</h3>
+    ${gmapsIcon ? `<div style="position:absolute;top:6px;right:24px;">${gmapsIcon}</div>` : ''}
+    <h3 style="padding-right:${gmapsIcon ? '48px' : '24px'};">${cat.emoji} ${esc(loc.name)}</h3>
     <div class="popup-cat">${cat.label}${priceStr}${photoBadge ? ' &nbsp;' + photoBadge : ''}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
@@ -3448,9 +3458,10 @@ function createPopupContent(loc) {
     ${trip ? `<div class="popup-meta">🧳 ${esc(trip.name)}</div>` : ''}
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
-    <div style="display:flex;gap:6px;margin-top:8px;">
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
       <button class="popup-btn" data-click="toggleStatusFromPopup" data-arg0="${esc(loc.id)}" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
       <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;">✏️ Edit</button>
+      <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" title="Remove location" aria-label="Remove location" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:14px;padding:6px 10px;border-radius:4px;flex-shrink:0;">🗑️</button>
     </div>
   </div>`;
 }
@@ -3615,6 +3626,7 @@ function getFilteredLocations() {
     if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
     if (state.filters.minRating > 0 && loc.status === 'been' && (loc.myRating || 0) < state.filters.minRating) return false;
     if (state.filters.minGoogleRating > 0 && (loc.googleRating || 0) > 0 && (loc.googleRating || 0) < state.filters.minGoogleRating) return false;
+    if (state.filters.minBucketStrength > 0 && loc.status === 'bucket' && (loc.bucketStrength || 0) < state.filters.minBucketStrength) return false;
     if (state.filters.tags.size > 0 && !([...(loc.tags || [])].some(t => state.filters.tags.has(t)))) return false;
     if (state.filters.priceLevels.size > 0 && loc.priceLevel && !state.filters.priceLevels.has(loc.priceLevel)) return false;
     return true;
@@ -3646,6 +3658,7 @@ function setStatusFilter(status, btn) {
   btn.closest('.filter-group').querySelectorAll('.filter-group-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   state.filters.status = status;
+  updateRatingSectionsVisibility();
   applyFilters();
 }
 
@@ -3654,7 +3667,19 @@ function clearStatusFilter() {
   document.querySelectorAll('[data-status]').forEach(b => {
     b.classList.toggle('active', b.dataset.status === 'all');
   });
+  updateRatingSectionsVisibility();
   applyFilters();
+}
+
+// My Rating filter applies only to status=been; Want-to-Go strength only
+// to status=bucket. Hide whichever section isn't relevant so the sidebar
+// stays focused on the current view. status='all' shows both.
+function updateRatingSectionsVisibility() {
+  const ratingSec = document.getElementById('rating-filter-section');
+  const bucketSec = document.getElementById('bucket-strength-filter-section');
+  const s = state.filters.status;
+  if (ratingSec) ratingSec.style.display = (s === 'all' || s === 'been') ? '' : 'none';
+  if (bucketSec) bucketSec.style.display = (s === 'all' || s === 'bucket') ? '' : 'none';
 }
 
 function selectAllCategories() {
@@ -3760,6 +3785,8 @@ function applyFilters() {
   state.filters.person = document.getElementById('people-filter').value;
   state.filters.minRating = parseFloat(document.getElementById('rating-filter').value);
   state.filters.minGoogleRating = parseFloat(document.getElementById('google-rating-filter').value);
+  const bs = document.getElementById('bucket-strength-filter');
+  state.filters.minBucketStrength = bs ? parseInt(bs.value, 10) || 0 : 0;
   // Debounce: avoid re-rendering 5000 markers on every rapid filter click
   if (_filterTimer) clearTimeout(_filterTimer);
   _filterTimer = setTimeout(() => { _filterTimer = null; renderMarkers(); }, 80);
@@ -4716,9 +4743,15 @@ function selectStatus(status, btn) {
   updateBucketStrengthVisibility();
 }
 
+// Toggle Want-to-Go strength (bucket) and My Rating (been) as two sides
+// of the same coin — both fields are persisted on the location, only the
+// one relevant to the current status is shown.
 function updateBucketStrengthVisibility() {
-  const group = document.getElementById('bucket-strength-group');
-  if (group) group.style.display = state.modalStatus === 'bucket' ? '' : 'none';
+  const isBucket = state.modalStatus === 'bucket';
+  const bucketGroup = document.getElementById('bucket-strength-group');
+  if (bucketGroup) bucketGroup.style.display = isBucket ? '' : 'none';
+  const ratingGroup = document.getElementById('rating-group');
+  if (ratingGroup) ratingGroup.style.display = isBucket ? 'none' : '';
 }
 
 function setBucketStrength(val) {
@@ -10516,6 +10549,22 @@ async function submitFr24Import() {
 }
 
 /* ── Discover top-rated places ─────────────────────────────────────────── */
+// Photon OSM tag mapping for category-near-coords queries. Google has rating-
+// sorted Places API; Photon has only OSM tag filtering + bias-by-coords, so
+// Photon results are proximity-ordered without ratings.
+const CATEGORY_TO_OSM_TAG = {
+  restaurant: 'amenity:restaurant',
+  cafe: 'amenity:cafe',
+  bar: 'amenity:bar',
+  club: 'amenity:nightclub',
+  hotel: 'tourism:hotel',
+  museum: 'tourism:museum',
+  monument: 'historic:monument',
+  park: 'leisure:park',
+  stadium: 'leisure:stadium',
+  shopping: 'shop:mall',
+};
+
 function openDiscoverModal() {
   document.getElementById('discover-results').innerHTML = '';
   document.getElementById('discover-modal').style.display = 'flex';
@@ -10529,36 +10578,77 @@ async function runDiscover() {
   const minRatings = parseInt(document.getElementById('discover-min-ratings').value, 10) || 1000;
   const center = map.getCenter();
   const resultsEl = document.getElementById('discover-results');
+  const provider = getSearchProvider();
   resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">Searching…</div>';
   try {
-    const places = await api('POST', '/places/discover', {
-      lat: center.lat, lng: center.lng, category,
-      radius: Math.round(radiusKm * 1000), minRatings,
-    });
-    if (!places.length) {
-      resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">No places found. Try a wider radius or lower min ratings.</div>';
+    let places;
+    if (provider === 'google') {
+      places = await api('POST', '/places/discover', {
+        lat: center.lat, lng: center.lng, category,
+        radius: Math.round(radiusKm * 1000), minRatings,
+      });
+    } else if (provider === 'photon') {
+      places = await _photonDiscover(category, center.lat, center.lng, radiusKm);
+    } else {
+      // Nominatim has no clean category+near-coords API. Steer the user.
+      resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">Discovery requires <b>Google Places</b> or <b>Photon</b>. Change provider in Account → Search Provider.</div>';
       return;
     }
-    resultsEl.innerHTML = places.map((p, i) => `
-      <div class="discover-card" style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+    if (!places.length) {
+      resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">No places found. Try a wider radius' + (provider === 'google' ? ' or lower min ratings.' : '.') + '</div>';
+      return;
+    }
+    resultsEl.innerHTML = places.map((p, i) => {
+      const ratingLine = (p.googleRating != null || p.userRatingsTotal)
+        ? `<div style="font-size:12px;color:var(--text-secondary);">⭐ ${p.googleRating ?? '—'} (${(p.userRatingsTotal || 0).toLocaleString()})${p.priceLevel ? ' \xB7 ' + '€'.repeat(p.priceLevel) : ''}</div>`
+        : (p.distanceKm != null ? `<div style="font-size:12px;color:var(--text-secondary);">📍 ${p.distanceKm.toFixed(1)} km away</div>` : '');
+      return `<div class="discover-card" style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:13px;">${esc(p.name)}</div>
-            <div style="font-size:12px;color:var(--text-secondary);">
-              ⭐ ${p.googleRating ?? '—'} (${p.userRatingsTotal.toLocaleString()})
-              ${p.priceLevel ? ' \xB7 ' + '€'.repeat(p.priceLevel) : ''}
-            </div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${esc(p.address)}</div>
+            ${ratingLine}
+            ${p.address ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${esc(p.address)}</div>` : ''}
           </div>
-          <button class="add-small-btn" data-click="addDiscoveryToBucket" data-arg0="${i}"
-            style="padding:4px 10px;font-size:12px;flex-shrink:0;">+ Bucket</button>
+          <button class="add-small-btn" data-click="addDiscoveryToBucket" data-arg0="${i}" style="padding:4px 10px;font-size:12px;flex-shrink:0;">+ Bucket</button>
         </div>
-      </div>
-    `).join('');
-    window._discoverResults = places; // stash for addDiscoveryToBucket
+      </div>`;
+    }).join('');
+    window._discoverResults = places;
   } catch (err) {
     resultsEl.innerHTML = `<div style="color:var(--danger);padding:12px;">Error: ${esc(err.message)}</div>`;
   }
+}
+
+// Photon-backed discovery: query Photon for the OSM tag matching the
+// category, biased to the map center, then post-filter by haversine
+// distance (Photon has no native radius parameter). Returns up to 20
+// results in the same shape consumed by the result renderer; rating
+// fields are omitted since Photon doesn't expose them.
+async function _photonDiscover(category, lat, lng, radiusKm) {
+  const tag = CATEGORY_TO_OSM_TAG[category];
+  if (!tag) throw new Error(`No OSM tag mapping for category "${category}"`);
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(category)}&osm_tag=${encodeURIComponent(tag)}&lat=${lat}&lon=${lng}&limit=40`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Photon ' + r.status);
+  const json = await r.json();
+  const out = [];
+  for (const feat of (json.features || [])) {
+    const props = feat.properties || {};
+    const coords = feat.geometry?.coordinates || [];
+    const flat = coords[1], flng = coords[0];
+    if (!Number.isFinite(flat) || !Number.isFinite(flng)) continue;
+    const distanceKm = haversineKm(lat, lng, flat, flng);
+    if (distanceKm > radiusKm) continue;
+    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
+    const address = [streetLine, props.city, props.state, props.country].filter(Boolean).join(', ');
+    out.push({
+      name: props.name || props.street || 'Unnamed place',
+      lat: flat, lng: flng,
+      address,
+      distanceKm,
+    });
+  }
+  return out.sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 20);
 }
 async function addDiscoveryToBucket(idxStr) {
   const idx = parseInt(idxStr, 10);
@@ -10566,17 +10656,19 @@ async function addDiscoveryToBucket(idxStr) {
   if (!p) return;
   try {
     const category = document.getElementById('discover-category').value;
-    const newLoc = await api('POST', '/locations', {
+    const body = {
       name: p.name,
       address: p.address,
       lat: p.lat,
       lng: p.lng,
       category,
       status: 'bucket',
-      googleRating: p.googleRating,
-      priceLevel: p.priceLevel,
-      _googlePlaceId: p.placeId,
-    });
+    };
+    // Only Google results carry rating/price/placeId — Photon doesn't.
+    if (p.googleRating != null) body.googleRating = p.googleRating;
+    if (p.priceLevel != null) body.priceLevel = p.priceLevel;
+    if (p.placeId) body._googlePlaceId = p.placeId;
+    const newLoc = await api('POST', '/locations', body);
     state.locations.push(mapId(newLoc));
     renderMarkers();
     showToast(`Added "${p.name}" to bucket`, 'success');
