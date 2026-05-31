@@ -3474,6 +3474,7 @@ function createPopupContent(loc) {
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
     <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
       <button class="popup-btn" data-click="toggleStatusFromPopup" data-arg0="${esc(loc.id)}" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
+      <button class="popup-btn" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="Log a visit today${isBeen ? '' : ' (also marks as Been)'}" aria-label="Log visit today" style="flex:0 0 auto;width:auto;padding:8px 12px;">📍 Today</button>
       <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;">✏️ Edit</button>
       <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" title="Remove location" aria-label="Remove location" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:14px;padding:6px 10px;border-radius:4px;flex-shrink:0;">🗑️</button>
     </div>
@@ -4810,6 +4811,47 @@ function setRating(val) {
 // already-set rating toggles it back to 0 so users can clear a mistake
 // without opening the edit modal. markerHash includes myRating so the marker
 // also refreshes on the next render cycle (size-mode my-rating recomputes).
+// Per-loc in-flight guard for logTodayFromPopup — prevents a fast double-click
+// from racing past the duplicate-date check (both calls read loc.visits before
+// either PUT resolves → two entries for today).
+const _logTodayInFlight = new Set();
+async function logTodayFromPopup(locId) {
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  if (_logTodayInFlight.has(locId)) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if ((loc.visits || []).find(v => v.date === today)) {
+    showToast('Already logged a visit today.', 'info');
+    return;
+  }
+  _logTodayInFlight.add(locId);
+  const prevVisits = [...(loc.visits || [])];
+  const prevStatus = loc.status;
+  const newVisits = [...prevVisits, { date: today, notes: '' }];
+  const statusFlipped = loc.status === 'bucket';
+  const newStatus = statusFlipped ? 'been' : loc.status;
+  loc.visits = newVisits;
+  loc.status = newStatus;
+  try {
+    await api('PUT', '/locations/' + encodeURIComponent(locId), { visits: newVisits, status: newStatus });
+    showToast(statusFlipped ? '✅ Logged visit — now marked as Been' : '✅ Logged visit today', 'success');
+    if (statusFlipped) {
+      if (typeof map !== 'undefined' && map) map.closePopup();
+      renderMarkers();
+    } else {
+      const entry = _renderState.markerById.get(locId);
+      const popup = entry && entry.marker ? entry.marker.getPopup() : null;
+      if (popup) popup.setContent(createPopupContent(loc));
+    }
+  } catch (e) {
+    loc.visits = prevVisits;
+    loc.status = prevStatus;
+    showToast('Failed to log visit: ' + (e && e.message ? e.message : 'error'), 'error');
+  } finally {
+    _logTodayInFlight.delete(locId);
+  }
+}
+
 async function setPopupRating(locId, val) {
   const loc = stateIndex.locationById.get(locId);
   if (!loc) return;

@@ -216,7 +216,120 @@ describeDom('_refreshGoogleChromeVisibility (regression)', () => {
   });
 });
 
+describeDom('logTodayFromPopup (inline marker-popup visit logger)', () => {
+  function makeCtx({ status = 'been', visits = [] } = {}) {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    const loc = { id: 'loc-1', name: 'Test', status, visits, lat: 0, lng: 0, category: 'restaurant' };
+    const apiCalls = [];
+    const toasts = [];
+    let renderCount = 0, closeCount = 0, popupSetCount = 0;
+    const popup = { setContent: () => { popupSetCount++; } };
+    const ctx = vm.createContext({
+      document: dom.window.document,
+      console, Promise, Date, Array, Object, JSON, Math,
+      state: { locations: [loc] },
+      stateIndex: { locationById: new Map([[loc.id, loc]]) },
+      _renderState: { markerById: new Map([[loc.id, { marker: { getPopup: () => popup } }]]) },
+      map: { closePopup: () => { closeCount++; } },
+      renderMarkers: () => { renderCount++; },
+      createPopupContent: () => '<div>popup</div>',
+      showToast: (msg, sev) => { toasts.push({ msg, sev }); },
+      api: async (method, path, body) => {
+        apiCalls.push({ method, path, body });
+        if (ctx._failNext) throw new Error('boom');
+      },
+    });
+    ctx._failNext = false;
+    // The in-flight Set lives in the same scope as logTodayFromPopup — extract together.
+    const inFlightDecl = indexHtml.match(/const _logTodayInFlight = new Set\(\);/)[0];
+    vm.runInContext(inFlightDecl + '\n' + extractAsyncFunction('logTodayFromPopup'), ctx);
+    return { ctx, loc, apiCalls, toasts, getCounts: () => ({ renderCount, closeCount, popupSetCount }) };
+  }
+
+  test('idempotent: when today already logged, no PUT, info toast', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const { ctx, loc, apiCalls, toasts } = makeCtx({ visits: [{ date: today, notes: '' }] });
+    await vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    expect(apiCalls.length).toBe(0);
+    expect(loc.visits.length).toBe(1);
+    expect(toasts).toEqual([{ msg: 'Already logged a visit today.', sev: 'info' }]);
+  });
+
+  test('been loc: appends today visit + PUTs {visits, status} + patches popup in place', async () => {
+    const { ctx, loc, apiCalls, toasts, getCounts } = makeCtx({ status: 'been', visits: [{ date: '2020-01-01', notes: '' }] });
+    await vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(loc.visits.map(v => v.date)).toEqual(['2020-01-01', today]);
+    expect(loc.status).toBe('been');
+    expect(apiCalls.length).toBe(1);
+    expect(apiCalls[0].method).toBe('PUT');
+    expect(apiCalls[0].path).toBe('/locations/loc-1');
+    expect(apiCalls[0].body.status).toBe('been');
+    expect(apiCalls[0].body.visits.map(v => v.date)).toEqual(['2020-01-01', today]);
+    expect(toasts[0].sev).toBe('success');
+    // Same-status path: popup patched in place, no closePopup / renderMarkers.
+    const c = getCounts();
+    expect(c.popupSetCount).toBe(1);
+    expect(c.closeCount).toBe(0);
+    expect(c.renderCount).toBe(0);
+  });
+
+  test('bucket loc: appends visit + flips status to been + rebuilds markers (popup closes)', async () => {
+    const { ctx, loc, apiCalls, toasts, getCounts } = makeCtx({ status: 'bucket', visits: [] });
+    await vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    expect(loc.status).toBe('been');
+    expect(loc.visits.length).toBe(1);
+    expect(apiCalls[0].body.status).toBe('been');
+    expect(toasts[0].msg).toMatch(/now marked as Been/);
+    // Status-flip path: closePopup + renderMarkers; popup NOT patched in place.
+    const c = getCounts();
+    expect(c.closeCount).toBe(1);
+    expect(c.renderCount).toBe(1);
+    expect(c.popupSetCount).toBe(0);
+  });
+
+  test('rollback: PUT failure reverts loc.visits and loc.status', async () => {
+    const { ctx, loc, apiCalls, toasts } = makeCtx({ status: 'bucket', visits: [{ date: '2020-01-01', notes: '' }] });
+    ctx._failNext = true;
+    await vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    expect(loc.visits.map(v => v.date)).toEqual(['2020-01-01']);
+    expect(loc.status).toBe('bucket');
+    expect(toasts[toasts.length - 1].sev).toBe('error');
+    expect(toasts[toasts.length - 1].msg).toMatch(/Failed to log visit/);
+  });
+
+  test('concurrent double-call: second invocation rejected by in-flight guard (no duplicate visit)', async () => {
+    // Make api() wait so the first call is still in-flight when the second fires.
+    let resolveFirst;
+    const { ctx, loc, apiCalls, toasts } = makeCtx({ status: 'been', visits: [] });
+    ctx.api = (method, path, body) => {
+      apiCalls.push({ method, path, body });
+      return new Promise(r => { resolveFirst = r; });
+    };
+    const first = vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    // Second call lands while first is still awaiting api(); guard must short-circuit it.
+    const second = vm.runInContext('logTodayFromPopup("loc-1")', ctx);
+    resolveFirst();
+    await first; await second;
+    expect(apiCalls.length).toBe(1);
+    expect(loc.visits.length).toBe(1);
+  });
+
+  test('missing loc: silent no-op (no toast, no PUT)', async () => {
+    const { ctx, apiCalls, toasts } = makeCtx();
+    await vm.runInContext('logTodayFromPopup("nope")', ctx);
+    expect(apiCalls.length).toBe(0);
+    expect(toasts.length).toBe(0);
+  });
+});
+
 describe('Static markup (regression)', () => {
+  test('popup action row exposes "📍 Today" log-visit button wired to logTodayFromPopup', () => {
+    expect(indexHtml).toMatch(/data-click="logTodayFromPopup"[\s\S]{0,200}📍 Today/);
+    // Tooltip differentiates been (no extra hint) from bucket (adds "also marks as Been").
+    expect(indexHtml).toMatch(/title="Log a visit today\$\{isBeen \? '' : ' \(also marks as Been\)'\}"/);
+  });
+
   test('bulk toolbar Google sync button is gated (id + initial display:none)', () => {
     expect(indexHtml).toMatch(/id="bulk-google-sync-btn"[\s\S]{0,300}display:none/);
   });
