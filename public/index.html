@@ -2454,7 +2454,16 @@ function _readPositionalArgs(el) {
   for (let i = 0; ; i++) {
     const v = el.dataset['arg' + i];
     if (v === undefined) break;
-    args.push(v);
+    // Sentinel: the literal string "this" maps to the element itself.
+    // Holdover from the inline-onclick → dispatcher migration (commit
+    // c9f7ec9): `onclick="fn('x', this)"` became `data-arg1="this"`,
+    // but dataset reads strings, so receivers like selectStatus/
+    // setStatusFilter would get the string "this" and crash when they
+    // tried to call .classList on it. Mapping "this" → el here fixes
+    // every site at once. If any callsite ever needs the literal string
+    // "this" as a value, escape it (e.g. "_this") and unescape inside
+    // the receiver — none currently do.
+    args.push(v === 'this' ? el : v);
   }
   return args;
 }

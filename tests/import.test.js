@@ -3388,3 +3388,32 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
     expect(fn).not.toMatch(/'🔄 Sync Google'/);
   });
 });
+
+describe('_readPositionalArgs "this" sentinel — restores element-passing across CSP refactor (2026-05-31)', () => {
+  // The CSP refactor (c9f7ec9) migrated onclick="fn('x', this)" → data-click=fn data-arg0=x data-arg1=this.
+  // But dataset reads strings — selectStatus / setStatusFilter / etc. expected the element ref and crashed
+  // on "this".classList.add(...). _readPositionalArgs now maps the literal string "this" → el.
+  test('_readPositionalArgs maps "this" to el', () => {
+    const fn = extractFunction('_readPositionalArgs');
+    expect(fn).toMatch(/v\s*===\s*'this'\s*\?\s*el\s*:\s*v/);
+  });
+
+  test('modal status toggle still uses data-arg1="this" (selectStatus needs the button)', () => {
+    expect(indexHtml).toMatch(/data-click="selectStatus"[\s\S]{0,80}data-arg0="bucket"[\s\S]{0,40}data-arg1="this"/);
+    expect(indexHtml).toMatch(/data-click="selectStatus"[\s\S]{0,80}data-arg0="been"[\s\S]{0,40}data-arg1="this"/);
+  });
+
+  test('sidebar status filter chips use data-arg1="this" (setStatusFilter needs the button)', () => {
+    expect(indexHtml).toMatch(/data-click="setStatusFilter"[\s\S]{0,80}data-arg0="all"[\s\S]{0,40}data-arg1="this"/);
+    expect(indexHtml).toMatch(/data-click="setStatusFilter"[\s\S]{0,80}data-arg0="bucket"[\s\S]{0,40}data-arg1="this"/);
+  });
+
+  test('selectStatus / setStatusFilter receivers still take (value, btn) — sentinel is in the dispatcher, not the receivers', () => {
+    const selectStatus = extractFunction('selectStatus');
+    const setStatusFilter = extractFunction('setStatusFilter');
+    expect(selectStatus).toMatch(/function selectStatus\(status,\s*btn\)/);
+    expect(selectStatus).toMatch(/btn\.classList\.add\(/);
+    expect(setStatusFilter).toMatch(/function setStatusFilter\(status,\s*btn\)/);
+    expect(setStatusFilter).toMatch(/btn\.classList\.add\(/);
+  });
+});
