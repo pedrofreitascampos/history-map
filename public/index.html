@@ -2149,6 +2149,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div style="font-size:12px;color:var(--text-muted);" id="account-stats"></div>
         </div>
       </div>
+      <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Search Provider</h4>
+      <div style="margin-bottom:16px;" id="account-search-provider-section">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Search provider</label>
+          <select id="account-search-provider" class="form-input" data-change="onSearchProviderChange"
+            style="font-size:12px;padding:6px 8px;width:100%;">
+            <option value="google">Google Places — best quality, paid (key required)</option>
+            <option value="photon">Photon — free, no key, fast, OSM-based</option>
+            <option value="nominatim">OSM Nominatim — free, no key, basic</option>
+          </select>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+            Typeahead in the sidebar uses your selection. Google needs an API key (set below).
+          </div>
+        </div>
+      </div>
+
       <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Google Places API</h4>
       <div id="account-places-status" style="margin-bottom:16px;"></div>
 
@@ -4017,6 +4033,17 @@ async function addSearchResultAsLocation(idx) {
 }
 
 // ── Live sidebar autocomplete (debounced, race-safe) ───────────────────────
+let _autocompleteSessionToken = null;
+
+function _getOrCreateSessionToken() {
+  if (!_autocompleteSessionToken) {
+    _autocompleteSessionToken = (crypto.randomUUID && crypto.randomUUID()) ||
+      ('s_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+  }
+  return _autocompleteSessionToken;
+}
+function _resetSessionToken() { _autocompleteSessionToken = null; }
+
 async function _runLiveSearch(source) {
   const inputId = source === 'quick-add' ? 'quick-add-input' : 'map-search-input';
   const input = document.getElementById(inputId);
@@ -4025,27 +4052,54 @@ async function _runLiveSearch(source) {
   const resultsEl = document.getElementById('map-search-results');
   if (q.length < 2) { resultsEl.innerHTML = ''; return; }
 
-  // Abort any in-flight request before kicking off a new one
-  if (_liveSearchAbort) { try { _liveSearchAbort.abort(); } catch (_) {} }
+  if (_liveSearchAbort) { try { _liveSearchAbort.abort(); } catch {} }
   _liveSearchAbort = new AbortController();
-
   resultsEl.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:var(--text-muted);">Searching…</div>';
 
+  const provider = getSearchProvider();
   let results = [];
-  let provider = 'osm';
   try {
-    const useGoogle = await shouldUseGoogle();
     const center = map.getCenter();
-    if (useGoogle) {
-      provider = 'google';
-      results = await api('GET', `/places/search?q=${encodeURIComponent(q)}&lat=${center.lat}&lng=${center.lng}`);
+    if (provider === 'google') {
+      const enabled = await checkPlacesEnabled();
+      if (!enabled) {
+        resultsEl.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:var(--text-muted);">Google Places not configured. Add key in Account or pick a different provider.</div>';
+        return;
+      }
+      const sessionToken = _getOrCreateSessionToken();
+      const preds = await api('POST', '/places/autocomplete', { input: q, lat: center.lat, lng: center.lng, sessionToken });
+      results = preds.map(p => ({
+        provider: 'google',
+        placeId: p.placeId,
+        name: p.mainText,
+        address: p.secondaryText,
+        // No lat/lng/rating/price here — fetched on click via /places/sync
+      }));
+    } else if (provider === 'photon') {
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=10&lat=${center.lat}&lon=${center.lng}`;
+      const r = await fetch(url, { signal: _liveSearchAbort.signal });
+      if (!r.ok) throw new Error('Photon ' + r.status);
+      const json = await r.json();
+      results = (json.features || []).map(f => {
+        const props = f.properties || {};
+        const coords = f.geometry?.coordinates || [];
+        const parts = [props.street, props.city, props.state, props.country].filter(Boolean);
+        return {
+          provider: 'photon',
+          name: props.name || parts[0] || '?',
+          address: parts.join(', '),
+          lat: coords[1],
+          lng: coords[0],
+        };
+      });
     } else {
-      // Nominatim fallback
+      // Nominatim
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10`;
       const r = await fetch(url, { signal: _liveSearchAbort.signal });
       if (!r.ok) throw new Error('Nominatim ' + r.status);
       const json = await r.json();
       results = (json || []).map(it => ({
+        provider: 'nominatim',
         name: (it.display_name || '').split(',')[0].trim() || it.display_name || '?',
         address: it.display_name || '',
         lat: parseFloat(it.lat),
@@ -4058,7 +4112,6 @@ async function _runLiveSearch(source) {
     return;
   }
 
-  // Race protection: discard if the input has moved on
   if (input.value.trim() !== q) return;
 
   if (!results.length) {
@@ -4067,18 +4120,13 @@ async function _runLiveSearch(source) {
   }
 
   window._liveSearchResults = results;
-  window._liveSearchProvider = provider;
   resultsEl.innerHTML = results.slice(0, 8).map((r, i) => {
-    const ratingChip = r.googleRating ? `⭐ ${r.googleRating} (${(r.userRatingsTotal || 0).toLocaleString()})` : '';
-    const priceChip = r.priceLevel ? '€'.repeat(r.priceLevel) : '';
-    const metaParts = [ratingChip, priceChip, esc(r.address || '')].filter(Boolean);
+    const sub = r.address ? `<div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.address)}</div>` : '';
     return `<div class="live-result-row" style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px;">
       <div style="display:flex;gap:6px;align-items:flex-start;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</div>
-          <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${metaParts.join(' · ')}
-          </div>
+          ${sub}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;">
           <button class="add-small-btn" data-click="liveResultAdd" data-arg0="${i}" title="Add to my places"
@@ -4091,26 +4139,55 @@ async function _runLiveSearch(source) {
   }).join('');
 }
 
-function liveResultAdd(idxStr) {
+async function liveResultAdd(idxStr) {
   const r = (window._liveSearchResults || [])[parseInt(idxStr, 10)];
   if (!r) return;
-  // Open add modal then pre-fill — mirror addSearchResultAsLocation pattern.
-  openAddModal(r.lat, r.lng);
-  const setIfExists = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
-  setIfExists('loc-name', r.name);
-  setIfExists('loc-address', r.address || '');
-  // lat/lng already set by openAddModal(r.lat, r.lng) above
-  if (r.googleRating) setIfExists('loc-google-rating', r.googleRating);
-  if (r.priceLevel) { state.modalPrice = r.priceLevel; setModalPrice(r.priceLevel); }
-  if (r.placeId) state._liveSearchGooglePlaceId = r.placeId;
+  let full = r;
+  if (r.provider === 'google' && r.placeId) {
+    // Fetch full details (lat/lng/rating/price) — session-token-bundled with prior autocomplete calls
+    const sessionToken = _getOrCreateSessionToken();
+    try {
+      const sync = await api('POST', '/places/sync', { placeId: r.placeId, sessionToken });
+      if (sync.found) {
+        full = { ...r, lat: sync.lat, lng: sync.lng, address: sync.address || r.address, googleRating: sync.googleRating, priceLevel: sync.priceLevel };
+      }
+    } catch (err) {
+      showToast('Could not fetch place details: ' + err.message, 'warn');
+    }
+    _resetSessionToken(); // session consumed
+  }
+  openAddModal();
+  const setIfExists = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+  setIfExists('loc-name', full.name);
+  setIfExists('loc-address', full.address || '');
+  setIfExists('loc-lat', full.lat);
+  setIfExists('loc-lng', full.lng);
+  if (full.googleRating) setIfExists('loc-google-rating', full.googleRating);
+  if (full.priceLevel) {
+    const pl = document.getElementById('loc-price-level');
+    if (pl) pl.value = String(full.priceLevel);
+  }
+  if (full.placeId || r.placeId) state.modalGooglePlaceId = full.placeId || r.placeId;
   document.getElementById('map-search-results').innerHTML = '';
 }
 
-function liveResultGo(idxStr) {
+async function liveResultGo(idxStr) {
   const r = (window._liveSearchResults || [])[parseInt(idxStr, 10)];
-  if (!r || !Number.isFinite(r.lat) || !Number.isFinite(r.lng)) return;
-  map.setView([r.lat, r.lng], 15);
-  // Don't clear results — user may want to compare or pick another
+  if (!r) return;
+  let lat = r.lat, lng = r.lng;
+  if (r.provider === 'google' && r.placeId && (lat == null || lng == null)) {
+    const sessionToken = _getOrCreateSessionToken();
+    try {
+      const sync = await api('POST', '/places/sync', { placeId: r.placeId, sessionToken });
+      if (sync.found) { lat = sync.lat; lng = sync.lng; }
+    } catch {}
+    _resetSessionToken();
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    showToast('Could not resolve coordinates', 'warn');
+    return;
+  }
+  map.setView([lat, lng], 15);
 }
 
 function toggleSidebar() {
@@ -7721,6 +7798,10 @@ async function openAccountModal() {
   document.getElementById('account-stats').textContent =
     `${state.locations.length} locations · ${state.trips.length} trips · ${state.collections.length} collections`;
 
+  // Initialize the search provider selector
+  const providerSel = document.getElementById('account-search-provider');
+  if (providerSel) providerSel.value = getSearchProvider();
+
   // Google Places status
   const placesDiv = document.getElementById('account-places-status');
   try {
@@ -7731,15 +7812,6 @@ async function openAccountModal() {
         <span style="color:var(--success);">●</span> Connected
         <span style="color:var(--text-muted);flex:1;">${unsynced} locations not yet synced</span>
         ${unsynced > 0 ? `<button class="btn btn-primary" data-click="confirmBulkGoogleSync" data-arg0="${esc('This will use ' + unsynced + ' of your 5,000 free monthly Find Place requests' + (unsynced > 5000 ? ' (over free tier — extra cost ~$' + ((unsynced-5000)*0.017).toFixed(2) + ')' : ' (within free tier — $0)') + '. Continue?')}" style="font-size:12px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-        <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;cursor:pointer;">
-          Search provider:
-          <select class="filter-select" id="search-provider-toggle" data-click="setSearchProvider" data-arg0="this.value" style="width:140px;font-size:12px;padding:3px 6px;">
-            <option value="google" ${localStorage.getItem('hm_search_provider') !== 'osm' ? 'selected' : ''}>Google Places</option>
-            <option value="osm" ${localStorage.getItem('hm_search_provider') === 'osm' ? 'selected' : ''}>OpenStreetMap</option>
-          </select>
-        </label>
       </div>
       <details style="margin-top:6px;">
         <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
@@ -7836,13 +7908,22 @@ async function checkPlacesEnabled() {
 }
 
 function getSearchProvider() {
-  return localStorage.getItem('hm_search_provider') || 'google';
+  const v = localStorage.getItem('hm_search_provider');
+  return ['google', 'nominatim', 'photon'].includes(v) ? v : 'google';
 }
 function setSearchProvider(val) {
+  if (!['google', 'nominatim', 'photon'].includes(val)) return;
   localStorage.setItem('hm_search_provider', val);
+  _placesEnabled = null; // reset cache; readonly UI may need refresh
 }
 async function shouldUseGoogle() {
   return getSearchProvider() === 'google' && await checkPlacesEnabled();
+}
+function onSearchProviderChange() {
+  const el = document.getElementById('account-search-provider');
+  if (!el) return;
+  setSearchProvider(el.value);
+  showToast('Search provider: ' + el.options[el.selectedIndex].text.split('—')[0].trim());
 }
 
 // Background sync for freshly imported locations (non-blocking)

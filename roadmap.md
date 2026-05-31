@@ -230,3 +230,23 @@ See memory roadmap for full commit-level detail. Headline batches:
     wiring, livesearch-source attrs, escape, no-inline-onclick, race-check, modal
     pre-fill, map.setView).
   - **Session totals: 607 jest + 8 e2e green (3 skip).**
+  - **Batch 8** (this commit): Cheaper typeahead — Autocomplete + session tokens + Photon free provider.
+    New `POST /api/places/autocomplete` (Essentials tier, ~$0.0028/call vs Text Search Pro $0.032). Returns
+    predictions (placeId + main/secondary text) only — full lat/lng/rating/price fetched on click via existing
+    `/places/sync`. `sessionToken` bundles all autocomplete calls + the final Place Details lookup as ONE
+    session billing event. Per-session cost drops from ~$0.16 to ~$0.017 (90% saving on heavy typers).
+    `fetchPlaceByPlaceId` extended to accept + append `sessionToken` query param to Place Details URL.
+    `/api/places/sync` threads `sessionToken` from request body through to `fetchPlaceByPlaceId`.
+    Search provider switchable in Account settings dropdown: **Google Places** / **Photon** (free, no key,
+    OSM-based, fast, hits `photon.komoot.io` directly from browser — CORS-friendly) / **OSM Nominatim**
+    (free, no key, basic). `getSearchProvider()` allows `'google'|'nominatim'|'photon'` (was binary);
+    `setSearchProvider()` validates against the allowlist + resets `_placesEnabled` cache. Provider select
+    added as a static section in the Account modal HTML (`#account-search-provider`) with `data-change=
+    "onSearchProviderChange"` — initialized from `localStorage` on modal open. `_runLiveSearch` fans out
+    to the three providers; Google path uses the new autocomplete endpoint with `_getOrCreateSessionToken()`;
+    Photon + Nominatim hit external APIs directly with `AbortController` signal for race-safety.
+    `liveResultAdd` + `liveResultGo` are now `async` — Google results call `/places/sync` with the same
+    session token to resolve lat/lng/rating/price; `_resetSessionToken()` marks the session consumed after
+    the sync call. 8 new server tests (autocomplete happy/sad/session paths, sync sessionToken threading)
+    + 9 updated/new frontend regression tests in import.test.js.
+  - **Session totals: 619 jest + 8 e2e green (3 skip).**

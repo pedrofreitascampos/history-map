@@ -549,3 +549,93 @@ describe('Places API (New) shape', () => {
     expect(res2.body[0].priceLevel).toBeNull();
   });
 });
+
+describe('POST /api/places/autocomplete', () => {
+  test('happy path: returns mapped suggestions, no key in URL', async () => {
+    fetchSpy.mockReturnValue(mockResponse({
+      suggestions: [
+        { placePrediction: {
+            placeId: 'ChIJ_xyz',
+            text: { text: 'Lisbon, Portugal' },
+            structuredFormat: {
+              mainText: { text: 'Lisbon' },
+              secondaryText: { text: 'Portugal' },
+            },
+        }},
+      ],
+    }));
+    const res = await request(app)
+      .post('/api/places/autocomplete')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ input: 'lis', lat: 38.71, lng: -9.14, sessionToken: 'abc' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ placeId: 'ChIJ_xyz', mainText: 'Lisbon', secondaryText: 'Portugal' });
+    const calledUrl = fetchSpy.mock.calls[0][0];
+    const calledOpts = fetchSpy.mock.calls[0][1];
+    expect(calledUrl).toContain('places:autocomplete');
+    expect(calledUrl).not.toContain('key='); // key must be in header, not URL
+    expect(calledOpts.method).toBe('POST');
+    expect(calledOpts.headers['X-Goog-Api-Key']).toBeTruthy();
+    expect(calledOpts.headers['X-Goog-FieldMask']).toContain('placePrediction.placeId');
+    const body = JSON.parse(calledOpts.body);
+    expect(body.input).toBe('lis');
+    expect(body.sessionToken).toBe('abc');
+    expect(body.locationBias.circle.center.latitude).toBe(38.71);
+  });
+
+  test('no input → 400', async () => {
+    const res = await request(app).post('/api/places/autocomplete').set('Authorization', `Bearer ${token}`).send({});
+    expect(res.status).toBe(400);
+  });
+
+  test('input too long → 400', async () => {
+    const res = await request(app).post('/api/places/autocomplete').set('Authorization', `Bearer ${token}`).send({ input: 'x'.repeat(300) });
+    expect(res.status).toBe(400);
+  });
+
+  test('bad coords → 400', async () => {
+    const res = await request(app).post('/api/places/autocomplete').set('Authorization', `Bearer ${token}`).send({ input: 'x', lat: 999, lng: 999 });
+    expect(res.status).toBe(400);
+  });
+
+  test('API error → 502 sanitized', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ error: { status: 'PERMISSION_DENIED', message: 'bad key' } }, false));
+    const res = await request(app).post('/api/places/autocomplete').set('Authorization', `Bearer ${token}`).send({ input: 'lis' });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('Places API: PERMISSION_DENIED');
+    expect(JSON.stringify(res.body)).not.toContain('bad key');
+  });
+
+  test('sessionToken omitted → request body has no sessionToken field', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ suggestions: [] }));
+    await request(app).post('/api/places/autocomplete').set('Authorization', `Bearer ${token}`).send({ input: 'lis' });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.sessionToken).toBeUndefined();
+  });
+});
+
+describe('POST /api/places/sync — sessionToken threading', () => {
+  test('sessionToken from body is appended to Place Details URL', async () => {
+    fetchSpy.mockReturnValue(mockResponse({
+      id: 'pid', displayName: { text: 'X' }, formattedAddress: 'Y',
+      location: { latitude: 1, longitude: 2 }, rating: 4,
+    }));
+    await request(app).post('/api/places/sync').set('Authorization', `Bearer ${token}`)
+      .send({ placeId: 'pid', sessionToken: 'session-abc' });
+    const calledUrl = fetchSpy.mock.calls[0][0];
+    expect(calledUrl).toContain('/v1/places/pid');
+    expect(calledUrl).toContain('sessionToken=session-abc');
+  });
+
+  test('no sessionToken → URL has no sessionToken query', async () => {
+    fetchSpy.mockReturnValue(mockResponse({
+      id: 'pid', displayName: { text: 'X' },
+      location: { latitude: 1, longitude: 2 }, rating: 4,
+    }));
+    await request(app).post('/api/places/sync').set('Authorization', `Bearer ${token}`)
+      .send({ placeId: 'pid' });
+    const calledUrl = fetchSpy.mock.calls[0][0];
+    expect(calledUrl).not.toContain('sessionToken=');
+  });
+});

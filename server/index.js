@@ -1006,8 +1006,11 @@ function mapPriceLevel(val) {
 }
 
 // Fetch place details by Place ID (Places API New — GET /v1/places/{id})
-async function fetchPlaceByPlaceId(placeId, placesKey) {
-  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
+async function fetchPlaceByPlaceId(placeId, placesKey, sessionToken) {
+  let url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
+  if (sessionToken && typeof sessionToken === 'string' && sessionToken.length <= 100) {
+    url += `?sessionToken=${encodeURIComponent(sessionToken)}`;
+  }
   const _t0 = Date.now();
   const response = await fetch(url, {
     method: 'GET',
@@ -1145,16 +1148,75 @@ app.get('/api/places/search', auth, async (req, res) => {
   }
 });
 
+// Autocomplete (Essentials tier) — way cheaper than Text Search Pro for live
+// typeahead. Pair with sessionToken: bundle all autocomplete calls + the
+// final Place Details lookup as ONE session billing event.
+app.post('/api/places/autocomplete', auth, async (req, res) => {
+  const placesKey = await getPlacesKey(req.user.id);
+  if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
+  try {
+    const { input, lat, lng, sessionToken } = req.body || {};
+    if (!input || typeof input !== 'string' || input.length < 1) return res.status(400).json({ error: 'Input required' });
+    if (input.length > 200) return res.status(400).json({ error: 'Input too long' });
+
+    const body = { input };
+    if (sessionToken && typeof sessionToken === 'string' && sessionToken.length <= 100) {
+      body.sessionToken = sessionToken;
+    }
+    if (lat !== undefined && lng !== undefined) {
+      const fLat = parseFloat(lat);
+      const fLng = parseFloat(lng);
+      if (!Number.isFinite(fLat) || !Number.isFinite(fLng) || Math.abs(fLat) > 90 || Math.abs(fLng) > 180) {
+        return res.status(400).json({ error: 'Invalid coordinates' });
+      }
+      body.locationBias = {
+        circle: { center: { latitude: fLat, longitude: fLng }, radius: 50000 },
+      };
+    }
+    const _t0 = Date.now();
+    const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'X-Goog-Api-Key': placesKey,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    const ms = Date.now() - _t0;
+    log('info', 'places_api_call', { endpoint: 'autocomplete', input: input.slice(0, 50), hasSession: !!sessionToken, httpStatus: response.status, results: (data.suggestions || []).length, ms, userId: req.user.id });
+    if (!response.ok) {
+      const apiStatus = data.error?.status || `HTTP_${response.status}`;
+      log('warn', 'places_api_error', { endpoint: 'autocomplete', status: apiStatus, userId: req.user.id });
+      return res.status(502).json({ error: 'Places API: ' + apiStatus });
+    }
+    const suggestions = (data.suggestions || [])
+      .map(s => s.placePrediction)
+      .filter(p => p && p.placeId)
+      .slice(0, 10)
+      .map(p => ({
+        placeId: p.placeId,
+        mainText: p.structuredFormat?.mainText?.text || p.text?.text || '',
+        secondaryText: p.structuredFormat?.secondaryText?.text || '',
+        fullText: p.text?.text || '',
+      }));
+    res.json(suggestions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/places/sync', auth, async (req, res) => {
   const placesKey = await getPlacesKey(req.user.id);
   if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
   try {
-    const { name, lat, lng, placeId } = req.body;
+    const { name, lat, lng, placeId, sessionToken } = req.body;
     if (!name && !placeId) return res.status(400).json({ error: 'Name or placeId required' });
 
     // Prefer Place ID lookup (exact match, same cost)
     const result = placeId
-      ? await fetchPlaceByPlaceId(placeId, placesKey)
+      ? await fetchPlaceByPlaceId(placeId, placesKey, sessionToken)
       : await fetchPlaceByText(name, lat, lng, placesKey);
 
     log('info', 'places_api_call', { endpoint: placeId ? 'placeDetails' : 'searchText', input: placeId || name, found: result.found, ms: result.ms, userId: req.user.id });

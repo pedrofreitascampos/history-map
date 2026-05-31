@@ -3233,8 +3233,8 @@ describe('Sidebar live autocomplete (2026-05-31)', () => {
     expect(indexHtml).toMatch(/liveSearchInput:\s*\(el\)[\s\S]{0,200}livesearchSource[\s\S]{0,200}clearTimeout\(_liveSearchDebounce\)[\s\S]{0,200}_runLiveSearch\(source\)/);
   });
 
-  test('_runLiveSearch prefers Google when shouldUseGoogle, falls back to Nominatim', () => {
-    expect(indexHtml).toMatch(/function _runLiveSearch[\s\S]{0,1500}shouldUseGoogle\(\)[\s\S]{0,200}\/places\/search[\s\S]{0,800}nominatim\.openstreetmap\.org/);
+  test('_runLiveSearch uses getSearchProvider() to branch between providers', () => {
+    expect(indexHtml).toMatch(/function _runLiveSearch[\s\S]{0,3000}getSearchProvider\(\)[\s\S]{0,2000}nominatim\.openstreetmap\.org/);
   });
 
   test('results render with + Add and 📍 (go) buttons wired via dispatcher', () => {
@@ -3243,15 +3243,16 @@ describe('Sidebar live autocomplete (2026-05-31)', () => {
   });
 
   test('liveResultAdd opens add modal and pre-fills name+address+coords from picker', () => {
-    expect(indexHtml).toMatch(/function liveResultAdd[\s\S]{0,400}openAddModal\([\s\S]{0,100}\)[\s\S]{0,400}loc-name[\s\S]{0,80}loc-address/);
+    expect(indexHtml).toMatch(/function liveResultAdd[\s\S]{0,800}openAddModal\([\s\S]{0,100}\)[\s\S]{0,600}loc-name[\s\S]{0,80}loc-address/);
   });
 
   test('liveResultGo pans/zooms map to the picked result', () => {
-    expect(indexHtml).toMatch(/function liveResultGo[\s\S]{0,200}map\.setView\(\[r\.lat,\s*r\.lng\]/);
+    expect(indexHtml).toMatch(/function liveResultGo[\s\S]{0,1200}map\.setView\(/);
   });
 
   test('escapes user/API strings (name + address + error) via esc()', () => {
-    expect(indexHtml).toMatch(/_runLiveSearch[\s\S]*?esc\(r\.name\)[\s\S]*?esc\(r\.address[\s\S]*?<\/div>/);
+    expect(indexHtml).toMatch(/_runLiveSearch[\s\S]*?esc\(r\.name\)/);
+    expect(indexHtml).toMatch(/_runLiveSearch[\s\S]*?esc\(r\.address\)/);
   });
 
   test('all data-click in live result rows are dispatcher-pattern (no inline onclick)', () => {
@@ -3266,7 +3267,56 @@ describe('Sidebar live autocomplete (2026-05-31)', () => {
   test('race protection: input.value.trim() !== q check present in _runLiveSearch', () => {
     const start = indexHtml.indexOf('function _runLiveSearch');
     expect(start).toBeGreaterThan(0);
-    const body = indexHtml.substring(start, start + 2000);
+    const body = indexHtml.substring(start, start + 5000);
     expect(body).toMatch(/input\.value\.trim\(\)\s*!==?\s*q/);
+  });
+});
+
+describe('Search provider selector + 3-way typeahead (2026-05-31)', () => {
+  test('getSearchProvider accepts google/nominatim/photon, defaults google', () => {
+    const fn = extractFunction('getSearchProvider');
+    expect(fn).toMatch(/'google'/);
+    expect(fn).toMatch(/'nominatim'/);
+    expect(fn).toMatch(/'photon'/);
+    expect(fn).toMatch(/return\s+\[.+?\]\.includes\(v\)\s*\?\s*v\s*:\s*'google'/);
+  });
+
+  test('setSearchProvider rejects unknown providers', () => {
+    const fn = extractFunction('setSearchProvider');
+    expect(fn).toMatch(/\[\s*'google'\s*,\s*'nominatim'\s*,\s*'photon'\s*\]\.includes/);
+  });
+
+  test('Account modal contains the search-provider dropdown', () => {
+    expect(indexHtml).toMatch(/id="account-search-provider"[\s\S]{0,400}data-change="onSearchProviderChange"/);
+    expect(indexHtml).toMatch(/option value="google"[\s\S]{0,200}option value="photon"[\s\S]{0,200}option value="nominatim"/);
+  });
+
+  test('_runLiveSearch branches into google / photon / nominatim', () => {
+    const fn = extractFunction('_runLiveSearch');
+    expect(fn).toMatch(/provider\s*===\s*'google'/);
+    expect(fn).toMatch(/provider\s*===\s*'photon'/);
+    expect(fn).toMatch(/photon\.komoot\.io/);
+    expect(fn).toMatch(/nominatim\.openstreetmap\.org/);
+  });
+
+  test('Google path uses Autocomplete (not Text Search) with sessionToken', () => {
+    const fn = extractFunction('_runLiveSearch');
+    expect(fn).toMatch(/\/places\/autocomplete/);
+    expect(fn).toMatch(/_getOrCreateSessionToken\(\)/);
+    expect(fn).not.toMatch(/\/places\/search\?q=/); // No Text Search call in typeahead anymore
+  });
+
+  test('liveResultAdd resolves Google placeId via /places/sync with same sessionToken', () => {
+    const fn = extractFunction('liveResultAdd');
+    expect(fn).toMatch(/r\.provider\s*===\s*'google'/);
+    expect(fn).toMatch(/\/places\/sync/);
+    expect(fn).toMatch(/sessionToken/);
+    expect(fn).toMatch(/_resetSessionToken\(\)/);
+  });
+
+  test('liveResultGo resolves coordinates for Google placeId via sync', () => {
+    const fn = extractFunction('liveResultGo');
+    expect(fn).toMatch(/r\.provider\s*===\s*'google'/);
+    expect(fn).toMatch(/map\.setView/);
   });
 });
