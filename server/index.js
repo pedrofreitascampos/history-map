@@ -880,39 +880,104 @@ app.get('/api/my-backup/:filename', auth, (req, res) => {
   res.download(filePath);
 });
 
-// ── Google Places API (proxied, key never exposed) ───────
+// ── Google Places API (New) — proxied, key never in URL ──
 async function getPlacesKey(userId) {
   const user = await db.users.findOne({ _id: userId });
   return user?.googlePlacesKey || GOOGLE_PLACES_KEY || '';
 }
 
-// Fetch place details by Place ID — more accurate + same cost as findplace
-async function fetchPlaceByPlaceId(placeId, placesKey) {
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total&key=${placesKey}`;
-  const _t0 = Date.now();
-  const response = await fetch(url);
-  const data = await response.json();
-  const ms = Date.now() - _t0;
-  if (data.status === 'OK' && data.result) {
-    const p = data.result;
-    return { found: true, rating: p.rating, price_level: p.price_level, formatted_address: p.formatted_address, place_id: p.place_id || placeId, user_ratings_total: p.user_ratings_total, lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng, ms, apiStatus: data.status };
-  }
-  return { found: false, ms, apiStatus: data.status };
+// Price level enum → integer (Places API New returns string enums)
+const PRICE_LEVEL_MAP = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
+// PRICE_LEVEL_UNSPECIFIED, undefined, or any unknown enum → null
+function mapPriceLevel(val) {
+  if (val == null) return null;
+  return PRICE_LEVEL_MAP[val] ?? null;
 }
 
-// Fetch place by text search — fallback when no Place ID available
-async function fetchPlaceByText(name, lat, lng, placesKey, fields) {
-  let url = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(name)}&inputtype=textquery&fields=${fields || 'name,rating,price_level,formatted_address,geometry,place_id,user_ratings_total'}&key=${placesKey}`;
-  if (lat && lng) url += `&locationbias=point:${lat},${lng}`;
+// Fetch place details by Place ID (Places API New — GET /v1/places/{id})
+async function fetchPlaceByPlaceId(placeId, placesKey) {
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
   const _t0 = Date.now();
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'X-Goog-Api-Key': placesKey,
+      'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,rating,priceLevel,userRatingCount',
+    },
+  });
   const data = await response.json();
   const ms = Date.now() - _t0;
-  if (data.status === 'OK' && data.candidates?.length) {
-    const p = data.candidates[0];
-    return { found: true, rating: p.rating, price_level: p.price_level, formatted_address: p.formatted_address, place_id: p.place_id, user_ratings_total: p.user_ratings_total, lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng, ms, apiStatus: data.status };
+  if (response.ok && data.id) {
+    return {
+      found: true,
+      rating: data.rating ?? null,
+      price_level: mapPriceLevel(data.priceLevel),
+      formatted_address: data.formattedAddress ?? '',
+      place_id: data.id || placeId,
+      user_ratings_total: data.userRatingCount ?? 0,
+      lat: data.location?.latitude,
+      lng: data.location?.longitude,
+      ms,
+      apiStatus: 'OK',
+    };
   }
-  return { found: false, ms, apiStatus: data.status };
+  // Structured error: { error: { code, message, status } }
+  const apiStatus = data.error?.status || `HTTP_${response.status}`;
+  return { found: false, ms, apiStatus };
+}
+
+// Fetch place by text search (Places API New — POST /v1/places:searchText)
+// The `fields` param is accepted for signature compatibility but ignored;
+// we always send a sensible default FieldMask covering all downstream-needed fields.
+async function fetchPlaceByText(name, lat, lng, placesKey, fields) { // eslint-disable-line no-unused-vars
+  const url = 'https://places.googleapis.com/v1/places:searchText';
+  const body = { textQuery: name };
+  if (lat && lng) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: parseFloat(lat), longitude: parseFloat(lng) },
+        radius: 50000,
+      },
+    };
+  }
+  const _t0 = Date.now();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Api-Key': placesKey,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.priceLevel,places.userRatingCount',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  const ms = Date.now() - _t0;
+  if (response.ok && data.places?.length) {
+    const p = data.places[0];
+    return {
+      found: true,
+      rating: p.rating ?? null,
+      price_level: mapPriceLevel(p.priceLevel),
+      formatted_address: p.formattedAddress ?? '',
+      place_id: p.id ?? '',
+      user_ratings_total: p.userRatingCount ?? 0,
+      lat: p.location?.latitude,
+      lng: p.location?.longitude,
+      ms,
+      apiStatus: 'OK',
+    };
+  }
+  // Zero results: HTTP 200 + empty/missing places array — not an error
+  if (response.ok) return { found: false, ms, apiStatus: 'ZERO_RESULTS' };
+  // API error
+  const apiStatus = data.error?.status || `HTTP_${response.status}`;
+  return { found: false, ms, apiStatus };
 }
 
 app.get('/api/places/status', auth, async (req, res) => {
@@ -926,33 +991,49 @@ app.get('/api/places/search', auth, async (req, res) => {
   try {
     const { q, lat, lng } = req.query;
     if (!q) return res.status(400).json({ error: 'Query required' });
-    let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&key=${placesKey}`;
+    const reqBody = { textQuery: q };
     if (lat !== undefined && lng !== undefined) {
       const fLat = parseFloat(lat);
       const fLng = parseFloat(lng);
       if (!Number.isFinite(fLat) || !Number.isFinite(fLng) || Math.abs(fLat) > 90 || Math.abs(fLng) > 180) {
         return res.status(400).json({ error: 'Invalid coordinates' });
       }
-      url += `&location=${fLat},${fLng}&radius=50000`;
+      reqBody.locationBias = {
+        circle: {
+          center: { latitude: fLat, longitude: fLng },
+          radius: 50000,
+        },
+      };
     }
     const _t0 = Date.now();
-    const response = await fetch(url);
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'X-Goog-Api-Key': placesKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.priceLevel,places.userRatingCount,places.types',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(reqBody),
+    });
     const data = await response.json();
-    log('info', 'places_api_call', { endpoint: 'textsearch', query: q, status: data.status, results: (data.results || []).length, ms: Date.now() - _t0, userId: req.user.id });
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      log('warn', 'places_api_error', { endpoint: 'textsearch', status: data.status, error: data.error_message, userId: req.user.id });
-      return res.status(502).json({ error: 'Places API: ' + data.status });
+    const ms = Date.now() - _t0;
+    const places = data.places || [];
+    log('info', 'places_api_call', { endpoint: 'searchText', query: q, httpStatus: response.status, results: places.length, ms, userId: req.user.id });
+    if (!response.ok) {
+      const apiStatus = data.error?.status || `HTTP_${response.status}`;
+      log('warn', 'places_api_error', { endpoint: 'searchText', status: apiStatus, userId: req.user.id });
+      return res.status(502).json({ error: 'Places API: ' + apiStatus });
     }
-    res.json((data.results || []).slice(0, 10).map(p => ({
-      name: p.name,
-      address: p.formatted_address || '',
-      lat: p.geometry?.location?.lat,
-      lng: p.geometry?.location?.lng,
+    res.json(places.slice(0, 10).map(p => ({
+      name: p.displayName?.text || '',
+      address: p.formattedAddress || '',
+      lat: p.location?.latitude,
+      lng: p.location?.longitude,
       googleRating: p.rating || null,
-      priceLevel: p.price_level || null,
-      placeId: p.place_id || '',
+      priceLevel: mapPriceLevel(p.priceLevel),
+      placeId: p.id || '',
       types: p.types || [],
-      userRatingsTotal: p.user_ratings_total || 0,
+      userRatingsTotal: p.userRatingCount || 0,
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -971,7 +1052,7 @@ app.post('/api/places/sync', auth, async (req, res) => {
       ? await fetchPlaceByPlaceId(placeId, placesKey)
       : await fetchPlaceByText(name, lat, lng, placesKey);
 
-    log('info', 'places_api_call', { endpoint: placeId ? 'details' : 'findplace', input: placeId || name, found: result.found, ms: result.ms, userId: req.user.id });
+    log('info', 'places_api_call', { endpoint: placeId ? 'placeDetails' : 'searchText', input: placeId || name, found: result.found, ms: result.ms, userId: req.user.id });
 
     if (!result.found) return res.json({ found: false });
     res.json({

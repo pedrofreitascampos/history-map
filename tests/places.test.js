@@ -67,17 +67,16 @@ describe('GET /api/places/status', () => {
 describe('GET /api/places/search', () => {
   test('happy path: returns mapped result array, never exposes key', async () => {
     fetchSpy.mockReturnValue(mockResponse({
-      status: 'OK',
-      results: [
+      places: [
         {
-          name: 'Bairro Alto',
-          formatted_address: 'Lisbon, Portugal',
-          geometry: { location: { lat: 38.71, lng: -9.14 } },
+          id: 'ChIJ_test_1',
+          displayName: { text: 'Bairro Alto' },
+          formattedAddress: 'Lisbon, Portugal',
+          location: { latitude: 38.71, longitude: -9.14 },
           rating: 4.5,
-          price_level: 2,
-          place_id: 'ChIJ_test_1',
+          priceLevel: 'PRICE_LEVEL_MODERATE',
+          userRatingCount: 1234,
           types: ['neighborhood'],
-          user_ratings_total: 1234,
         },
       ],
     }));
@@ -97,18 +96,27 @@ describe('GET /api/places/search', () => {
       googleRating: 4.5,
       placeId: 'ChIJ_test_1',
     });
+    // priceLevel enum → integer
+    expect(res.body[0].priceLevel).toBe(2);
     // Key never returned to client
     expect(JSON.stringify(res.body)).not.toContain('test-fake-key');
 
-    // Outbound call carried the key as a query param (not exposed to client, but verifies plumbing)
+    // Outbound call uses new endpoint (POST searchText), NOT legacy textsearch
     const calledUrl = fetchSpy.mock.calls[0][0];
-    expect(calledUrl).toContain('textsearch/json');
-    expect(calledUrl).toContain('key=test-fake-key');
-    expect(calledUrl).toContain('query=bairro%20alto');
+    expect(calledUrl).toContain('places:searchText');
+    expect(calledUrl).not.toContain('textsearch/json');
+    // Key is in header, NOT in URL
+    expect(calledUrl).not.toContain('key=');
+    expect(fetchSpy.mock.calls[0][1].method).toBe('POST');
+    expect(fetchSpy.mock.calls[0][1].headers['X-Goog-Api-Key']).toBe('test-fake-key-do-not-leak');
+    expect(fetchSpy.mock.calls[0][1].headers['X-Goog-FieldMask']).toContain('places.id');
+    expect(fetchSpy.mock.calls[0][1].headers['X-Goog-FieldMask']).toContain('places.displayName');
+    // Body carries textQuery
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).textQuery).toBe('bairro alto');
   });
 
   test('ZERO_RESULTS → 200 with empty array', async () => {
-    fetchSpy.mockReturnValue(mockResponse({ status: 'ZERO_RESULTS', results: [] }));
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
     const res = await request(app)
       .get('/api/places/search?q=nowhere')
       .set('Authorization', `Bearer ${token}`);
@@ -117,13 +125,13 @@ describe('GET /api/places/search', () => {
   });
 
   test('REQUEST_DENIED → 502 with sanitized error', async () => {
-    fetchSpy.mockReturnValue(mockResponse({ status: 'REQUEST_DENIED', error_message: 'bad key' }));
+    fetchSpy.mockReturnValue(mockResponse({ error: { status: 'PERMISSION_DENIED', code: 403, message: 'bad key' } }, false));
     const res = await request(app)
       .get('/api/places/search?q=anything')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(502);
-    expect(res.body.error).toBe('Places API: REQUEST_DENIED');
-    // Google's error_message must NOT leak to the client
+    expect(res.body.error).toBe('Places API: PERMISSION_DENIED');
+    // Google's error.message must NOT leak to the client
     expect(JSON.stringify(res.body)).not.toContain('bad key');
   });
 
@@ -143,26 +151,27 @@ describe('GET /api/places/search', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test('valid lat/lng → upstream URL includes location bias', async () => {
-    fetchSpy.mockReturnValue(mockResponse({ status: 'OK', results: [] }));
+  test('valid lat/lng → locationBias sent in request body', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
     await request(app)
       .get('/api/places/search?q=cafe&lat=38.71&lng=-9.14')
       .set('Authorization', `Bearer ${token}`);
-    const calledUrl = fetchSpy.mock.calls[0][0];
-    expect(calledUrl).toContain('location=38.71,-9.14');
-    expect(calledUrl).toContain('radius=50000');
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.locationBias.circle.center.latitude).toBe(38.71);
+    expect(body.locationBias.circle.center.longitude).toBe(-9.14);
+    expect(body.locationBias.circle.radius).toBe(50000);
   });
 
   test('caps results at 10 even if Google returns more', async () => {
     const many = Array.from({ length: 20 }, (_, i) => ({
-      name: `R${i}`,
-      formatted_address: `addr ${i}`,
-      geometry: { location: { lat: 0, lng: 0 } },
+      id: `id_${i}`,
+      displayName: { text: `R${i}` },
+      formattedAddress: `addr ${i}`,
+      location: { latitude: 0, longitude: 0 },
       rating: 1,
-      place_id: `id_${i}`,
       types: [],
     }));
-    fetchSpy.mockReturnValue(mockResponse({ status: 'OK', results: many }));
+    fetchSpy.mockReturnValue(mockResponse({ places: many }));
     const res = await request(app)
       .get('/api/places/search?q=many')
       .set('Authorization', `Bearer ${token}`);
@@ -173,16 +182,13 @@ describe('GET /api/places/search', () => {
 describe('POST /api/places/sync', () => {
   test('happy path with placeId → uses details endpoint, returns enriched fields', async () => {
     fetchSpy.mockReturnValue(mockResponse({
-      status: 'OK',
-      result: {
-        name: 'Eiffel Tower',
-        rating: 4.6,
-        price_level: null,
-        formatted_address: 'Champ de Mars, Paris',
-        place_id: 'ChIJ_eiffel',
-        geometry: { location: { lat: 48.8584, lng: 2.2945 } },
-        user_ratings_total: 5000,
-      },
+      id: 'ChIJ_eiffel',
+      displayName: { text: 'Eiffel Tower' },
+      formattedAddress: 'Champ de Mars, Paris',
+      location: { latitude: 48.8584, longitude: 2.2945 },
+      rating: 4.6,
+      userRatingCount: 5000,
+      // priceLevel intentionally absent → maps to null
     }));
     const res = await request(app)
       .post('/api/places/sync')
@@ -193,20 +199,25 @@ describe('POST /api/places/sync', () => {
     expect(res.body.googleRating).toBe(4.6);
     expect(res.body.placeId).toBe('ChIJ_eiffel');
     expect(res.body.address).toBe('Champ de Mars, Paris');
+    expect(res.body.priceLevel).toBeNull();
     const calledUrl = fetchSpy.mock.calls[0][0];
-    expect(calledUrl).toContain('place/details/json');
-    expect(calledUrl).toContain('place_id=ChIJ_eiffel');
+    expect(calledUrl).toContain('/v1/places/ChIJ_eiffel');
+    expect(calledUrl).not.toContain('place/details/json');
+    // Key in header, not URL
+    expect(calledUrl).not.toContain('key=');
   });
 
-  test('happy path without placeId → falls back to findplace, returns found:false on no candidates', async () => {
-    fetchSpy.mockReturnValue(mockResponse({ status: 'ZERO_RESULTS', candidates: [] }));
+  test('happy path without placeId → falls back to searchText, returns found:false on no candidates', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
     const res = await request(app)
       .post('/api/places/sync')
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Nonexistent Cafe', lat: 0, lng: 0 });
     expect(res.status).toBe(200);
     expect(res.body.found).toBe(false);
-    expect(fetchSpy.mock.calls[0][0]).toContain('findplacefromtext/json');
+    const calledUrl = fetchSpy.mock.calls[0][0];
+    expect(calledUrl).toContain('places:searchText');
+    expect(calledUrl).not.toContain('findplacefromtext/json');
   });
 
   test('400 when neither name nor placeId given', async () => {
@@ -221,18 +232,30 @@ describe('POST /api/places/sync', () => {
 
 describe('POST /api/places/bulk-sync', () => {
   test('happy path: mixed placeId / text fallback, DB updated, response totals correct', async () => {
-    // 2 locations: first has placeId (details path), second has only name (findplace path)
+    // 2 locations: first has placeId (details path), second has only name (searchText path)
     const loc1 = await db.locations.insert({ userId: (await db.users.findOne({ username: USER.username }))._id, name: 'Spot1', lat: 1, lng: 2 });
     const loc2 = await db.locations.insert({ userId: (await db.users.findOne({ username: USER.username }))._id, name: 'Spot2', lat: 3, lng: 4 });
 
     fetchSpy
       .mockReturnValueOnce(mockResponse({
-        status: 'OK',
-        result: { rating: 4.2, price_level: 2, formatted_address: 'A1', place_id: 'pid1', user_ratings_total: 100 },
+        id: 'pid1',
+        displayName: { text: 'Spot1' },
+        formattedAddress: 'A1',
+        location: { latitude: 1, longitude: 2 },
+        rating: 4.2,
+        priceLevel: 'PRICE_LEVEL_MODERATE',
+        userRatingCount: 100,
       }))
       .mockReturnValueOnce(mockResponse({
-        status: 'OK',
-        candidates: [{ rating: 3.9, price_level: 1, formatted_address: 'A2', place_id: 'pid2', user_ratings_total: 50 }],
+        places: [{
+          id: 'pid2',
+          displayName: { text: 'Spot2' },
+          formattedAddress: 'A2',
+          location: { latitude: 3, longitude: 4 },
+          rating: 3.9,
+          priceLevel: 'PRICE_LEVEL_INEXPENSIVE',
+          userRatingCount: 50,
+        }],
       }));
 
     const res = await request(app)
@@ -248,9 +271,12 @@ describe('POST /api/places/bulk-sync', () => {
     expect(res.body[0].found).toBe(true);
     expect(res.body[1].found).toBe(true);
 
-    // Both upstream calls used correct endpoints
-    expect(fetchSpy.mock.calls[0][0]).toContain('place/details/json');
-    expect(fetchSpy.mock.calls[1][0]).toContain('findplacefromtext/json');
+    // First call: placeDetails (GET /v1/places/{id}), second: searchText (POST)
+    expect(fetchSpy.mock.calls[0][0]).toContain('/v1/places/pid_seed_1');
+    expect(fetchSpy.mock.calls[1][0]).toContain('places:searchText');
+    // Keys never in URLs
+    expect(fetchSpy.mock.calls[0][0]).not.toContain('key=');
+    expect(fetchSpy.mock.calls[1][0]).not.toContain('key=');
 
     // DB persisted the enrichment
     const updated1 = await db.locations.findOne({ _id: loc1._id });
@@ -267,7 +293,7 @@ describe('POST /api/places/bulk-sync', () => {
       const l = await db.locations.insert({ userId, name: `Bulk${i}`, lat: i, lng: i });
       inputs.push({ id: l._id, name: l.name, lat: i, lng: i });
     }
-    fetchSpy.mockReturnValue(mockResponse({ status: 'ZERO_RESULTS', candidates: [] }));
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
     const res = await request(app)
       .post('/api/places/bulk-sync')
       .set('Authorization', `Bearer ${token}`)
@@ -289,8 +315,7 @@ describe('POST /api/places/bulk-sync', () => {
 describe('GOOGLE_PLACES_KEY never leaks', () => {
   test('search response body does not contain the key', async () => {
     fetchSpy.mockReturnValue(mockResponse({
-      status: 'OK',
-      results: [{ name: 'X', formatted_address: 'Y', geometry: { location: { lat: 0, lng: 0 } }, place_id: 'p', types: [] }],
+      places: [{ id: 'p', displayName: { text: 'X' }, formattedAddress: 'Y', location: { latitude: 0, longitude: 0 }, types: [] }],
     }));
     const res = await request(app).get('/api/places/search?q=z').set('Authorization', `Bearer ${token}`);
     expect(JSON.stringify(res.body)).not.toContain('test-fake-key');
@@ -298,13 +323,109 @@ describe('GOOGLE_PLACES_KEY never leaks', () => {
 
   test('sync response body does not contain the key', async () => {
     fetchSpy.mockReturnValue(mockResponse({
-      status: 'OK',
-      result: { rating: 1, place_id: 'p', geometry: { location: { lat: 0, lng: 0 } } },
+      id: 'p',
+      displayName: { text: 'X' },
+      formattedAddress: '',
+      location: { latitude: 0, longitude: 0 },
+      rating: 1,
+      userRatingCount: 0,
     }));
     const res = await request(app)
       .post('/api/places/sync')
       .set('Authorization', `Bearer ${token}`)
       .send({ placeId: 'p' });
     expect(JSON.stringify(res.body)).not.toContain('test-fake-key');
+  });
+});
+
+describe('Places API (New) shape', () => {
+  test('priceLevel enum round-trip: PRICE_LEVEL_EXPENSIVE → client receives 3', async () => {
+    fetchSpy.mockReturnValue(mockResponse({
+      places: [{
+        id: 'ChIJ_exp',
+        displayName: { text: 'Fancy Place' },
+        formattedAddress: 'Paris, France',
+        location: { latitude: 48.85, longitude: 2.35 },
+        rating: 4.8,
+        priceLevel: 'PRICE_LEVEL_EXPENSIVE',
+        userRatingCount: 999,
+        types: ['restaurant'],
+      }],
+    }));
+    const res = await request(app)
+      .get('/api/places/search?q=fancy')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body[0].priceLevel).toBe(3);
+  });
+
+  test('outbound requests include X-Goog-Api-Key and X-Goog-FieldMask; key is NOT in URL', async () => {
+    // search
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
+    await request(app).get('/api/places/search?q=test').set('Authorization', `Bearer ${token}`);
+    const searchCall = fetchSpy.mock.calls[0];
+    expect(searchCall[0]).not.toContain('key=');
+    expect(searchCall[1].headers['X-Goog-Api-Key']).toBe('test-fake-key-do-not-leak');
+    expect(searchCall[1].headers['X-Goog-FieldMask']).toBeTruthy();
+    fetchSpy.mockRestore();
+
+    // sync by placeId (GET details)
+    fetchSpy = jest.spyOn(global, 'fetch');
+    fetchSpy.mockReturnValue(mockResponse({
+      id: 'pid_x',
+      displayName: { text: 'X' },
+      formattedAddress: '',
+      location: { latitude: 0, longitude: 0 },
+    }));
+    await request(app).post('/api/places/sync').set('Authorization', `Bearer ${token}`).send({ placeId: 'pid_x' });
+    const detailsCall = fetchSpy.mock.calls[0];
+    expect(detailsCall[0]).not.toContain('key=');
+    expect(detailsCall[1].headers['X-Goog-Api-Key']).toBe('test-fake-key-do-not-leak');
+    expect(detailsCall[1].headers['X-Goog-FieldMask']).toBeTruthy();
+    fetchSpy.mockRestore();
+
+    // sync by text (POST searchText)
+    fetchSpy = jest.spyOn(global, 'fetch');
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
+    await request(app).post('/api/places/sync').set('Authorization', `Bearer ${token}`).send({ name: 'Some Place' });
+    const textCall = fetchSpy.mock.calls[0];
+    expect(textCall[0]).not.toContain('key=');
+    expect(textCall[1].headers['X-Goog-Api-Key']).toBe('test-fake-key-do-not-leak');
+    expect(textCall[1].headers['X-Goog-FieldMask']).toBeTruthy();
+  });
+
+  test('unmapped priceLevel enum (PRICE_LEVEL_UNSPECIFIED or future value) → null', async () => {
+    fetchSpy.mockReturnValue(mockResponse({
+      places: [{
+        id: 'ChIJ_unk',
+        displayName: { text: 'Unknown' },
+        formattedAddress: 'Somewhere',
+        location: { latitude: 0, longitude: 0 },
+        priceLevel: 'PRICE_LEVEL_UNSPECIFIED',
+        types: [],
+      }],
+    }));
+    const res = await request(app)
+      .get('/api/places/search?q=unknown')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body[0].priceLevel).toBeNull();
+
+    // Also test a hypothetical future enum value
+    fetchSpy.mockReturnValue(mockResponse({
+      places: [{
+        id: 'ChIJ_fut',
+        displayName: { text: 'Future' },
+        formattedAddress: 'Somewhere',
+        location: { latitude: 0, longitude: 0 },
+        priceLevel: 'PRICE_LEVEL_ULTRA_EXPENSIVE',
+        types: [],
+      }],
+    }));
+    const res2 = await request(app)
+      .get('/api/places/search?q=future')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res2.status).toBe(200);
+    expect(res2.body[0].priceLevel).toBeNull();
   });
 });
