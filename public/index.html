@@ -199,6 +199,21 @@ body {
 .leaflet-control-layers label { color: var(--text-primary) !important; font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; }
 
+/* Custom map-tools control (📍 My location + ✨ Discover) — mirrors the zoom
+   control look so map controls feel cohesive. */
+.map-tools-control { border: none !important; }
+.map-tools-control button {
+  display: block; width: 36px; height: 36px; line-height: 36px;
+  background: var(--bg-glass); color: var(--text-primary);
+  border: 1px solid var(--border); border-bottom: none;
+  backdrop-filter: blur(12px); cursor: pointer;
+  font-size: 16px; text-align: center; padding: 0;
+}
+.map-tools-control button:first-child { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+.map-tools-control button:last-child  { border-bottom: 1px solid var(--border); border-bottom-left-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+.map-tools-control button:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.map-tools-control button:disabled { opacity: 0.6; cursor: wait; }
+
 .leaflet-tooltip {
   background: var(--bg-secondary) !important; color: var(--text-primary) !important;
   border: 1px solid var(--border) !important; border-radius: var(--radius) !important;
@@ -1463,18 +1478,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
       <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
-      <div style="display:flex;gap:6px;margin-top:8px;">
-        <button id="locate-me-btn" data-click="locateMe"
-          style="flex:1;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
-          aria-label="Pan map to my current GPS location">
-          📍 My location
-        </button>
-        <button id="discover-btn" data-click="openDiscoverModal"
-          style="flex:1;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
-          aria-label="Discover top-rated places nearby">
-          ✨ Discover
-        </button>
-      </div>
     </div>
 
     <div class="filter-section">
@@ -2942,6 +2945,23 @@ function initMap() {
     '⛰️ Topographic': _tileLayers.topo,
     '☀️ Light': _tileLayers.light,
   }, null, { position: 'topright' }).addTo(map);
+
+  // Map tools: GPS my-location + Discover (moved off the sidebar — these are
+  // map actions, not filters). Stacked below the layer chooser at topright.
+  // Anchors use the document-level dispatcher (data-click) so they honor CSP.
+  const MapToolsControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+      const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control map-tools-control');
+      div.innerHTML =
+        '<button type="button" id="locate-me-btn" data-click="locateMe" title="Pan map to my current GPS location" aria-label="My location">📍</button>' +
+        '<button type="button" id="discover-btn" data-click="openDiscoverModal" title="Discover top-rated places nearby" aria-label="Discover">✨</button>';
+      // Stop click bubble so map drag/zoom doesn't fire when clicking the buttons.
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    },
+  });
+  new MapToolsControl().addTo(map);
 
   // Track manual layer changes
   map.on('baselayerchange', e => { window._activeBaseLayer = e.layer; });
@@ -4532,7 +4552,7 @@ async function locateMe() {
   } catch (err) {
     showToast(err.message, 'warn');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📍'; }
   }
 }
 

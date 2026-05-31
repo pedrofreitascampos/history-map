@@ -3419,8 +3419,27 @@ describe('_readPositionalArgs "this" sentinel — restores element-passing acros
 });
 
 describe('GPS my-location (2026-05-31)', () => {
-  test('sidebar has the 📍 My location button wired to locateMe', () => {
-    expect(indexHtml).toMatch(/id="locate-me-btn"[\s\S]{0,300}data-click="locateMe"[\s\S]{0,500}📍 My location/);
+  test('Leaflet topright control hosts 📍 locate-me + ✨ discover buttons wired to dispatcher', () => {
+    // The buttons moved off the cluttered sidebar onto a Leaflet control
+    // (initMap → MapToolsControl). Verify both buttons exist with the right
+    // data-click wiring and live inside the map-tools-control container.
+    expect(indexHtml).toMatch(/MapToolsControl\s*=\s*L\.Control\.extend/);
+    expect(indexHtml).toMatch(/map-tools-control[\s\S]{0,400}id="locate-me-btn"[\s\S]{0,200}data-click="locateMe"/);
+    expect(indexHtml).toMatch(/map-tools-control[\s\S]{0,500}id="discover-btn"[\s\S]{0,200}data-click="openDiscoverModal"/);
+    // Map drag/zoom must not fire when clicking the buttons
+    expect(indexHtml).toMatch(/MapToolsControl[\s\S]{0,800}L\.DomEvent\.disableClickPropagation/);
+  });
+
+  test('sidebar no longer carries the locate-me / discover buttons', () => {
+    // The sidebar lost both buttons — confirm via aside scope. If they leak
+    // back into the sidebar in a later refactor, this guards the regression.
+    const sidebarStart = indexHtml.indexOf('<aside id="sidebar">');
+    const sidebarEnd = indexHtml.indexOf('</aside>', sidebarStart);
+    expect(sidebarStart).toBeGreaterThan(0);
+    expect(sidebarEnd).toBeGreaterThan(sidebarStart);
+    const sidebar = indexHtml.substring(sidebarStart, sidebarEnd);
+    expect(sidebar).not.toMatch(/id="locate-me-btn"/);
+    expect(sidebar).not.toMatch(/id="discover-btn"/);
   });
 
   test('locateMe handles permission-denied / unavailable / timeout via toast', () => {
