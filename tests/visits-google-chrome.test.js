@@ -237,6 +237,20 @@ describe('Static markup (regression)', () => {
     expect(indexHtml).toMatch(/function onTimelineImport\(el\)[\s\S]{0,300}handleFiles\(files\)/);
   });
 
+  test('Trip-view Timeline button differentiated from individual-place buttons', () => {
+    // Trip-view button now reads "Timeline → New Trip" with a tooltip explaining
+    // it bundles visits into a Trip (different from the "individual places" path).
+    expect(indexHtml).toMatch(/data-click="importTripFromTimeline"[\s\S]{0,400}Timeline → New Trip/);
+    expect(indexHtml).toMatch(/data-click="importTripFromTimeline"[\s\S]{0,500}title="Parse a Google Timeline export into a NEW trip/);
+    // Legacy label is gone.
+    expect(indexHtml).not.toMatch(/data-click="importTripFromTimeline"[\s\S]{0,300}>📂 Import from Timeline</);
+    // All 4 Timeline buttons (trip-view + Import + Chronology header + Chronology
+    // empty-state) mention "individual place" in tooltips — the 3 non-trip ones
+    // to describe their own behavior, the trip-view one to cross-reference them.
+    const placesTooltipMatches = indexHtml.match(/title="[^"]*(individual place|backfill individual places)[^"]*"/g) || [];
+    expect(placesTooltipMatches.length).toBe(4);
+  });
+
   test('Timeline import button surfaces on Chronology view (header + empty-state CTA)', () => {
     // Chronology header: sibling to the year/cat/trip selects inside chrono-filters.
     // Use class="chrono-filters" to anchor to markup (CSS uses .chrono-filters which appears earlier in the file).
