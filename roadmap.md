@@ -78,8 +78,19 @@ table below for the per-finding reconciliation.
   Portability API OAuth flow (blocked on Google's Restricted-scope verification
   for personal apps — monitor for relaxation). Do not build the sharable-list
   scraper (ToS risk + low value).
-- **Time Out / website import** — generic web-scrape importer with per-site
-  adapters; Time Out as first adapter.
+- **Time Out / website import** — ✅ shipped 2026-05-31 (commits `febb14d` +
+  `8134bdb`). `POST /api/import/website` with extensible adapter registry
+  (`WEBSITE_IMPORT_ADAPTERS` in server/index.js); Time Out is the first
+  registered adapter (`server/import-adapters/timeout.js`). HTTPS-only +
+  SSRF guard (rejects localhost, RFC1918, IPv6 loopback). 10s timeout, 5MB
+  cap. Adapter uses JSON-LD ItemList as primary signal, falls back to
+  numbered h2/h3 headings + nearby `<address>` blocks. Client UI lives in
+  the Import view ("🌐 Web Import") + review modal with editable
+  name/address per row and Select-all toggle; on confirm, each selected
+  venue is geocoded via `geocodeNarratedStop` (shipped in Trips v2) and
+  POSTed as a bucket-status location with `tags: ['timeout']` + notes that
+  carry the article title and snippet. 53 new jest tests (31 server,
+  22 client). Next adapter slot ready for Beli, Bon Appétit, Eater, etc.
 - **Trips — natural-language entry v2** — ✅ shipped 2026-05-31. Each parsed stop
   is now geocoded via Photon (fallback Nominatim) and POSTed as a bucket-status
   location linked to the trip via `tripId` + `tripOrder`. Unmatched stops still
