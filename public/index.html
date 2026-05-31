@@ -2416,7 +2416,12 @@ function _readPositionalArgs(el) {
 function _runAction(actionName, el, e) {
   if (!actionName) return;
   if (el.dataset.stop) e.stopPropagation();
-  if (el.dataset.prevent) e.preventDefault();
+  // NOTE: data-prevent is NOT honored here. It's handled inside specific
+  // action handlers (e.g. enterKey) so that preventDefault only fires when
+  // the action actually matched (e.g. only on Enter, not on every keystroke).
+  // Honoring it unconditionally here blocks typing in any input with
+  // data-keydown + data-prevent — that's the regression that broke the
+  // sidebar quick-add/search inputs (2026-05-31).
   const custom = ACTIONS[actionName];
   if (custom) return custom(el, e);
   const fn = window[actionName];

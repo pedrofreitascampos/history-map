@@ -3171,3 +3171,49 @@ describe('hover-bg CSS-ified — no dispatcher bridge, no inline data-mouseover/
     );
   });
 });
+
+describe('_runAction must NOT preventDefault unconditionally (sidebar typing regression 2026-05-31)', () => {
+  // The dispatcher previously honored `data-prevent="1"` inside _runAction
+  // BEFORE delegating to the action handler. For inputs wired with
+  // `data-keydown="enterKey" data-prevent="1"` (quick-add, search, tag,
+  // person, collection-search), this meant EVERY keystroke called
+  // e.preventDefault(), blocking the character from being typed. The
+  // enterKey ACTION already calls e.preventDefault() itself after
+  // confirming e.key === 'Enter', so unconditional prevention here was
+  // both wrong AND redundant.
+  test('_runAction does not call e.preventDefault() based on data-prevent', () => {
+    // Find the _runAction body and assert it does not contain the buggy
+    // unconditional preventDefault line.
+    const runActionStart = indexHtml.indexOf('function _runAction(');
+    expect(runActionStart).toBeGreaterThan(0);
+    const runActionEnd = indexHtml.indexOf('}', runActionStart + 200); // first brace close is enough for a short body
+    const body = indexHtml.substring(runActionStart, runActionEnd + 1);
+    // Specifically: no `if (el.dataset.prevent) e.preventDefault();` line in _runAction.
+    expect(body).not.toMatch(/dataset\.prevent\)\s*e\.preventDefault/);
+  });
+
+  test('enterKey ACTION still honors data-prevent (only after Enter check)', () => {
+    // The action-handler-internal preventDefault is the correct place — it
+    // only runs once we've confirmed the keystroke is Enter.
+    const enterKeyStart = indexHtml.indexOf('enterKey:');
+    expect(enterKeyStart).toBeGreaterThan(0);
+    const body = indexHtml.substring(enterKeyStart, enterKeyStart + 400);
+    // Order matters: key check BEFORE preventDefault.
+    expect(body).toMatch(/e\.key\s*!==?\s*['"]Enter['"][\s\S]{0,80}dataset\.prevent\)\s*e\.preventDefault/);
+  });
+
+  test('all five known data-prevent inputs are keydown+enterKey (no orphans)', () => {
+    // If a future change adds data-prevent to a click/input element without
+    // also handling preventDefault inside the action, that's the wrong shape.
+    // For now, every data-prevent in the markup must sit on a data-keydown="enterKey"
+    // element.
+    const matches = indexHtml.match(/data-prevent\s*=/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(5);
+    // Each occurrence must be on a line/element that also has data-keydown="enterKey"
+    const re = /<[^>]*data-prevent\s*=\s*["']1["'][^>]*>/g;
+    let m;
+    while ((m = re.exec(indexHtml)) !== null) {
+      expect(m[0]).toMatch(/data-keydown\s*=\s*["']enterKey["']/);
+    }
+  });
+});
