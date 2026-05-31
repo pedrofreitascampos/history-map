@@ -1744,8 +1744,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn btn-primary" data-click="withLoading" data-arg0="applyBulkEdit" style="font-size:12px;padding:6px 14px;">Apply</button>
         <button class="btn btn-secondary" data-click="openFillMissingModal" style="font-size:12px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
-        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:6px 10px;" title="Reverse-geocode selected via OpenStreetMap to get categories and addresses">🗺️ OSM</button>
-        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="font-size:12px;padding:6px 10px;" title="Sync selected with Google Places for ratings and price levels">📍 Google</button>
+        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:6px 10px;" title="Enrich selected via Photon (Komoot) — free, address + OSM category">🌍 Photon</button>
+        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:6px 10px;" title="Enrich selected via OpenStreetMap Nominatim — free, address + OSM category">🗺️ Nominatim</button>
+        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="font-size:12px;padding:6px 10px;" title="Sync selected with Google Places — ratings + prices (requires API key)">📍 Google</button>
         <button class="btn btn-danger" data-click="deleteBulkSelection" style="font-size:12px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
       </div>
     </div>
@@ -2007,9 +2008,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="form-group">
           <label>Google Maps Rating</label>
           <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="—" readonly style="opacity:0.6">
-          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;flex-wrap:wrap;">
             <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;" title="Open in Google Maps" aria-label="Open in Google Maps">🗺️</a>
-            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync</button>
+            <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;" title="Enrich address + category from Photon (free, OSM-based)">🌍 Photon</button>
+            <button type="button" id="loc-nominatim-sync-btn" class="add-small-btn" data-click="syncNominatimFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;" title="Enrich address + category from OpenStreetMap Nominatim (free)">🗺️ Nominatim</button>
+            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;" title="Enrich rating + price + address from Google Places (requires API key)">🔄 Google</button>
           </div>
         </div>
       </div>
@@ -2152,15 +2155,29 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Search Provider</h4>
       <div style="margin-bottom:16px;" id="account-search-provider-section">
         <div style="margin-bottom:12px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Search provider</label>
+          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Sidebar typeahead provider</label>
           <select id="account-search-provider" class="form-input" data-change="onSearchProviderChange"
             style="font-size:12px;padding:6px 8px;width:100%;">
-            <option value="google">Google Places — best quality, paid (key required)</option>
-            <option value="photon">Photon — free, no key, fast, OSM-based</option>
-            <option value="nominatim">OSM Nominatim — free, no key, basic</option>
+            <option value="google">Google Places</option>
+            <option value="photon">Photon (free)</option>
+            <option value="nominatim">OSM Nominatim (free)</option>
           </select>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
-            Typeahead in the sidebar uses your selection. Google needs an API key (set below).
+          <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+            All three providers can also enrich locations from the edit modal (🌍 / 🗺️ / 🔄 buttons) and the bulk-edit toolbar.
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🌍 Photon</div>
+              <div style="color:var(--text-secondary);">Free · no key · address + OSM category</div>
+            </div>
+            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🗺️ Nominatim</div>
+              <div style="color:var(--text-secondary);">Free · no key · detailed address + OSM category</div>
+            </div>
+            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🔄 Google</div>
+              <div style="color:var(--text-secondary);">Paid · key required · rating + price + address</div>
+            </div>
           </div>
         </div>
       </div>
@@ -3849,7 +3866,7 @@ async function bulkEnrichOSM() {
   const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
   const uncategorized = selected.filter(l => l.category === 'location' && l.lat && l.lng);
   if (uncategorized.length === 0) { showToast('No uncategorized locations in selection to enrich.', 'info'); return; }
-  showToast(`Enriching ${uncategorized.length} locations via OSM...`);
+  showToast(`Enriching ${uncategorized.length} locations via Nominatim...`);
   const count = await enrichInBackground(uncategorized, {
     onProgress(done, total, found) {
       const el = document.getElementById('bulk-selected-count');
@@ -3859,7 +3876,62 @@ async function bulkEnrichOSM() {
   updateBulkCount();
   _bulkVScrollState = null;
   _bulkVScrollPaint();
-  showToast(`Enriched ${count} locations via OpenStreetMap`);
+  showToast(`Enriched ${count} locations via Nominatim`);
+}
+
+// Bulk variant of syncPhotonFromEditModal. Targets selected locations that
+// still need address OR are uncategorized. Polite 100ms gap between Photon
+// calls to stay within their fair-use guidance.
+async function bulkEnrichPhoton() {
+  if (bulkSelected.size === 0) { showToast('Select locations first.', 'warn'); return; }
+  const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
+  const targets = selected.filter(l => l.name && ((l.category === 'location' || !l.category) || !l.address));
+  if (targets.length === 0) { showToast('No selected locations need Photon enrichment.', 'info'); return; }
+  showToast(`Enriching ${targets.length} locations via Photon...`);
+  let done = 0, found = 0;
+  for (const loc of targets) {
+    try {
+      const name = (loc.name || '').trim();
+      if (!name) { done++; continue; }
+      let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(name)}&limit=1`;
+      if (Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) url += `&lat=${loc.lat}&lon=${loc.lng}`;
+      const r = await fetch(url);
+      if (r.ok) {
+        const json = await r.json();
+        const feat = (json.features || [])[0];
+        if (feat) {
+          const props = feat.properties || {};
+          const coords = feat.geometry?.coordinates || [];
+          const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
+          const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
+          const updates = { _photonSyncedAt: new Date().toISOString() };
+          if (!loc.address && parts.length) updates.address = parts.join(', ');
+          if (loc.lat == null && Number.isFinite(coords[1])) updates.lat = coords[1];
+          if (loc.lng == null && Number.isFinite(coords[0])) updates.lng = coords[0];
+          if ((loc.category === 'location' || !loc.category) && props.osm_key && props.osm_value) {
+            const cat = osmToCategory(props.osm_key, props.osm_value);
+            if (cat) updates.category = cat;
+          }
+          const fieldsAdded = Object.keys(updates).filter(k => k !== '_photonSyncedAt').length;
+          if (fieldsAdded > 0) {
+            await api('PUT', '/locations/' + (loc.id || loc._id), updates);
+            Object.assign(loc, updates);
+            found++;
+          }
+        }
+      }
+      done++;
+      const el = document.getElementById('bulk-selected-count');
+      if (el) el.textContent = `🌍 ${done}/${targets.length} · ${found} enriched`;
+      // Polite rate-limit: Photon is free but no abuse.
+      await new Promise(r => setTimeout(r, 100));
+    } catch { done++; }
+  }
+  updateBulkCount();
+  _bulkVScrollState = null;
+  _bulkVScrollPaint();
+  renderMarkers();
+  showToast(`Enriched ${found}/${targets.length} via Photon`);
 }
 
 async function bulkSyncGoogle() {
@@ -7995,14 +8067,122 @@ async function bulkGoogleSync() {
 async function syncFromEditModal() {
   if (!state.editingId) return;
   const btn = document.getElementById('loc-google-sync-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
   await syncSingleLocation(state.editingId);
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync Google'; }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Google'; }
   // Refresh modal fields
   const loc = stateIndex.locationById.get(state.editingId);
   if (loc) {
     document.getElementById('loc-google-rating').value = loc.googleRating || '';
     document.getElementById('loc-address').value = loc.address || document.getElementById('loc-address').value;
+  }
+}
+
+// Photon (Komoot) enrichment from the edit modal — forward search by name
+// with coord bias when available. Conservative: fill-only on address / lat /
+// lng / category. Stamps _photonSyncedAt for future dedup.
+async function syncPhotonFromEditModal() {
+  const locId = state.editingId;
+  if (!locId) return;
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  const name = (document.getElementById('loc-name')?.value || loc.name || '').trim();
+  if (!name) { showToast('Need a place name first.', 'warn'); return; }
+  const btn = document.getElementById('loc-photon-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  try {
+    const latVal = parseFloat(document.getElementById('loc-lat')?.value);
+    const lngVal = parseFloat(document.getElementById('loc-lng')?.value);
+    let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(name)}&limit=1`;
+    if (Number.isFinite(latVal) && Number.isFinite(lngVal)) url += `&lat=${latVal}&lon=${lngVal}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Photon ' + r.status);
+    const json = await r.json();
+    const feat = (json.features || [])[0];
+    if (!feat) { showToast('Photon: no match.', 'warn'); return; }
+    const props = feat.properties || {};
+    const coords = feat.geometry?.coordinates || [];
+    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
+    const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
+    const updates = { _photonSyncedAt: new Date().toISOString() };
+    if (!loc.address && parts.length) updates.address = parts.join(', ');
+    if (loc.lat == null && Number.isFinite(coords[1])) updates.lat = coords[1];
+    if (loc.lng == null && Number.isFinite(coords[0])) updates.lng = coords[0];
+    if ((loc.category === 'location' || !loc.category) && props.osm_key && props.osm_value) {
+      const cat = osmToCategory(props.osm_key, props.osm_value);
+      if (cat) updates.category = cat;
+    }
+    await api('PUT', '/locations/' + locId, updates);
+    Object.assign(loc, updates);
+    renderMarkers();
+    if (updates.address) document.getElementById('loc-address').value = loc.address;
+    if (updates.lat != null) document.getElementById('loc-lat').value = loc.lat;
+    if (updates.lng != null) document.getElementById('loc-lng').value = loc.lng;
+    if (updates.category) {
+      const catEl = document.getElementById('loc-category');
+      if (catEl) catEl.value = updates.category;
+    }
+    const fieldsAdded = Object.keys(updates).filter(k => k !== '_photonSyncedAt').length;
+    showToast(fieldsAdded ? `Photon: filled ${fieldsAdded} field${fieldsAdded === 1 ? '' : 's'}` : 'Photon: nothing missing to fill', fieldsAdded ? 'success' : 'info');
+  } catch (err) {
+    showToast('Photon sync failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🌍 Photon'; }
+  }
+}
+
+// Nominatim enrichment from the edit modal — reverse-geocode when coords
+// are present (most info), forward-search when coords missing. Same fill-
+// only conservatism as Photon. Stamps _nominatimSyncedAt.
+async function syncNominatimFromEditModal() {
+  const locId = state.editingId;
+  if (!locId) return;
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  const btn = document.getElementById('loc-nominatim-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  try {
+    const latVal = parseFloat(document.getElementById('loc-lat')?.value);
+    const lngVal = parseFloat(document.getElementById('loc-lng')?.value);
+    const name = (document.getElementById('loc-name')?.value || loc.name || '').trim();
+    let url;
+    if (Number.isFinite(latVal) && Number.isFinite(lngVal)) {
+      url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latVal}&lon=${lngVal}&addressdetails=1`;
+    } else if (name) {
+      url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(name)}&limit=1&addressdetails=1`;
+    } else {
+      showToast('Need coords or a name first.', 'warn');
+      return;
+    }
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Nominatim ' + r.status);
+    const json = await r.json();
+    const it = Array.isArray(json) ? json[0] : json;
+    if (!it) { showToast('Nominatim: no match.', 'warn'); return; }
+    const updates = { _nominatimSyncedAt: new Date().toISOString() };
+    if (!loc.address && it.display_name) updates.address = it.display_name;
+    if (loc.lat == null && Number.isFinite(parseFloat(it.lat))) updates.lat = parseFloat(it.lat);
+    if (loc.lng == null && Number.isFinite(parseFloat(it.lon))) updates.lng = parseFloat(it.lon);
+    if ((loc.category === 'location' || !loc.category) && it.class && it.type) {
+      const cat = osmToCategory(it.class, it.type);
+      if (cat) updates.category = cat;
+    }
+    await api('PUT', '/locations/' + locId, updates);
+    Object.assign(loc, updates);
+    renderMarkers();
+    if (updates.address) document.getElementById('loc-address').value = loc.address;
+    if (updates.lat != null) document.getElementById('loc-lat').value = loc.lat;
+    if (updates.lng != null) document.getElementById('loc-lng').value = loc.lng;
+    if (updates.category) {
+      const catEl = document.getElementById('loc-category');
+      if (catEl) catEl.value = updates.category;
+    }
+    const fieldsAdded = Object.keys(updates).filter(k => k !== '_nominatimSyncedAt').length;
+    showToast(fieldsAdded ? `Nominatim: filled ${fieldsAdded} field${fieldsAdded === 1 ? '' : 's'}` : 'Nominatim: nothing missing to fill', fieldsAdded ? 'success' : 'info');
+  } catch (err) {
+    showToast('Nominatim sync failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🗺️ Nominatim'; }
   }
 }
 

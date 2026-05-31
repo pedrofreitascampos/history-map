@@ -3320,3 +3320,71 @@ describe('Search provider selector + 3-way typeahead (2026-05-31)', () => {
     expect(fn).toMatch(/map\.setView/);
   });
 });
+
+describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
+  test('edit modal exposes Photon, Nominatim, and Google sync buttons', () => {
+    expect(indexHtml).toMatch(/id="loc-photon-sync-btn"[\s\S]{0,300}data-click="syncPhotonFromEditModal"/);
+    expect(indexHtml).toMatch(/id="loc-nominatim-sync-btn"[\s\S]{0,300}data-click="syncNominatimFromEditModal"/);
+    expect(indexHtml).toMatch(/id="loc-google-sync-btn"[\s\S]{0,300}data-click="syncFromEditModal"/);
+  });
+
+  test('syncPhotonFromEditModal hits photon.komoot.io, fills via PUT, stamps _photonSyncedAt', () => {
+    const fn = extractFunction('syncPhotonFromEditModal');
+    expect(fn).toMatch(/photon\.komoot\.io/);
+    expect(fn).toMatch(/_photonSyncedAt/);
+    expect(fn).toMatch(/api\('PUT',\s*'\/locations\/'/);
+    expect(fn).toMatch(/osmToCategory\(/);
+  });
+
+  test('syncNominatimFromEditModal uses reverse when coords present, forward otherwise', () => {
+    const fn = extractFunction('syncNominatimFromEditModal');
+    expect(fn).toMatch(/nominatim\.openstreetmap\.org/);
+    expect(fn).toMatch(/_nominatimSyncedAt/);
+    expect(fn).toMatch(/\/reverse\?format=json/);
+    expect(fn).toMatch(/\/search\?format=json/);
+  });
+
+  test('modal sync functions are conservative (fill-only on address/lat/lng)', () => {
+    const photon = extractFunction('syncPhotonFromEditModal');
+    const nominatim = extractFunction('syncNominatimFromEditModal');
+    expect(photon).toMatch(/!loc\.address\s*&&/);
+    expect(photon).toMatch(/loc\.lat\s*==\s*null/);
+    expect(nominatim).toMatch(/!loc\.address\s*&&/);
+    expect(nominatim).toMatch(/loc\.lat\s*==\s*null/);
+  });
+
+  test('bulk toolbar has Photon button alongside existing Nominatim (OSM) + Google', () => {
+    expect(indexHtml).toMatch(/data-arg0="bulkEnrichPhoton"[\s\S]{0,200}🌍 Photon/);
+    expect(indexHtml).toMatch(/data-arg0="bulkEnrichOSM"[\s\S]{0,200}🗺️ Nominatim/);
+    expect(indexHtml).toMatch(/data-arg0="bulkSyncGoogle"[\s\S]{0,200}📍 Google/);
+  });
+
+  test('bulkEnrichPhoton iterates targets, polite rate-limit, fill-only, photon stamp', () => {
+    const fn = extractFunction('bulkEnrichPhoton');
+    expect(fn).toMatch(/photon\.komoot\.io/);
+    expect(fn).toMatch(/_photonSyncedAt/);
+    expect(fn).toMatch(/setTimeout\(r,\s*100\)/);
+    expect(fn).toMatch(/!loc\.address\s*&&/);
+  });
+
+  test('Account modal shows three provider explainer cards', () => {
+    expect(indexHtml).toMatch(/🌍 Photon[\s\S]{0,200}Free · no key/);
+    expect(indexHtml).toMatch(/🗺️ Nominatim[\s\S]{0,300}Free · no key/);
+    expect(indexHtml).toMatch(/🔄 Google[\s\S]{0,300}Paid · key required/);
+  });
+
+  test('no inline onclick in any of the new sync sites', () => {
+    const p = extractFunction('syncPhotonFromEditModal');
+    const n = extractFunction('syncNominatimFromEditModal');
+    const b = extractFunction('bulkEnrichPhoton');
+    expect(p).not.toMatch(/\bonclick=/);
+    expect(n).not.toMatch(/\bonclick=/);
+    expect(b).not.toMatch(/\bonclick=/);
+  });
+
+  test('syncFromEditModal restoration label is "🔄 Google" (not "🔄 Sync Google")', () => {
+    const fn = extractFunction('syncFromEditModal');
+    expect(fn).toMatch(/'🔄 Google'/);
+    expect(fn).not.toMatch(/'🔄 Sync Google'/);
+  });
+});

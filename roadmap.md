@@ -250,3 +250,20 @@ See memory roadmap for full commit-level detail. Headline batches:
     the sync call. 8 new server tests (autocomplete happy/sad/session paths, sync sessionToken threading)
     + 9 updated/new frontend regression tests in import.test.js.
   - **Session totals: 619 jest + 8 e2e green (3 skip).**
+  - **Batch 9** (this commit): Three-provider enrichment everywhere. Edit modal
+    grows two sibling sync buttons next to the existing 🔄 Google: **🌍 Photon**
+    (`syncPhotonFromEditModal` — forward search on `photon.komoot.io` with
+    coord bias) and **🗺️ Nominatim** (`syncNominatimFromEditModal` — reverse-
+    geocode when coords present, forward when not). Both are conservative
+    fill-only (don't overwrite user-entered address/lat/lng), use
+    `osmToCategory()` to fill missing categories, stamp `_photonSyncedAt` /
+    `_nominatimSyncedAt`, PUT via `/api/locations/:id`. Bulk-edit toolbar
+    grows a 🌍 Photon button alongside the existing 🗺️ OSM (renamed Nominatim
+    in the title) and 📍 Google; `bulkEnrichPhoton` iterates selected,
+    polite 100ms between Photon calls, fill-only. Account modal Search
+    Provider section restructured into a dropdown + three explainer cards
+    ("🌍 Photon · Free · no key" / "🗺️ Nominatim · Free · no key" / "🔄 Google
+    · Paid · key required") so the role of each provider is clear at a
+    glance. `syncFromEditModal` button label restoration trimmed `🔄 Sync Google`
+    → `🔄 Google` for consistency. 9 new regression tests in import.test.js.
+  - **Session totals: 628 jest + 8 e2e green (3 skip).**
