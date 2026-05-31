@@ -133,3 +133,36 @@ See memory roadmap for full commit-level detail. Headline batches:
   address, casing preservation), **Import guide refresh for 2024 Google changes**
   (`ac88ce0` — on-device Timeline export path + Saved-folder CSV-list path).
   **Session totals: 560 jest + 8 e2e green.**
+- **2026-05-31** — UX batch from user-reported regressions + design pass.
+  - **Batch 1** (`3d4933e`): selectTrip invalidateSize-before-fitBounds fix
+    (trip-zoom no longer broke on first open); country flags switched from
+    regional-indicator emoji to flagcdn.com SVG/PNG (Windows can't render
+    🇵🇹-style codepoints — users were seeing "PT" text); country-card click
+    `maxZoom` 9→12 (was too zoomed out to tell which cities you'd visited);
+    cluster radius 40→30 + `disableClusteringAtZoom: 15` (less aggressive
+    grouping at street zoom); `getGoogleMapsUrl` prefers `name+address`
+    search over raw coords (lands on the Google place card with reviews
+    instead of a generic dropped pin); popup "📍 Open in Google Maps" text
+    → 🗺️ icon next to the close ✕ at top-right.
+  - **Batch 2** (`0927de7`): sidebar restructure — top of sidebar now has
+    "Add place" + "Search place" inputs side-by-side, both at the top;
+    the legacy bottom "+ Add New Location" button is gone. `quickAddPlace()`
+    opens the add modal pre-filled with the typed name. Modal's redundant
+    "🔍 Search Place" field removed (the sidebar already had one). Inline
+    5-star rating widget in the popup — click a star to set, click the
+    current value to clear, PUT with optimistic UI + rollback toast.
+    Tiny `.marker-rating` label below each marker showing Google rating
+    preferred / `myRating` fallback. Roadmap bootstrap additions:
+    Playwright scraper + beliapp.co import.
+  - **Batch 3** (`7c337e0`): edit modal declutter. 13 stacked form-groups
+    reorganized into 3 visual sections separated by uppercase dividers:
+    **Identity** (Name+Address, Category, Status+Price-in-one-row, Bucket
+    strength), **Organize** (Tags, Collections, Trip), **Memory** (My+
+    Google Rating, Visits, People, Notes). Lat/Lng inputs hidden via
+    `display:none` (still in DOM so search-pick / map-click / edit-open
+    paths still populate them; user just can't hand-edit). Visits list
+    collapsed from a per-row editable list to a compact "Last visited X
+    · N visits total" summary + a single "Add today's visit" button
+    (`addTodayVisit()`). Existing visit data preserved in PUT payload.
+    New `.modal-divider` CSS rule.
+  - **Session totals: 570 jest + 8 e2e green.**
