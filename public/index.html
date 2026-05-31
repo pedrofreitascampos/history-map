@@ -2121,6 +2121,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="btn-primary" data-click="parseNarration" style="flex:1;">Parse</button>
       </div>
       <div id="narrate-preview"></div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Stops are auto-geocoded into your bucket list.</div>
     </div>
   </div>
 </div>
@@ -8411,30 +8412,125 @@ async function parseNarration() {
   }
 }
 
+// Geocode a single narrated stop. Tries Photon first (lighter, OSM-key/value
+// give us a category); falls back to Nominatim for forward-search. Returns
+// {lat, lng, address, category} on hit, or null on miss/error. Never throws.
+async function geocodeNarratedStop(name) {
+  const q = (name || '').trim();
+  if (!q) return null;
+  try {
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1`);
+    if (r.ok) {
+      const json = await r.json();
+      const feat = (json.features || [])[0];
+      if (feat) {
+        const props = feat.properties || {};
+        const coords = feat.geometry?.coordinates || [];
+        if (Number.isFinite(coords[1]) && Number.isFinite(coords[0])) {
+          const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
+          const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
+          const cat = (props.osm_key && props.osm_value) ? osmToCategory(props.osm_key, props.osm_value) : null;
+          return {
+            lat: coords[1],
+            lng: coords[0],
+            address: parts.join(', ') || null,
+            category: cat || 'location',
+          };
+        }
+      }
+    }
+  } catch { /* fall through to nominatim */ }
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`);
+    if (r.ok) {
+      const json = await r.json();
+      const it = Array.isArray(json) ? json[0] : null;
+      if (it && it.lat && it.lon) {
+        const lat = parseFloat(it.lat), lng = parseFloat(it.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const cat = (it.class && it.type) ? osmToCategory(it.class, it.type) : null;
+          return {
+            lat, lng,
+            address: it.display_name || null,
+            category: cat || 'location',
+          };
+        }
+      }
+    }
+  } catch { /* return null below */ }
+  return null;
+}
+
 async function createNarratedTrip() {
   const p = window._narrateParsed;
   if (!p) return;
-  const stopsNote = (p.stops || []).map(s => {
+  const stops = Array.isArray(p.stops) ? p.stops : [];
+  const stopsNote = stops.map(s => {
     const dates = s.startDate && s.endDate ? `${s.startDate} → ${s.endDate}` :
                   s.nights ? `${s.nights} night${s.nights === 1 ? '' : 's'}` : '';
     return `- ${s.name}${dates ? ' — ' + dates : ''}`;
   }).join('\n');
   const notes = stopsNote ? `Stops:\n${stopsNote}` : '';
+  let trip;
   try {
-    const trip = await api('POST', '/trips', {
+    trip = await api('POST', '/trips', {
       name: p.name || 'Narrated trip',
       startDate: p.startDate || undefined,
       endDate: p.endDate || undefined,
       notes,
     });
     state.trips.push(mapId(trip));
-    showToast(`Trip "${esc(trip.name)}" created`, 'success');
-    closeNarrateModal();
-    // Refresh trip manager if open
-    if (document.getElementById('trips-modal')?.classList.contains('open')) openTripManager();
   } catch (err) {
     showToast('Failed to create trip: ' + err.message, 'error');
+    return;
   }
+  closeNarrateModal();
+  if (stops.length === 0) {
+    showToast(`Trip "${esc(trip.name)}" created`, 'success');
+    if (document.getElementById('trips-modal')?.classList.contains('open')) openTripManager();
+    return;
+  }
+  let located = 0, unmatched = 0, failed = 0;
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i] || {};
+    const stopName = (s.name || '').trim();
+    if (!stopName) continue;
+    showToast(`Geocoding stop ${i + 1}/${stops.length}: ${esc(stopName)}…`, 'info');
+    const geo = await geocodeNarratedStop(stopName);
+    const stopDates = s.startDate && s.endDate ? `${s.startDate} → ${s.endDate}` :
+                      s.nights ? `${s.nights} night${s.nights === 1 ? '' : 's'}` : '';
+    const stopNotes = stopDates ? `${trip.name}: ${stopDates}` : `Stop of ${trip.name}`;
+    const payload = {
+      name: stopName,
+      status: 'bucket',
+      tripId: trip._id || trip.id,
+      tripOrder: i,
+      notes: stopNotes,
+      category: geo?.category || 'location',
+    };
+    if (geo) {
+      payload.lat = geo.lat;
+      payload.lng = geo.lng;
+      if (geo.address) payload.address = geo.address;
+      located++;
+    } else {
+      unmatched++;
+    }
+    try {
+      const created = await api('POST', '/locations', payload);
+      state.locations.push(mapId(created));
+    } catch {
+      failed++;
+    }
+    // Polite gap between geocoder calls (free OSM services fair-use).
+    if (i < stops.length - 1) await new Promise(r => setTimeout(r, 200));
+  }
+  if (typeof renderMarkers === 'function') renderMarkers();
+  const summaryBits = [`${located} located`];
+  if (unmatched > 0) summaryBits.push(`${unmatched} unmatched`);
+  if (failed > 0) summaryBits.push(`${failed} failed`);
+  showToast(`Trip "${esc(trip.name)}" created — ${summaryBits.join(', ')}`, failed > 0 ? 'warn' : 'success');
+  if (document.getElementById('trips-modal')?.classList.contains('open')) openTripManager();
 }
 
 async function downloadLatestBackup() {

@@ -80,9 +80,12 @@ table below for the per-finding reconciliation.
   scraper (ToS risk + low value).
 - **Time Out / website import** — generic web-scrape importer with per-site
   adapters; Time Out as first adapter.
-- **Trips — natural-language entry v2** — auto-create stops as bucket locations
-  from the parsed narration (requires geocoding each stop name; out of scope until
-  Places API (New) wiring is standardised). Shipped v1 in Batch 6 (2026-05-31).
+- **Trips — natural-language entry v2** — ✅ shipped 2026-05-31. Each parsed stop
+  is now geocoded via Photon (fallback Nominatim) and POSTed as a bucket-status
+  location linked to the trip via `tripId` + `tripOrder`. Unmatched stops still
+  create placeholder bucket locations (no lat/lng) so nothing is lost. Helper
+  `geocodeNarratedStop(name)` factored out for testability; 15 new jest tests in
+  `tests/trips-v2.test.js`.
 - **Google Photos integration** — per-location photo fetch via GPS+date.
 - **Sync to Google Maps saved lists** — **blocker**: no public write API;
   research spike needed.
@@ -207,8 +210,9 @@ See memory roadmap for full commit-level detail. Headline batches:
     "Create trip" one-click (POST /api/trips, stops bundled into `notes` as
     markdown). Account modal grows a parallel Anthropic API key section
     (Connected/Not-connected, change-key details, Save/Remove, mirrors
-    Places section structure). Auto-creating stops as bucket locations queued
-    for v2. Cost ~$0.001/parse after prompt-cache warmup. 14 new tests in
+    Places section structure). Auto-creating stops as bucket locations
+    shipped in **Trips v2** (this session) — see entry below. Cost ~$0.001/parse
+    after prompt-cache warmup. 14 new tests in
     `tests/narrate.test.js` + `tests/narrate-nokey.test.js` (12 pass,
     2 skip with documented reason — no-key path requires separate module
     instance, covered by narrate-nokey.test.js).
