@@ -2079,8 +2079,33 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" data-click="openAddTripFromManager">+ Add Trip</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" data-click="openAddTripFromManager">+ Add Trip</button>
+        <button class="btn btn-secondary" data-click="openNarrateModal">✨ Narrate</button>
+      </div>
       <button class="btn btn-secondary" data-click="closeTripManager">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Narrate-a-trip Modal -->
+<div id="narrate-modal" class="modal-overlay" style="display:none;" data-click="closeOnOverlay" data-arg0="narrate-modal">
+  <div class="modal" data-stop="1" style="max-width:560px;">
+    <div class="modal-header">
+      <h3>✨ Narrate a trip</h3>
+      <button class="modal-close" data-click="closeNarrateModal" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="narrate-text">Describe your trip in natural language</label>
+        <textarea id="narrate-text" class="form-input" rows="4"
+          placeholder="e.g. 10 days in Japan late September — 4 nights Tokyo, 3 nights Kyoto, 3 nights Osaka"
+          style="font-size:13px;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn-primary" data-click="parseNarration" style="flex:1;">Parse</button>
+      </div>
+      <div id="narrate-preview"></div>
     </div>
   </div>
 </div>
@@ -2124,6 +2149,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
       <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Google Places API</h4>
       <div id="account-places-status" style="margin-bottom:16px;"></div>
+
+      <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:8px;">Anthropic API (Narrate-a-trip)</h4>
+      <div id="account-anthropic-status" style="margin-bottom:16px;"></div>
 
       <h4 style="font-family:var(--font-display);font-size:14px;margin-bottom:12px;">Automatic Backups</h4>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Daily backups are created automatically. Last 7 days kept.</p>
@@ -7625,6 +7653,40 @@ async function openAccountModal() {
     }
   } catch { placesDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
 
+  // Anthropic key status
+  const anthropicDiv = document.getElementById('account-anthropic-status');
+  try {
+    const ns = await api('GET', '/trips/narrate-status');
+    if (ns.enabled) {
+      anthropicDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
+        <span style="color:var(--success);">●</span> Connected — natural-language trip parsing enabled
+        <details style="margin-left:auto;">
+          <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change key</summary>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <input type="password" class="form-input" id="anthropic-key-input" placeholder="New key..." style="flex:1;font-size:12px;padding:6px 8px;">
+            <button class="btn btn-secondary" data-click="saveAnthropicKey" style="font-size:12px;padding:4px 10px;">Save</button>
+            <button class="btn btn-danger" data-click="removeAnthropicKey" style="font-size:12px;padding:4px 10px;">Remove</button>
+          </div>
+        </details>
+      </div>`;
+    } else {
+      let keyPreview = '';
+      try { const s = await api('GET', '/settings'); keyPreview = s.anthropicKey || ''; } catch {}
+      anthropicDiv.innerHTML = `<div style="font-size:12px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
+        <span style="color:var(--text-muted);">●</span> Not connected — natural-language trip parsing disabled.
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Anthropic API Key</label>
+          <div style="display:flex;gap:6px;">
+            <input type="password" class="form-input" id="anthropic-key-input" placeholder="sk-ant-..." value="${keyPreview ? '••••••••' : ''}"
+              style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
+            <button class="btn btn-primary" data-click="saveAnthropicKey" style="font-size:12px;padding:4px 10px;">Save</button>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/parse via Haiku.</div>
+        </div>
+      </div>`;
+    }
+  } catch { anthropicDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Could not check status.</span>'; }
+
   // Load backup list (user-level endpoint, works for all users)
   const backupsDiv = document.getElementById('account-backups');
   backupsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Loading backups...</span>';
@@ -7796,9 +7858,101 @@ function removePlacesKey() {
   }, 'Remove');
 }
 
+async function saveAnthropicKey() {
+  const input = document.getElementById('anthropic-key-input');
+  const key = input.value.trim();
+  if (!key || key.startsWith('••')) { showToast('Enter a valid API key.', 'warn'); return; }
+  try {
+    await api('PUT', '/settings', { anthropicKey: key });
+    showToast('Anthropic API key saved. Trip narration is now active.');
+    openAccountModal(); // refresh
+  } catch (err) { showToast('Failed: ' + err.message, 'error'); }
+}
+
+function removeAnthropicKey() {
+  showConfirm('Remove your Anthropic API key? Trip narration will be disabled.', async () => {
+    try {
+      await api('PUT', '/settings', { anthropicKey: null });
+      showToast('Anthropic API key removed.');
+      openAccountModal();
+    } catch (err) { showToast('Failed: ' + err.message, 'error'); }
+  }, 'Remove');
+}
+
 function closeAccountModal() {
   document.getElementById('account-modal').classList.remove('open');
   restoreFocus();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* NARRATE-A-TRIP                                                         */
+/* ═══════════════════════════════════════════════════════════════════════ */
+async function openNarrateModal() {
+  // Check status first; if disabled, route user to Account settings
+  try {
+    const s = await api('GET', '/trips/narrate-status');
+    if (!s.enabled) {
+      showToast('Anthropic API not configured. Add key in Account settings.', 'warn');
+      openAccountModal();
+      return;
+    }
+  } catch { showToast('Could not check narrate status', 'warn'); return; }
+  document.getElementById('narrate-text').value = '';
+  document.getElementById('narrate-preview').innerHTML = '';
+  document.getElementById('narrate-modal').style.display = 'flex';
+}
+function closeNarrateModal() { document.getElementById('narrate-modal').style.display = 'none'; }
+
+async function parseNarration() {
+  const text = document.getElementById('narrate-text').value.trim();
+  if (!text || text.length < 4) { showToast('Type a trip description first', 'warn'); return; }
+  const previewEl = document.getElementById('narrate-preview');
+  previewEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">Parsing…</div>';
+  try {
+    const parsed = await api('POST', '/trips/narrate', { text });
+    window._narrateParsed = parsed;
+    const stopsHtml = (parsed.stops || []).map(s => {
+      const dates = s.startDate && s.endDate ? `${esc(s.startDate)} → ${esc(s.endDate)}` :
+                    s.nights ? `${s.nights} night${s.nights === 1 ? '' : 's'}` : '';
+      return `<div style="padding:4px 0;font-size:12px;">• <b>${esc(s.name)}</b>${dates ? ' — ' + dates : ''}</div>`;
+    }).join('');
+    previewEl.innerHTML = `
+      <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;">
+        <div style="font-weight:600;font-size:13px;">${esc(parsed.name || 'Untitled trip')}</div>
+        <div style="font-size:12px;color:var(--text-secondary);">${esc(parsed.startDate || '?')} → ${esc(parsed.endDate || '?')}</div>
+        <div style="margin-top:8px;">${stopsHtml}</div>
+      </div>
+      <button class="btn-primary" data-click="createNarratedTrip" style="width:100%;">Create trip</button>
+    `;
+  } catch (err) {
+    previewEl.innerHTML = `<div style="color:var(--danger);padding:12px;">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+async function createNarratedTrip() {
+  const p = window._narrateParsed;
+  if (!p) return;
+  const stopsNote = (p.stops || []).map(s => {
+    const dates = s.startDate && s.endDate ? `${s.startDate} → ${s.endDate}` :
+                  s.nights ? `${s.nights} night${s.nights === 1 ? '' : 's'}` : '';
+    return `- ${s.name}${dates ? ' — ' + dates : ''}`;
+  }).join('\n');
+  const notes = stopsNote ? `Stops:\n${stopsNote}` : '';
+  try {
+    const trip = await api('POST', '/trips', {
+      name: p.name || 'Narrated trip',
+      startDate: p.startDate || undefined,
+      endDate: p.endDate || undefined,
+      notes,
+    });
+    state.trips.push(mapId(trip));
+    showToast(`Trip "${esc(trip.name)}" created`, 'success');
+    closeNarrateModal();
+    // Refresh trip manager if open
+    if (document.getElementById('trips-modal')?.classList.contains('open')) openTripManager();
+  } catch (err) {
+    showToast('Failed to create trip: ' + err.message, 'error');
+  }
 }
 
 async function downloadLatestBackup() {

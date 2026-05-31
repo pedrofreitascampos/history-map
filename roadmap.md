@@ -80,10 +80,9 @@ table below for the per-finding reconciliation.
   scraper (ToS risk + low value).
 - **Time Out / website import** — generic web-scrape importer with per-site
   adapters; Time Out as first adapter.
-- **Trips — natural-language entry** — "Narrate a trip" mode parsing "Aug 3–10
-  in Lisbon, then 4 nights Porto" into date range + stops + linked transits.
-  Recommended v1: Haiku API (~$0.001/parse). Browser-side WebLLM is the truly-
-  offline future option.
+- **Trips — natural-language entry v2** — auto-create stops as bucket locations
+  from the parsed narration (requires geocoding each stop name; out of scope until
+  Places API (New) wiring is standardised). Shipped v1 in Batch 6 (2026-05-31).
 - **Google Photos integration** — per-location photo fetch via GPS+date.
 - **Sync to Google Maps saved lists** — **blocker**: no public write API;
   research spike needed.
@@ -195,3 +194,22 @@ See memory roadmap for full commit-level detail. Headline batches:
     (New) infrastructure — same auth header, same FieldMask, same priceLevel
     enum mapping.
   - **Session totals: 579 jest + 8 e2e green (1 skip).**
+  - **Batch 6** (this commit): Narrate-a-trip feature end-to-end. Haiku 4.5
+    (`claude-haiku-4-5-20251001`) with cached system prompt + forced tool use
+    (`parse_trip` schema). `POST /api/trips/narrate-status` (enabled check)
+    + `POST /api/trips/narrate` — parses free-form description to structured
+    name/dates/stops JSON. Per-user `user.anthropicKey` + `ANTHROPIC_API_KEY`
+    env fallback (mirrors Google Places key pattern exactly). SDK loaded with
+    dynamic `require` to avoid startup cost. Errors sanitized at boundary
+    (401 → "API key rejected", 429 → "Rate limited" — never leaks upstream
+    message body). Frontend: ✨ "Narrate" button in Trip Manager footer →
+    textarea modal → Parse → preview (trip name + dates + stops list) →
+    "Create trip" one-click (POST /api/trips, stops bundled into `notes` as
+    markdown). Account modal grows a parallel Anthropic API key section
+    (Connected/Not-connected, change-key details, Save/Remove, mirrors
+    Places section structure). Auto-creating stops as bucket locations queued
+    for v2. Cost ~$0.001/parse after prompt-cache warmup. 14 new tests in
+    `tests/narrate.test.js` + `tests/narrate-nokey.test.js` (12 pass,
+    2 skip with documented reason — no-key path requires separate module
+    instance, covered by narrate-nokey.test.js).
+  - **Session totals: 594 jest + 8 e2e green (3 skip).**

@@ -34,6 +34,7 @@ const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : nul
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'history-map-dev-secret-change-me');
 if (!JWT_SECRET) { console.error('FATAL: JWT_SECRET env var required in production'); process.exit(1); }
 const GOOGLE_PLACES_KEY = process.env.GOOGLE_PLACES_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 // Comma-separated list of allowed emails. Empty = anyone can register/sign in.
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 // First email in allowlist is considered admin
@@ -590,6 +591,100 @@ app.delete('/api/trips/:id', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Narrate-a-trip (Haiku-powered NL parsing) ─────────────
+app.get('/api/trips/narrate-status', auth, async (req, res) => {
+  const key = await getAnthropicKey(req.user.id);
+  res.json({ enabled: !!key });
+});
+
+app.post('/api/trips/narrate', auth, async (req, res) => {
+  const apiKey = await getAnthropicKey(req.user.id);
+  if (!apiKey) return res.status(501).json({ error: 'Anthropic API not configured. Add your key in Account settings.' });
+  const { text } = req.body || {};
+  if (!text || typeof text !== 'string' || text.length < 4) return res.status(400).json({ error: 'Trip description required (min 4 chars)' });
+  if (text.length > 4000) return res.status(400).json({ error: 'Description too long (max 4000 chars)' });
+
+  let Anthropic;
+  try { Anthropic = require('@anthropic-ai/sdk'); }
+  catch { return res.status(500).json({ error: 'Anthropic SDK not installed on server' }); }
+
+  const client = new Anthropic.default({ apiKey });
+  const today = new Date().toISOString().slice(0, 10);
+
+  const _t0 = Date.now();
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: [
+        {
+          type: 'text',
+          text: 'You parse free-form trip descriptions into structured JSON via the parse_trip tool. ' +
+                'Today is ' + today + '. Resolve relative dates ("next week", "August", "in 2 weeks") against today. ' +
+                'Use ISO format YYYY-MM-DD. If a year is omitted, infer the next occurrence of the month from today. ' +
+                'If only nights are given for a stop, leave startDate/endDate null and set nights. ' +
+                'If only a date range and stop names are given (no per-stop dates), divide the range evenly across stops. ' +
+                'If trip name is not given, generate one from the primary stops, e.g. "Tokyo + Kyoto + Osaka".',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      tools: [
+        {
+          name: 'parse_trip',
+          description: 'Emit the structured trip parsed from the user description.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Trip name. Generate from stops if not given.' },
+              startDate: { type: ['string', 'null'], description: 'YYYY-MM-DD or null.' },
+              endDate: { type: ['string', 'null'], description: 'YYYY-MM-DD or null.' },
+              stops: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Place name (city or POI).' },
+                    startDate: { type: ['string', 'null'] },
+                    endDate: { type: ['string', 'null'] },
+                    nights: { type: ['number', 'null'] },
+                  },
+                  required: ['name'],
+                },
+              },
+            },
+            required: ['name', 'stops'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'parse_trip' },
+      messages: [{ role: 'user', content: text }],
+    });
+    const ms = Date.now() - _t0;
+    const toolUse = response.content.find(c => c.type === 'tool_use');
+    if (!toolUse) {
+      log('warn', 'narrate_no_tool_use', { userId: req.user.id, ms });
+      return res.status(502).json({ error: 'Parser did not produce structured output' });
+    }
+    log('info', 'narrate_api_call', {
+      userId: req.user.id, ms,
+      inputTokens: response.usage?.input_tokens || 0,
+      outputTokens: response.usage?.output_tokens || 0,
+      cacheReadTokens: response.usage?.cache_read_input_tokens || 0,
+      cacheCreationTokens: response.usage?.cache_creation_input_tokens || 0,
+    });
+    res.json(toolUse.input);
+  } catch (err) {
+    log('warn', 'narrate_api_error', { userId: req.user.id, status: err.status || 0, type: err.error?.type || 'unknown' });
+    // Sanitize Anthropic error — never leak full upstream message body
+    const status = err.status || 500;
+    const msg = err.status === 401 ? 'Anthropic API key rejected' :
+                err.status === 429 ? 'Rate limited by Anthropic' :
+                err.status === 400 ? 'Bad request to Anthropic' :
+                'Anthropic API error';
+    res.status(502).json({ error: msg });
+  }
+});
+
 // ── Collections CRUD ─────────────────────────────────────
 app.get('/api/collections', auth, async (req, res) => {
   const cols = await db.collections.find({ userId: req.user.id });
@@ -823,13 +918,17 @@ function simplifyGeometry(geom, precision) {
 // ── User settings (API keys etc.) ────────────────────────
 app.get('/api/settings', auth, async (req, res) => {
   const user = await db.users.findOne({ _id: req.user.id });
-  res.json({ googlePlacesKey: user?.googlePlacesKey ? '••••' + user.googlePlacesKey.slice(-4) : null });
+  res.json({
+    googlePlacesKey: user?.googlePlacesKey ? '••••' + user.googlePlacesKey.slice(-4) : null,
+    anthropicKey: user?.anthropicKey ? '••••' + user.anthropicKey.slice(-4) : null,
+  });
 });
 
 app.put('/api/settings', auth, async (req, res) => {
-  const { googlePlacesKey } = req.body;
+  const { googlePlacesKey, anthropicKey } = req.body;
   const updates = {};
   if (googlePlacesKey !== undefined) updates.googlePlacesKey = googlePlacesKey || null;
+  if (anthropicKey !== undefined) updates.anthropicKey = anthropicKey || null;
   await db.users.update({ _id: req.user.id }, { $set: updates });
   audit('settings_update', { fields: Object.keys(updates) }, req);
   res.json({ ok: true });
@@ -884,6 +983,12 @@ app.get('/api/my-backup/:filename', auth, (req, res) => {
 async function getPlacesKey(userId) {
   const user = await db.users.findOne({ _id: userId });
   return user?.googlePlacesKey || GOOGLE_PLACES_KEY || '';
+}
+
+// ── Anthropic API — key per user, env fallback ────────────
+async function getAnthropicKey(userId) {
+  const user = await db.users.findOne({ _id: userId });
+  return user?.anthropicKey || ANTHROPIC_API_KEY || '';
 }
 
 // Price level enum → integer (Places API New returns string enums)
