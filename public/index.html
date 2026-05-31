@@ -1933,12 +1933,24 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-body">
       <div class="form-row">
         <div class="form-group">
-          <label>Name</label>
+          <label>Name <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;margin-left:8px;font-weight:400;" title="Open in Google Maps">🗺️ View on Maps</a></label>
           <input type="text" class="form-input" id="loc-name" placeholder="Location name">
         </div>
         <div class="form-group">
           <label>Address</label>
           <input type="text" class="form-input" id="loc-address" placeholder="Address or city">
+        </div>
+      </div>
+
+      <!-- Enrich data: provider buttons fetch from Photon / Nominatim / Google
+           and prompt the user to confirm which fields to apply (since enrichment
+           may overwrite manually-entered data). -->
+      <div class="form-group" style="margin-bottom:14px;">
+        <label style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);">Enrich data <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted);font-size:12px;">— fetch fields from a provider, you'll confirm overwrites</span></label>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="Photon (Komoot) — free, OSM-based">🌍 Photon</button>
+          <button type="button" id="loc-nominatim-sync-btn" class="add-small-btn" data-click="syncNominatimFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="OpenStreetMap Nominatim — free">🗺️ Nominatim</button>
+          <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;display:none;" title="Google Places — requires API key">🔄 Google</button>
         </div>
       </div>
 
@@ -2044,12 +2056,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <div class="form-group">
           <label>Google Maps Rating</label>
           <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="—" readonly style="opacity:0.6">
-          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;flex-wrap:wrap;">
-            <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;" title="Open in Google Maps" aria-label="Open in Google Maps">🗺️</a>
-            <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;" title="Enrich address + category from Photon (free, OSM-based)">🌍 Photon</button>
-            <button type="button" id="loc-nominatim-sync-btn" class="add-small-btn" data-click="syncNominatimFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;" title="Enrich address + category from OpenStreetMap Nominatim (free)">🗺️ Nominatim</button>
-            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;" title="Enrich rating + price + address from Google Places (requires API key)">🔄 Google</button>
-          </div>
         </div>
       </div>
 
@@ -3399,18 +3405,6 @@ function getGoogleMapsUrl(loc) {
   return '';
 }
 
-async function toggleStatusFromPopup(locId) {
-  const loc = stateIndex.locationById.get(locId);
-  if (!loc) return;
-  const newStatus = loc.status === 'been' ? 'bucket' : 'been';
-  try {
-    await api('PUT', '/locations/' + locId, { status: newStatus });
-    loc.status = newStatus;
-    map.closePopup();
-    renderMarkers();
-  } catch (err) { showToast('Update failed: ' + err.message, 'error'); }
-}
-
 async function deleteFromPopup(locId) {
   const loc = stateIndex.locationById.get(locId);
   if (!loc) return;
@@ -3472,11 +3466,10 @@ function createPopupContent(loc) {
     ${trip ? `<div class="popup-meta">🧳 ${esc(trip.name)}</div>` : ''}
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
-    <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
-      <button class="popup-btn" data-click="toggleStatusFromPopup" data-arg0="${esc(loc.id)}" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '⭐' : '✅'} ${isBeen ? 'Bucket' : 'Been'}</button>
-      <button class="popup-btn" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="Log a visit today${isBeen ? '' : ' (also marks as Been)'}" aria-label="Log visit today" style="flex:0 0 auto;width:auto;padding:8px 12px;">📍 Today</button>
-      <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;">✏️ Edit</button>
-      <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" title="Remove location" aria-label="Remove location" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:14px;padding:6px 10px;border-radius:4px;flex-shrink:0;">🗑️</button>
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:stretch;">
+      <button class="popup-btn" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="${isBeen ? 'Log another visit today' : 'Mark as Been and log a visit today'}" aria-label="Mark as been" style="flex:0 0 auto;width:auto;padding:8px 12px;">✅ Been</button>
+      <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;padding:8px 12px;">✏️ Edit</button>
+      <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" title="Remove location" aria-label="Remove location" style="background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:12px;padding:8px 12px;border-radius:var(--radius);flex:0 0 auto;">🗑️</button>
     </div>
   </div>`;
 }
@@ -8404,23 +8397,158 @@ async function bulkGoogleSync() {
   openAccountModal();
 }
 
+// Enrichment confirmation modal — shows the proposed field-level diffs
+// from a provider and lets the user pick which to apply (overwrites are
+// unchecked by default; empty-to-value fills are checked by default).
+// Returns a Promise<{appliedUpdates}|null> — null if cancelled.
+function showEnrichmentConfirm(sourceLabel, diffs) {
+  return new Promise(resolve => {
+    if (!diffs || diffs.length === 0) {
+      resolve({ appliedUpdates: {} });
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const fmt = v => {
+      if (v == null || v === '') return '<em style="color:var(--text-muted);">empty</em>';
+      const s = String(v);
+      return esc(s.length > 80 ? s.slice(0, 77) + '…' : s);
+    };
+    const rows = diffs.map((d, i) => {
+      const isOverwrite = d.current != null && d.current !== '';
+      return `
+      <label style="display:block;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" class="enrich-field" data-idx="${i}" data-field="${esc(d.field)}" ${isOverwrite ? '' : 'checked'} style="margin:0;">
+          <span style="font-weight:600;font-size:12px;color:var(--text-primary);">${esc(d.label)}</span>
+          ${isOverwrite ? '<span style="font-size:10px;color:var(--warn,#f59e0b);text-transform:uppercase;letter-spacing:0.5px;">overwrite</span>' : '<span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">fill</span>'}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;margin-left:24px;">
+          <div>current: ${fmt(d.current)}</div>
+          <div>new: ${fmt(d.proposed)}</div>
+        </div>
+      </label>`;
+    }).join('');
+    overlay.innerHTML = `<div class="confirm-box" style="max-width:480px;">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Apply enrichment from ${esc(sourceLabel)}?</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">${diffs.length} field${diffs.length === 1 ? '' : 's'} returned. Unchecked items are skipped.</div>
+      ${rows}
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="btn btn-primary">Apply selected</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const cancel = () => { overlay.remove(); resolve(null); };
+    const confirm = () => {
+      const appliedUpdates = {};
+      overlay.querySelectorAll('.enrich-field').forEach(cb => {
+        if (!cb.checked) return;
+        const idx = parseInt(cb.dataset.idx, 10);
+        const d = diffs[idx];
+        if (d) appliedUpdates[d.field] = d.proposed;
+      });
+      overlay.remove();
+      resolve({ appliedUpdates });
+    };
+    overlay.querySelector('.confirm-cancel').onclick = cancel;
+    overlay.querySelector('.btn-primary').onclick = confirm;
+    overlay.addEventListener('click', e => { if (e.target === overlay) cancel(); });
+    overlay.querySelector('.btn-primary').focus();
+  });
+}
+
+// Field-label map for the enrichment diff UI.
+const ENRICH_FIELD_LABELS = {
+  address: 'Address',
+  lat: 'Latitude',
+  lng: 'Longitude',
+  category: 'Category',
+  googleRating: 'Google rating',
+  userRatingsTotal: 'Google rating count',
+  priceLevel: 'Price level',
+  _googlePlaceId: 'Google place ID',
+  _googleUrl: 'Google Maps URL',
+};
+
+// Build the diff list for the confirm modal. `proposed` is whatever the
+// provider returned; `loc` is the current location. Only fields whose
+// proposed value actually differs from the current are surfaced.
+function buildEnrichmentDiffs(loc, proposed) {
+  const diffs = [];
+  for (const [field, val] of Object.entries(proposed)) {
+    if (val == null || val === '') continue;
+    const current = loc[field];
+    const sameStr = String(current ?? '') === String(val);
+    if (sameStr) continue;
+    diffs.push({
+      field,
+      label: ENRICH_FIELD_LABELS[field] || field,
+      current,
+      proposed: val,
+    });
+  }
+  return diffs;
+}
+
+// Apply a confirmed set of enrichment updates: PUT, mutate local loc,
+// stamp the source-specific syncedAt, refresh modal inputs + markers.
+async function applyEnrichmentUpdates(loc, updates, syncedAtField) {
+  if (!updates || Object.keys(updates).length === 0) return 0;
+  const payload = { ...updates, [syncedAtField]: new Date().toISOString() };
+  await api('PUT', '/locations/' + loc.id, payload);
+  Object.assign(loc, payload);
+  renderMarkers();
+  const setIf = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  setIf('loc-address', updates.address);
+  setIf('loc-lat', updates.lat);
+  setIf('loc-lng', updates.lng);
+  setIf('loc-category', updates.category);
+  setIf('loc-google-rating', updates.googleRating);
+  return Object.keys(updates).length;
+}
+
 async function syncFromEditModal() {
   if (!state.editingId) return;
+  const enabled = await checkPlacesEnabled();
+  if (!enabled) { showToast('Google Places API not configured. Add API key in Account settings.', 'warn'); return; }
+  const loc = stateIndex.locationById.get(state.editingId);
+  if (!loc) return;
   const btn = document.getElementById('loc-google-sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
-  await syncSingleLocation(state.editingId);
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Google'; }
-  // Refresh modal fields
-  const loc = stateIndex.locationById.get(state.editingId);
-  if (loc) {
-    document.getElementById('loc-google-rating').value = loc.googleRating || '';
-    document.getElementById('loc-address').value = loc.address || document.getElementById('loc-address').value;
+  try {
+    const result = await api('POST', '/places/sync', {
+      name: loc.name, lat: loc.lat, lng: loc.lng, placeId: loc._googlePlaceId || null,
+    });
+    if (!result.found) { showToast('Place not found on Google Maps.', 'warn'); return; }
+    const proposed = {};
+    if (result.googleRating != null) proposed.googleRating = result.googleRating;
+    if (result.priceLevel != null) proposed.priceLevel = result.priceLevel;
+    if (result.address) proposed.address = result.address;
+    if (result.placeId) proposed._googlePlaceId = result.placeId;
+    // Scheme guard: only accept http(s) URLs into _googleUrl (defense-in-depth
+    // against javascript: URIs reaching NeDB, even though Google won't return one).
+    if (result.url && /^https?:\/\//i.test(result.url)) proposed._googleUrl = result.url;
+    const diffs = buildEnrichmentDiffs(loc, proposed);
+    if (diffs.length === 0) {
+      showToast('Google: nothing to add — all returned fields already match.', 'info');
+      return;
+    }
+    const confirmResult = await showEnrichmentConfirm('Google Places', diffs);
+    if (!confirmResult) { showToast('Google sync: cancelled.', 'info'); return; }
+    const applied = await applyEnrichmentUpdates(loc, confirmResult.appliedUpdates, '_googleSyncedAt');
+    showToast(applied ? `Google: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Google: nothing applied', applied ? 'success' : 'info');
+  } catch (err) {
+    showToast('Google sync failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Google'; }
   }
 }
 
 // Photon (Komoot) enrichment from the edit modal — forward search by name
-// with coord bias when available. Conservative: fill-only on address / lat /
-// lng / category. Stamps _photonSyncedAt for future dedup.
+// with coord bias when available. Returns ALL fetched fields; the user
+// picks which to apply via showEnrichmentConfirm (overwrites default off,
+// empty fills default on). Stamps _photonSyncedAt on the applied subset.
 async function syncPhotonFromEditModal() {
   const locId = state.editingId;
   if (!locId) return;
@@ -8444,26 +8572,23 @@ async function syncPhotonFromEditModal() {
     const coords = feat.geometry?.coordinates || [];
     const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
     const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
-    const updates = { _photonSyncedAt: new Date().toISOString() };
-    if (!loc.address && parts.length) updates.address = parts.join(', ');
-    if (loc.lat == null && Number.isFinite(coords[1])) updates.lat = coords[1];
-    if (loc.lng == null && Number.isFinite(coords[0])) updates.lng = coords[0];
-    if ((loc.category === 'location' || !loc.category) && props.osm_key && props.osm_value) {
+    const proposed = {};
+    if (parts.length) proposed.address = parts.join(', ');
+    if (Number.isFinite(coords[1])) proposed.lat = coords[1];
+    if (Number.isFinite(coords[0])) proposed.lng = coords[0];
+    if (props.osm_key && props.osm_value) {
       const cat = osmToCategory(props.osm_key, props.osm_value);
-      if (cat) updates.category = cat;
+      if (cat) proposed.category = cat;
     }
-    await api('PUT', '/locations/' + locId, updates);
-    Object.assign(loc, updates);
-    renderMarkers();
-    if (updates.address) document.getElementById('loc-address').value = loc.address;
-    if (updates.lat != null) document.getElementById('loc-lat').value = loc.lat;
-    if (updates.lng != null) document.getElementById('loc-lng').value = loc.lng;
-    if (updates.category) {
-      const catEl = document.getElementById('loc-category');
-      if (catEl) catEl.value = updates.category;
+    const diffs = buildEnrichmentDiffs(loc, proposed);
+    if (diffs.length === 0) {
+      showToast('Photon: nothing to add — all returned fields already match.', 'info');
+      return;
     }
-    const fieldsAdded = Object.keys(updates).filter(k => k !== '_photonSyncedAt').length;
-    showToast(fieldsAdded ? `Photon: filled ${fieldsAdded} field${fieldsAdded === 1 ? '' : 's'}` : 'Photon: nothing missing to fill', fieldsAdded ? 'success' : 'info');
+    const result = await showEnrichmentConfirm('Photon', diffs);
+    if (!result) { showToast('Photon: cancelled.', 'info'); return; }
+    const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_photonSyncedAt');
+    showToast(applied ? `Photon: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Photon: nothing applied', applied ? 'success' : 'info');
   } catch (err) {
     showToast('Photon sync failed: ' + err.message, 'error');
   } finally {
@@ -8499,26 +8624,23 @@ async function syncNominatimFromEditModal() {
     const json = await r.json();
     const it = Array.isArray(json) ? json[0] : json;
     if (!it) { showToast('Nominatim: no match.', 'warn'); return; }
-    const updates = { _nominatimSyncedAt: new Date().toISOString() };
-    if (!loc.address && it.display_name) updates.address = it.display_name;
-    if (loc.lat == null && Number.isFinite(parseFloat(it.lat))) updates.lat = parseFloat(it.lat);
-    if (loc.lng == null && Number.isFinite(parseFloat(it.lon))) updates.lng = parseFloat(it.lon);
-    if ((loc.category === 'location' || !loc.category) && it.class && it.type) {
+    const proposed = {};
+    if (it.display_name) proposed.address = it.display_name;
+    if (Number.isFinite(parseFloat(it.lat))) proposed.lat = parseFloat(it.lat);
+    if (Number.isFinite(parseFloat(it.lon))) proposed.lng = parseFloat(it.lon);
+    if (it.class && it.type) {
       const cat = osmToCategory(it.class, it.type);
-      if (cat) updates.category = cat;
+      if (cat) proposed.category = cat;
     }
-    await api('PUT', '/locations/' + locId, updates);
-    Object.assign(loc, updates);
-    renderMarkers();
-    if (updates.address) document.getElementById('loc-address').value = loc.address;
-    if (updates.lat != null) document.getElementById('loc-lat').value = loc.lat;
-    if (updates.lng != null) document.getElementById('loc-lng').value = loc.lng;
-    if (updates.category) {
-      const catEl = document.getElementById('loc-category');
-      if (catEl) catEl.value = updates.category;
+    const diffs = buildEnrichmentDiffs(loc, proposed);
+    if (diffs.length === 0) {
+      showToast('Nominatim: nothing to add — all returned fields already match.', 'info');
+      return;
     }
-    const fieldsAdded = Object.keys(updates).filter(k => k !== '_nominatimSyncedAt').length;
-    showToast(fieldsAdded ? `Nominatim: filled ${fieldsAdded} field${fieldsAdded === 1 ? '' : 's'}` : 'Nominatim: nothing missing to fill', fieldsAdded ? 'success' : 'info');
+    const result = await showEnrichmentConfirm('Nominatim', diffs);
+    if (!result) { showToast('Nominatim: cancelled.', 'info'); return; }
+    const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_nominatimSyncedAt');
+    showToast(applied ? `Nominatim: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Nominatim: nothing applied', applied ? 'success' : 'info');
   } catch (err) {
     showToast('Nominatim sync failed: ' + err.message, 'error');
   } finally {

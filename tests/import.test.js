@@ -3338,11 +3338,12 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
     expect(indexHtml).toMatch(/id="loc-google-sync-btn"[\s\S]{0,300}data-click="syncFromEditModal"/);
   });
 
-  test('syncPhotonFromEditModal hits photon.komoot.io, fills via PUT, stamps _photonSyncedAt', () => {
+  test('syncPhotonFromEditModal hits photon.komoot.io and applies via shared helper', () => {
     const fn = extractFunction('syncPhotonFromEditModal');
     expect(fn).toMatch(/photon\.komoot\.io/);
     expect(fn).toMatch(/_photonSyncedAt/);
-    expect(fn).toMatch(/api\('PUT',\s*'\/locations\/'/);
+    // PUT is now routed through applyEnrichmentUpdates rather than inline.
+    expect(fn).toMatch(/applyEnrichmentUpdates\(/);
     expect(fn).toMatch(/osmToCategory\(/);
   });
 
@@ -3354,13 +3355,18 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
     expect(fn).toMatch(/\/search\?format=json/);
   });
 
-  test('modal sync functions are conservative (fill-only on address/lat/lng)', () => {
+  test('modal sync functions route through showEnrichmentConfirm (user confirms overwrites)', () => {
+    // Old fill-only behavior was replaced with a user-facing confirm modal that
+    // surfaces every returned field as an opt-in/opt-out diff. Bulk sync still
+    // uses the old conservative fill-only path (per the bulkEnrichPhoton test below).
     const photon = extractFunction('syncPhotonFromEditModal');
     const nominatim = extractFunction('syncNominatimFromEditModal');
-    expect(photon).toMatch(/!loc\.address\s*&&/);
-    expect(photon).toMatch(/loc\.lat\s*==\s*null/);
-    expect(nominatim).toMatch(/!loc\.address\s*&&/);
-    expect(nominatim).toMatch(/loc\.lat\s*==\s*null/);
+    expect(photon).toMatch(/showEnrichmentConfirm\('Photon'/);
+    expect(photon).toMatch(/buildEnrichmentDiffs\(loc,\s*proposed\)/);
+    expect(photon).toMatch(/applyEnrichmentUpdates\(loc,[\s\S]{0,80}'_photonSyncedAt'\)/);
+    expect(nominatim).toMatch(/showEnrichmentConfirm\('Nominatim'/);
+    expect(nominatim).toMatch(/buildEnrichmentDiffs\(loc,\s*proposed\)/);
+    expect(nominatim).toMatch(/applyEnrichmentUpdates\(loc,[\s\S]{0,80}'_nominatimSyncedAt'\)/);
   });
 
   test('bulk toolbar has Photon button alongside existing Nominatim (OSM) + Google', () => {

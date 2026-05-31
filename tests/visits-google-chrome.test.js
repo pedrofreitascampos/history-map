@@ -324,10 +324,12 @@ describeDom('logTodayFromPopup (inline marker-popup visit logger)', () => {
 });
 
 describe('Static markup (regression)', () => {
-  test('popup action row exposes "📍 Today" log-visit button wired to logTodayFromPopup', () => {
-    expect(indexHtml).toMatch(/data-click="logTodayFromPopup"[\s\S]{0,200}📍 Today/);
-    // Tooltip differentiates been (no extra hint) from bucket (adds "also marks as Been").
-    expect(indexHtml).toMatch(/title="Log a visit today\$\{isBeen \? '' : ' \(also marks as Been\)'\}"/);
+  test('popup action row: "✅ Been" button wired to logTodayFromPopup (consolidated status+visit)', () => {
+    expect(indexHtml).toMatch(/data-click="logTodayFromPopup"[\s\S]{0,200}✅ Been/);
+    // Tooltip differentiates been (another visit) from bucket (mark+log).
+    expect(indexHtml).toMatch(/title="\$\{isBeen \? 'Log another visit today' : 'Mark as Been and log a visit today'\}"/);
+    // Old separate status-toggle button was removed (consolidated into the Been button).
+    expect(indexHtml).not.toMatch(/data-click="toggleStatusFromPopup"/);
   });
 
   test('bulk toolbar Google sync button is gated (id + initial display:none)', () => {
