@@ -4440,6 +4440,9 @@ function switchView(viewId, skipHash) {
   if (viewId === 'regions-view') renderRegionsMap();
   if (viewId === 'trips-view') {
     populateTripSelector();
+    // Refresh the empty-state panel so users with zero trips see CTAs
+    // (default static markup hardcodes the trips-exist-but-none-selected copy).
+    if (!document.getElementById('trip-selector').value) _renderTripDetailEmpty();
     setTimeout(() => { initTripMap(); tripMap.invalidateSize(); }, 150);
   }
   if (viewId === 'transits-view') renderTransitsView();
@@ -5408,7 +5411,7 @@ function deleteTrip(id) {
       populateFilterDropdowns();
       renderMarkers();
       if (wasViewing) {
-        document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+        _renderTripDetailEmpty();
         if (tripPathLayer) tripPathLayer.clearLayers();
       }
       showToast(`Trip "${trip.name}" deleted`);
@@ -6611,6 +6614,29 @@ function populateTripSelector() {
     }).join('');
 }
 
+// Two empty states for the trip-detail panel: zero trips (with CTAs to
+// create one three ways) and trips-exist-but-none-selected (the prior
+// "Select a Trip" copy). Used by selectTrip(null) and by the delete-trip
+// flow when the deleted trip was the one being viewed.
+function _renderTripDetailEmpty() {
+  const el = document.getElementById('trip-detail');
+  if (!el) return;
+  if (state.trips.length === 0) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🧳</div>
+      <h3>No Trips Yet</h3>
+      <p>Bundle places into trips — for vacations, business travel, or any multi-stop adventure.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;align-items:center;">
+        <button class="btn btn-primary" data-click="promptNewTrip" style="font-size:13px;padding:8px 18px;min-width:260px;">+ Create a trip manually</button>
+        <button class="btn btn-secondary" data-click="importTripFromTimeline" style="font-size:13px;padding:8px 18px;min-width:260px;" title="Parse a Google Timeline export into a NEW trip — all visits become stops in one bundle.">📂 Import a Google Timeline</button>
+        <button class="btn btn-secondary" data-click="openNarrateModal" style="font-size:13px;padding:8px 18px;min-width:260px;" title="Describe a trip in natural language — Claude parses it into geocoded stops.">✨ Narrate a trip (AI)</button>
+      </div>
+    </div>`;
+  } else {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+  }
+}
+
 let _selectTripVersion = 0;
 function selectTrip(tripId) {
   const myVersion = ++_selectTripVersion;
@@ -6619,7 +6645,7 @@ function selectTrip(tripId) {
   if (tripPathLayer) tripPathLayer.clearLayers();
 
   if (!tripId) {
-    document.getElementById('trip-detail').innerHTML = `<div class="empty-state"><div class="empty-icon">🧳</div><h3>Select a Trip</h3><p>Choose a trip from the dropdown to see its details and route.</p></div>`;
+    _renderTripDetailEmpty();
     return;
   }
 
