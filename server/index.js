@@ -685,6 +685,86 @@ app.post('/api/trips/narrate', auth, async (req, res) => {
   }
 });
 
+// ── Website Import ───────────────────────────────────────
+const WEBSITE_IMPORT_ADAPTERS = [
+  { pattern: /^(www\.)?timeout\./i, name: 'timeout', parse: require('./import-adapters/timeout').parseTimeoutArticle },
+];
+
+const SSRF_BLOCK = [
+  /^localhost$/i,
+  /^127\./,
+  /^0\.0\.0\.0$/,
+  /^::1$/,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+];
+
+const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
+app.post('/api/import/website', auth, async (req, res) => {
+  const _t0 = Date.now();
+  let host = '(unknown)';
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
+    let parsed;
+    try { parsed = new URL(url); } catch {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
+    host = parsed.hostname;
+    if (SSRF_BLOCK.some(re => re.test(host))) {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
+    const adapter = WEBSITE_IMPORT_ADAPTERS.find(a => a.pattern.test(host));
+    if (!adapter) {
+      return res.status(400).json({ error: 'host_not_supported' });
+    }
+    let fetchRes;
+    try {
+      fetchRes = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Oikumene/1.0; +https://history-map.onrender.com)',
+          'Accept': 'text/html',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      const ms = Date.now() - _t0;
+      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'fetch_failed', errorType: 'network', ms });
+      return res.status(502).json({ error: 'fetch_failed' });
+    }
+    if (!fetchRes.ok) {
+      const ms = Date.now() - _t0;
+      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'fetch_failed', errorType: `http_${fetchRes.status}`, ms });
+      return res.status(502).json({ error: 'fetch_failed' });
+    }
+    const buf = await fetchRes.arrayBuffer();
+    if (buf.byteLength > IMPORT_MAX_BYTES) {
+      const ms = Date.now() - _t0;
+      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'response_too_large', errorType: 'too_large', ms });
+      return res.status(413).json({ error: 'response_too_large' });
+    }
+    const html = Buffer.from(buf).toString('utf-8');
+    const { city, articleTitle, venues } = adapter.parse(html, url);
+    const ms = Date.now() - _t0;
+    if (venues.length === 0) {
+      log('warn', 'import_parse_zero', { userId: req.user.id, host, source: adapter.name });
+    }
+    log('info', 'import_website_call', { userId: req.user.id, host, status: 'success', venueCount: venues.length, source: adapter.name, ms });
+    res.json({ city, articleTitle, source: adapter.name, venues });
+  } catch (err) {
+    const ms = Date.now() - _t0;
+    log('warn', 'import_website_call', { userId: req.user.id, host, status: 'error', errorType: 'internal', ms });
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // ── Collections CRUD ─────────────────────────────────────
 app.get('/api/collections', auth, async (req, res) => {
   const cols = await db.collections.find({ userId: req.user.id });
