@@ -1752,3 +1752,89 @@ describe('FR24 import auto-creates airport stubs', () => {
     expect(html).toContain('new airport');
   });
 });
+
+// ─── media[] field on locations (Photos EXIF attach) ─────
+describe('media field on locations (PUT sanitization)', () => {
+  let mediaLocId;
+
+  beforeAll(async () => {
+    // Create a fresh location to test media updates on
+    const res = await request(app)
+      .post('/api/locations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Photo Test Place', lat: 38.7, lng: -9.1, category: 'location' });
+    expect(res.status).toBe(200);
+    mediaLocId = res.body._id;
+  });
+
+  test('PUT with valid media array stores entries and round-trips', async () => {
+    const media = [
+      { source: 'manual', filename: 'beach.jpg', lat: 38.71, lon: -9.12, takenAt: '2025-06-15T10:00:00.000Z' },
+      { source: 'manual', filename: 'sunset.jpg' },
+    ];
+    const res = await request(app)
+      .put(`/api/locations/${mediaLocId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ media });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.media)).toBe(true);
+    expect(res.body.media).toHaveLength(2);
+    expect(res.body.media[0].filename).toBe('beach.jpg');
+    expect(res.body.media[0].lat).toBeCloseTo(38.71);
+    expect(res.body.media[0].lon).toBeCloseTo(-9.12);
+    expect(res.body.media[0].takenAt).toBe('2025-06-15T10:00:00.000Z');
+    expect(res.body.media[0].addedAt).toBeDefined(); // server-stamped
+    expect(res.body.media[1].filename).toBe('sunset.jpg');
+    expect(res.body.media[1].lat).toBeUndefined();
+  });
+
+  test('PUT caps media array at 100 entries', async () => {
+    const media = Array.from({ length: 105 }, (_, i) => ({
+      source: 'manual',
+      filename: `photo${i}.jpg`,
+    }));
+    const res = await request(app)
+      .put(`/api/locations/${mediaLocId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ media });
+    expect(res.status).toBe(200);
+    expect(res.body.media).toHaveLength(100);
+  });
+
+  test('PUT drops GPS coords that are out of valid range', async () => {
+    const media = [
+      { source: 'manual', filename: 'bad-lat.jpg', lat: 999, lon: 10 },
+      { source: 'manual', filename: 'bad-lon.jpg', lat: 38.7, lon: 999 },
+      { source: 'manual', filename: 'good.jpg', lat: 38.7, lon: -9.1 },
+    ];
+    const res = await request(app)
+      .put(`/api/locations/${mediaLocId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ media });
+    expect(res.status).toBe(200);
+    const byFilename = Object.fromEntries(res.body.media.map(m => [m.filename, m]));
+    expect(byFilename['bad-lat.jpg'].lat).toBeUndefined();
+    expect(byFilename['bad-lon.jpg'].lon).toBeUndefined();
+    expect(byFilename['good.jpg'].lat).toBeCloseTo(38.7);
+    expect(byFilename['good.jpg'].lon).toBeCloseTo(-9.1);
+  });
+
+  test('PUT with non-array media drops the field entirely', async () => {
+    // First set a valid media array
+    await request(app)
+      .put(`/api/locations/${mediaLocId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ media: [{ source: 'manual', filename: 'keep.jpg' }] });
+
+    // Now try to overwrite with a non-array
+    const res = await request(app)
+      .put(`/api/locations/${mediaLocId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ media: 'not-an-array', name: 'Photo Test Place' });
+    expect(res.status).toBe(200);
+    // The PUT only changes fields that were submitted; since media was dropped
+    // (non-array), the stored media from the prior call persists
+    // — but crucially the string was not stored.
+    expect(typeof res.body.media === 'string').toBe(false);
+  });
+});

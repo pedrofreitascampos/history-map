@@ -15,6 +15,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js" integrity="sha384-Ukv1p/xTma6P4/2bY5KzWBw+ydSpXmhCMtyciIQVDJ1RmOxtCYNMF1uXT9T63H67" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.min.js" integrity="sha384-GqsRTy0JWDEKvfibA1TiYY0lGRodW4PS02lggVHvO/CNVs/zoNx+DNfjs1Ikisbz" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ═══════════════════════════════════════════════════════════ */
@@ -2057,6 +2058,16 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <label>Notes</label>
         <textarea class="form-input" id="loc-notes" placeholder="Your notes, memories, thoughts..."></textarea>
       </div>
+
+      <div class="form-group">
+        <label>📷 Photos</label>
+        <div id="loc-photo-drop" data-click="photoDropClick" data-drop="photoDrop" data-dragover="preventDefault" data-arg0="this" style="border:2px dashed var(--border);border-radius:6px;padding:16px;text-align:center;cursor:pointer;font-size:12px;color:var(--text-secondary);transition:background 0.15s;">
+          Drop photos here to attach (GPS + date extracted from EXIF, no images uploaded)
+          <input type="file" id="loc-photo-input" accept="image/jpeg,image/heic,image/heif,image/tiff,image/png" multiple style="display:none;" data-change="photoInputChange" data-arg0="this">
+        </div>
+        <div id="loc-photo-warn" style="color:var(--warn, #f59e0b);font-size:12px;margin-top:4px;display:none;"></div>
+        <div id="loc-photo-list" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger" id="delete-loc-btn" data-click="deleteLocation" style="display:none">Delete</button>
@@ -2490,6 +2501,14 @@ const ACTIONS = {
     const source = el.dataset.livesearchSource || el.id;
     clearTimeout(_liveSearchDebounce);
     _liveSearchDebounce = setTimeout(() => _runLiveSearch(source), 250);
+  },
+  // Generic preventDefault — used on dragover to allow drop events.
+  preventDefault: (el, e) => { e.preventDefault(); },
+  // Photo drop zone — receives the drop event and forwards files to the handler.
+  photoDrop: (el, e) => {
+    e.preventDefault();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) _handlePhotoFiles(files);
   },
 };
 
@@ -3409,13 +3428,16 @@ function createPopupContent(loc) {
     : '';
 
   const isBeen = loc.status === 'been';
+  const photoBadge = (loc.media && loc.media.length > 0)
+    ? `<span style="font-size:12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;padding:1px 7px;color:var(--text-secondary);">📷 ${loc.media.length}</span>`
+    : '';
   return `<div class="popup-inner" style="position:relative;">
     <div style="position:absolute;top:6px;right:6px;display:flex;gap:2px;align-items:center;">
       ${gmapsIcon}
       <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px;line-height:1;" title="Remove location" aria-label="Remove location">&times;</button>
     </div>
     <h3 style="padding-right:48px;">${cat.emoji} ${esc(loc.name)}</h3>
-    <div class="popup-cat">${cat.label}${priceStr}</div>
+    <div class="popup-cat">${cat.label}${priceStr}${photoBadge ? ' &nbsp;' + photoBadge : ''}</div>
     <div class="popup-ratings">
       <div class="popup-rating-item">Google: <span>${googleStars}</span></div>
       <div class="popup-rating-item">Mine: <span class="popup-stars" data-loc-id="${esc(loc.id)}">${myStars}</span></div>
@@ -4511,6 +4533,13 @@ function openEditModal(id) {
   updatePriceVisibility();
   setModalPrice(state.modalPrice);
 
+  // Photos drop zone
+  if (!Array.isArray(loc.media)) loc.media = [];
+  _renderAttachedPhotos(loc);
+  const _photoWarn = document.getElementById('loc-photo-warn');
+  if (_photoWarn) { _photoWarn.style.display = 'none'; _photoWarn.textContent = ''; }
+  _checkPhotoDistance(loc);
+
   // Close any popup
   map.closePopup();
   const _m = document.getElementById('edit-modal');
@@ -4926,6 +4955,12 @@ async function saveLocation() {
     needsApproval: false,
     suggestedCategory: null,
   };
+
+  // Include media if editing an existing location
+  if (state.editingId) {
+    const _editLoc = stateIndex.locationById.get(state.editingId);
+    if (_editLoc && Array.isArray(_editLoc.media)) data.media = [..._editLoc.media];
+  }
 
   try {
     if (state.editingId) {
@@ -10688,6 +10723,120 @@ async function confirmWebImport() {
   if (unmatched > 0) bits.push(`${unmatched} unmatched`);
   if (failed > 0) bits.push(`${failed} failed`);
   showToast(`Web import done — ${bits.join(', ')}`, failed > 0 ? 'warn' : 'success');
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHOTOS — EXIF metadata attach (Path 3, metadata-only)
+// ═══════════════════════════════════════════════════════════
+
+// Opens the hidden file input when the user clicks the drop zone.
+function photoDropClick() {
+  const input = document.getElementById('loc-photo-input');
+  if (input) input.click();
+}
+
+// Called by the dispatcher when the file input fires a change event.
+// el is the <input> element (passed via data-arg0="this" sentinel).
+function photoInputChange(el) {
+  if (el && el.files && el.files.length) _handlePhotoFiles(el.files);
+  // Reset so the same file can be re-selected after removal
+  if (el) el.value = '';
+}
+
+// Haversine distance in meters (reuses haversineKm * 1000).
+function _distanceMeters(lat1, lng1, lat2, lng2) {
+  return haversineKm(lat1, lng1, lat2, lng2) * 1000;
+}
+
+// After each batch attach, warn if any photo's GPS is > 5 km from the
+// location's stored coordinates.
+function _checkPhotoDistance(loc) {
+  const warn = document.getElementById('loc-photo-warn');
+  if (!warn) return;
+  if (!isFinite(loc.lat) || !isFinite(loc.lng)) { warn.style.display = 'none'; return; }
+  const far = (loc.media || []).filter(m =>
+    typeof m.lat === 'number' && isFinite(m.lat) &&
+    typeof m.lon === 'number' && isFinite(m.lon) &&
+    _distanceMeters(m.lat, m.lon, loc.lat, loc.lng) > 5000
+  );
+  if (far.length > 0) {
+    const ex = far[0];
+    const km = (_distanceMeters(ex.lat, ex.lon, loc.lat, loc.lng) / 1000).toFixed(1);
+    warn.textContent = `${far.length} photo${far.length > 1 ? 's' : ''}'s GPS is ${km} km from this location's coords — double-check the location.`;
+    warn.style.display = '';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+// Render the attached photo list inside the edit modal.
+function _renderAttachedPhotos(loc) {
+  const list = document.getElementById('loc-photo-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (loc.media || []).forEach((m, i) => {
+    const dateStr = m.takenAt ? m.takenAt.slice(0, 10) : 'no date';
+    const gpsStr = (typeof m.lat === 'number' && typeof m.lon === 'number') ? 'GPS ✓' : 'no GPS';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:4px;gap:8px;';
+    row.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(m.filename)}">${esc(m.filename)}</span>` +
+      `<span style="flex-shrink:0;white-space:nowrap;">${esc(dateStr)} · ${esc(gpsStr)}</span>` +
+      `<button type="button" data-click="_removeAttachedPhoto" data-arg0="${i}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;padding:2px 4px;line-height:1;flex-shrink:0;" title="Remove" aria-label="Remove photo">🗑️</button>`;
+    list.appendChild(row);
+  });
+}
+
+// Remove a photo entry by index and re-render (no immediate save — user must click Save).
+function _removeAttachedPhoto(idxStr) {
+  const idx = parseInt(idxStr, 10);
+  const id = state.editingId;
+  if (!id) return;
+  const loc = stateIndex.locationById.get(id);
+  if (!loc) return;
+  if (!Array.isArray(loc.media) || idx < 0 || idx >= loc.media.length) return;
+  loc.media.splice(idx, 1);
+  _renderAttachedPhotos(loc);
+  _checkPhotoDistance(loc);
+}
+
+// Parse EXIF from a FileList and append metadata entries to the current loc.
+async function _handlePhotoFiles(fileList) {
+  const id = state.editingId;
+  if (!id) return;
+  const loc = stateIndex.locationById.get(id);
+  if (!loc) return;
+  if (!Array.isArray(loc.media)) loc.media = [];
+
+  const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+  const newEntries = [];
+
+  for (const file of Array.from(fileList)) {
+    if (file.size > MAX_BYTES) continue; // skip oversized files silently
+    let entry = { source: 'manual', filename: file.name.slice(0, 255) };
+    try {
+      const exif = await exifr.parse(file, { gps: true, exif: ['DateTimeOriginal'] });
+      if (exif) {
+        const lat = exif.latitude;
+        const lon = exif.longitude;
+        if (typeof lat === 'number' && isFinite(lat) && lat >= -90 && lat <= 90 &&
+            typeof lon === 'number' && isFinite(lon) && lon >= -180 && lon <= 180) {
+          entry.lat = lat;
+          entry.lon = lon;
+        }
+        if (exif.DateTimeOriginal instanceof Date && isFinite(exif.DateTimeOriginal)) {
+          entry.takenAt = exif.DateTimeOriginal.toISOString();
+        }
+      }
+    } catch (_) {
+      // exifr failed — attach with just filename (metadata-only, no GPS/date)
+    }
+    newEntries.push(entry);
+  }
+
+  // Cap total at 100 (keep oldest + new, drop from the new batch if needed)
+  loc.media = (loc.media).concat(newEntries).slice(-100);
+  _renderAttachedPhotos(loc);
+  _checkPhotoDistance(loc);
 }
 </script>
 </body>

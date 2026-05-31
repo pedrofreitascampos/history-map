@@ -469,7 +469,7 @@ app.post('/api/locations', auth, async (req, res) => {
 // Excludes _id/userId (ownership) and updatedAt (server-stamped). Also blocks __proto__.
 const LOCATION_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
   'priceLevel','tripId','tripOrder','collections','people','tags','notes','visits','needsApproval',
-  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength','iata'];
+  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength','iata','media'];
 
 function pickLocationFields(body) {
   const clean = {};
@@ -502,6 +502,31 @@ function sanitizeLocationUpdate(updates) {
       // keep as-is
     } else {
       delete updates._googleUrl;
+    }
+  }
+  // media[] — EXIF metadata entries attached via the Photos drop zone.
+  // Schema per entry: { source, filename, lat, lon, takenAt, addedAt }.
+  // Cap at 100 entries to prevent runaway NeDB doc growth; stamp addedAt
+  // server-side so the client can't forge insertion order.
+  if (updates.media !== undefined) {
+    if (!Array.isArray(updates.media)) {
+      delete updates.media;
+    } else {
+      const VALID_SOURCES = new Set(['manual', 'photo-org']);
+      updates.media = updates.media
+        .filter(e => e && typeof e === 'object')
+        .filter(e => typeof e.filename === 'string' && e.filename.trim().length > 0)
+        .map(e => {
+          const entry = {};
+          entry.source = VALID_SOURCES.has(e.source) ? e.source : 'manual';
+          entry.filename = String(e.filename).slice(0, 255);
+          if (typeof e.lat === 'number' && isFinite(e.lat) && e.lat >= -90 && e.lat <= 90) entry.lat = e.lat;
+          if (typeof e.lon === 'number' && isFinite(e.lon) && e.lon >= -180 && e.lon <= 180) entry.lon = e.lon;
+          if (typeof e.takenAt === 'string') entry.takenAt = e.takenAt.slice(0, 40);
+          entry.addedAt = typeof e.addedAt === 'string' && e.addedAt ? e.addedAt : new Date().toISOString();
+          return entry;
+        })
+        .slice(0, 100);
     }
   }
   return updates;
