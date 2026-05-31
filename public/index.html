@@ -1463,11 +1463,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
       <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
-      <button id="discover-btn" data-click="openDiscoverModal"
-        style="width:100%;margin-top:8px;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
-        aria-label="Discover top-rated places nearby">
-        ✨ Discover top-rated
-      </button>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button id="locate-me-btn" data-click="locateMe"
+          style="flex:1;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
+          aria-label="Pan map to my current GPS location">
+          📍 My location
+        </button>
+        <button id="discover-btn" data-click="openDiscoverModal"
+          style="flex:1;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
+          aria-label="Discover top-rated places nearby">
+          ✨ Discover
+        </button>
+      </div>
     </div>
 
     <div class="filter-section">
@@ -4472,6 +4479,76 @@ function quickAddPlace() {
   openAddModal();
   if (name) document.getElementById('loc-name').value = name;
   if (input) input.value = '';
+}
+
+// ── GPS my-location ──────────────────────────────────────
+// Browser Geolocation API wrapper as a Promise. Handles the three failure
+// modes (denied / unavailable / timeout) by rejecting with a human message
+// so the caller can showToast cleanly.
+let _myLocationMarker = null;
+let _myLocationCircle = null;
+function _getBrowserGPS() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Geolocation not supported by this browser'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      err => {
+        const msg = err.code === err.PERMISSION_DENIED ? 'Location permission denied' :
+                    err.code === err.POSITION_UNAVAILABLE ? 'Location unavailable' :
+                    err.code === err.TIMEOUT ? 'Location lookup timed out' :
+                    'Could not get location';
+        reject(new Error(msg));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  });
+}
+
+async function locateMe() {
+  const btn = document.getElementById('locate-me-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  try {
+    const { lat, lng, accuracy } = await _getBrowserGPS();
+    // Remove any prior "you are here" marker + accuracy circle
+    if (_myLocationMarker) { try { map.removeLayer(_myLocationMarker); } catch {} _myLocationMarker = null; }
+    if (_myLocationCircle) { try { map.removeLayer(_myLocationCircle); } catch {} _myLocationCircle = null; }
+    // Drop a distinctive marker + an accuracy halo
+    _myLocationCircle = L.circle([lat, lng], {
+      radius: Math.min(accuracy || 50, 1000),
+      color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 1,
+    }).addTo(map);
+    _myLocationMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'my-location-marker',
+        html: '<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 1px #3b82f6,0 2px 6px rgba(0,0,0,0.4);"></div>',
+        iconSize: [20, 20], iconAnchor: [10, 10],
+      }),
+      zIndexOffset: 1000,
+    }).addTo(map);
+    _myLocationMarker.bindPopup(`<div style="font-size:12px;">📍 You are here<br><span style="color:var(--text-muted);">±${Math.round(accuracy || 0)}m</span><br><button class="add-small-btn" data-click="addPlaceAtMyLocation" data-arg0="${lat}" data-arg1="${lng}" style="margin-top:6px;font-size:12px;padding:3px 8px;">+ Add place here</button></div>`);
+    map.setView([lat, lng], Math.max(map.getZoom(), 14));
+    _myLocationMarker.openPopup();
+    showToast(`Located you (±${Math.round(accuracy || 0)}m)`);
+  } catch (err) {
+    showToast(err.message, 'warn');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📍 My location'; }
+  }
+}
+
+function addPlaceAtMyLocation(latStr, lngStr) {
+  const lat = parseFloat(latStr);
+  const lng = parseFloat(lngStr);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  openAddModal(lat, lng);
+  // Pre-fill name with whatever the user had typed in quick-add, if anything
+  const input = document.getElementById('quick-add-input');
+  const name = (input?.value || '').trim();
+  if (name) {
+    const nameEl = document.getElementById('loc-name');
+    if (nameEl) nameEl.value = name;
+    if (input) input.value = '';
+  }
 }
 
 // ── Location search (Nominatim) ──────────────────────────

@@ -3417,3 +3417,44 @@ describe('_readPositionalArgs "this" sentinel — restores element-passing acros
     expect(setStatusFilter).toMatch(/btn\.classList\.add\(/);
   });
 });
+
+describe('GPS my-location (2026-05-31)', () => {
+  test('sidebar has the 📍 My location button wired to locateMe', () => {
+    expect(indexHtml).toMatch(/id="locate-me-btn"[\s\S]{0,300}data-click="locateMe"[\s\S]{0,500}📍 My location/);
+  });
+
+  test('locateMe handles permission-denied / unavailable / timeout via toast', () => {
+    const gps = extractFunction('_getBrowserGPS');
+    expect(gps).toMatch(/navigator\.geolocation/);
+    expect(gps).toMatch(/PERMISSION_DENIED/);
+    expect(gps).toMatch(/POSITION_UNAVAILABLE/);
+    expect(gps).toMatch(/TIMEOUT/);
+    expect(gps).toMatch(/enableHighAccuracy:\s*true/);
+  });
+
+  test('locateMe pans the map, drops a distinctive marker + accuracy circle', () => {
+    const fn = extractFunction('locateMe');
+    expect(fn).toMatch(/_getBrowserGPS\(\)/);
+    expect(fn).toMatch(/L\.circle\(/);
+    expect(fn).toMatch(/L\.marker\(/);
+    expect(fn).toMatch(/map\.setView\(/);
+    // Offers a one-click "Add place here" follow-up in the popup
+    expect(fn).toMatch(/data-click="addPlaceAtMyLocation"/);
+  });
+
+  test('addPlaceAtMyLocation opens add modal pre-filled with coords', () => {
+    const fn = extractFunction('addPlaceAtMyLocation');
+    expect(fn).toMatch(/parseFloat\(latStr\)/);
+    expect(fn).toMatch(/parseFloat\(lngStr\)/);
+    expect(fn).toMatch(/openAddModal\(lat,\s*lng\)/);
+  });
+
+  test('no inline onclick in any of the new GPS sites', () => {
+    const a = extractFunction('locateMe');
+    const b = extractFunction('addPlaceAtMyLocation');
+    const c = extractFunction('_getBrowserGPS');
+    expect(a).not.toMatch(/\bonclick=/);
+    expect(b).not.toMatch(/\bonclick=/);
+    expect(c).not.toMatch(/\bonclick=/);
+  });
+});
