@@ -1629,6 +1629,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <select id="chrono-year" data-click="onChronoFilterChange"><option value="">All Years</option></select>
         <select id="chrono-cat" data-click="onChronoFilterChange"><option value="">All Categories</option></select>
         <select id="chrono-trip" data-click="onChronoFilterChange"><option value="">All Trips</option></select>
+        <button class="btn btn-secondary" data-click="openFileDialog" data-target="timeline-json-input" title="Import Google Timeline JSON to backfill your chronology" style="font-size:12px;padding:6px 12px;">📅 Import Timeline</button>
       </div>
     </div>
     <button class="btn btn-secondary" id="replay-toggle-btn" data-click="toggleReplay" style="margin: 0 20px 12px; align-self: flex-start;">▶ Replay</button>
@@ -6025,7 +6026,7 @@ function renderChronology() {
 
   const container = document.getElementById('timeline');
   if (entries.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><h3>No Visits Yet</h3><p>Add dates to your locations to build your timeline.</p></div>`;
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><h3>No Visits Yet</h3><p>Add dates to your locations to build your timeline, or import from Google Timeline.</p><div style="margin-top:16px;"><button class="btn btn-primary" data-click="openFileDialog" data-target="timeline-json-input" style="font-size:13px;padding:8px 18px;">📅 Import Timeline JSON</button></div><p style="font-size:12px;color:var(--text-muted);margin-top:10px;">Export from Google Maps app: profile → Your Timeline → ⋮ → Location &amp; privacy settings → Export Timeline data.</p></div>`;
     return;
   }
 

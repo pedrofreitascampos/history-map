@@ -237,6 +237,19 @@ describe('Static markup (regression)', () => {
     expect(indexHtml).toMatch(/function onTimelineImport\(el\)[\s\S]{0,300}handleFiles\(files\)/);
   });
 
+  test('Timeline import button surfaces on Chronology view (header + empty-state CTA)', () => {
+    // Chronology header: sibling to the year/cat/trip selects inside chrono-filters.
+    // Use class="chrono-filters" to anchor to markup (CSS uses .chrono-filters which appears earlier in the file).
+    expect(indexHtml).toMatch(/class="chrono-filters"[\s\S]{0,800}data-target="timeline-json-input"[\s\S]{0,300}Import Timeline/);
+    // Empty-state CTA: rendered via innerHTML in the timeline view when no visits exist.
+    expect(indexHtml).toMatch(/No Visits Yet[\s\S]{0,500}data-target="timeline-json-input"[\s\S]{0,200}Import Timeline JSON/);
+    // The hidden file input lives once in the Import view; both new buttons re-use it.
+    const inputMatches = indexHtml.match(/id="timeline-json-input"/g) || [];
+    expect(inputMatches.length).toBe(1);
+    const buttonMatches = indexHtml.match(/data-target="timeline-json-input"/g) || [];
+    expect(buttonMatches.length).toBe(3); // Import view + Chronology header + Chronology empty state.
+  });
+
   test('_refreshGoogleChromeVisibility hooked into onSearchProviderChange + startApp', () => {
     expect(indexHtml).toMatch(/function onSearchProviderChange\(\)[\s\S]{0,600}_refreshGoogleChromeVisibility\(\)/);
     expect(indexHtml).toMatch(/initImport\(\)[\s\S]{0,400}_refreshGoogleChromeVisibility\(\)/);
