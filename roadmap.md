@@ -53,13 +53,22 @@ table below for the per-finding reconciliation.
     forwarded), scrape the place list + metadata, normalize into the
     location-import shape. Targets: anywhere the user has a curated list
     that won't export cleanly. ToS-grey per source; gate per-target.
-  - **beliapp.co import** — Beli is an app for restaurant/bar lists. The
-    user's profile is at <https://beliapp.co/app/guavajellyreturns> with
-    visited places + a linked wishlist. Need to (a) check whether Beli has
-    a JSON export (profile API / settings → export), (b) if not, scrape
-    via Playwright (the page is SPA-rendered). Restaurants + bars import
-    into the locations DB with category set; the wishlist becomes
-    `status: 'bucket'`. Also pull through ratings if present.
+  - **beliapp.co import** — ⛔ **architecturally blocked (investigated 2026-05-31).**
+    `https://beliapp.co/app/<username>` does NOT host a web profile. With
+    any UA it redirects: WebFetch (default UA) → Branch.io `app.link` deep-link
+    page ("install mobile app"); desktop Chrome UA via curl → 200 ending at
+    `apps.apple.com/us/app/beli/id1478375386` (App Store). The public URL is
+    pure install-marketing — zero list data, zero JSON, no SPA bootstrap to
+    parse. The browser web app exists but is auth-gated; the user reported
+    "I have the export on Gmail" but Gmail search across 9 angles (sender,
+    subject, attachments, snoozed, `in:anywhere beli`, self-sent, etc.)
+    found nothing — Beli does not appear to email exports. Practical paths
+    if revisited: (1) export feature in the Beli mobile app that produces a
+    CSV/JSON file (status unknown — needs in-app check); (2) ~2-3 day
+    Playwright + stored-credentials scraper (ToS-grey, brittle, adds
+    Chromium dependency); (3) skip Beli. **Current verdict: skipped per
+    user 2026-05-31.** Pattern still useful for other apps with similar
+    architecture — adapter slot in `WEBSITE_IMPORT_ADAPTERS` is open.
 
 ### Wishlist (P1+)
 
@@ -282,3 +291,77 @@ See memory roadmap for full commit-level detail. Headline batches:
     glance. `syncFromEditModal` button label restoration trimmed `🔄 Sync Google`
     → `🔄 Google` for consistency. 9 new regression tests in import.test.js.
   - **Session totals: 628 jest + 8 e2e green (3 skip).**
+  - **Late-afternoon batch** (chronological, batch numbers retired — per-commit detail in memory roadmap):
+    - `ba10ed8` 📍 My-location button in sidebar (`navigator.geolocation`,
+      pan+zoom + accuracy halo + "+ Add place here" popup CTA).
+    - `c961b6b` **CRITICAL FIX** `data-arg-N="this"` regression. After the
+      CSP refactor, 13 dispatcher callsites were passing the literal string
+      `"this"` to receivers expecting an element ref (`.classList.add` of a
+      string silently crashed). Fix in `_readPositionalArgs`: map
+      `v === 'this' ? el : v`. Codified discovery: `data-argN="this"` is the
+      canonical element-ref sentinel.
+    - `6d3906f` Google Photos integration research brief
+      (`docs/research/google-photos-integration.md`). Path 1 (Photos Library
+      API) dead since 2025-03-31 scope removal. Path 3 (manual EXIF drop)
+      recommended; Path 2 (photo-org bridge) queued.
+    - `29ce8f1` **Trips v2 — narrated stops auto-geocoded** into bucket
+      locations linked by `tripId` + `tripOrder`. Photon → Nominatim →
+      placeholder fallback (no lat/lng) so nothing is lost. Trip POST
+      decoupled from stop loop. Helper `geocodeNarratedStop(name)` factored
+      out for unit testing. 15 new jest in `tests/trips-v2.test.js`.
+      **Wishlist entry closed.**
+    - `febb14d` + `8134bdb` **Time Out / website import v1.** Extensible
+      `WEBSITE_IMPORT_ADAPTERS` registry, first adapter `timeout.js`.
+      HTTPS + SSRF guard (localhost, RFC1918, IPv6 loopback). 10s timeout,
+      5MB cap. JSON-LD ItemList primary + numbered-headings fallback. 🌐
+      Web Import section in Import view + review modal. 53 new jest.
+      **Wishlist entry closed.**
+    - `c993276` Roadmap-only — mark Time Out shipped.
+    - `c417584` **Google Photos Path 3 v1 — EXIF drop zone** in edit modal
+      Memory section. `exifr@7.1.3` via jsdelivr CDN with SRI sha384.
+      Parses `{filename, lat, lon, takenAt}`; distance check warns when
+      photo GPS > 5 km from location. Server: `media` field allowlisted,
+      per-entry schema sanitized, cap 100. 20 new tests (16 client + 4
+      server). Path 3 of the research brief shipped.
+    - `ef278cf` **UX batch (3 asks).** (a) Bucket-strength ↔ Rating swap —
+      modal shows only hearts when `status=bucket`, only stars when `=been`;
+      both fields persist regardless. Sidebar gains a "Want-to-Go Strength"
+      min slider. (b) Popup delete moved from top-right (next to Leaflet's
+      native ×) to bottom action row as 🗑️ icon. (c) Discovery routes by
+      `getSearchProvider()` — Google: existing endpoint; Photon: new
+      client-side `_photonDiscover` (OSM tag filter, post-haversine, sort by
+      distance, cap 20); Nominatim: friendly steer toast. 7 new tests in
+      `tests/discover-provider.test.js`.
+  - **Session totals before compact: 733 jest + 8 e2e green (3 skip).**
+  - **Post-compact session — afternoon batch:**
+    - `3683adf` **Provider-respecting Google chrome + Visits expand/remove +
+      Timeline import button (4 asks).** (a) `_refreshGoogleChromeVisibility()`
+      single point of truth — toggles modal sync btn, bulk toolbar btn, and
+      import auto-sync label based on `shouldUseGoogle()` (provider===google
+      AND placesEnabled); hooked from `onSearchProviderChange` + boot;
+      Photon/Nominatim users no longer see Google chrome even with a key
+      set. (b) Visits modal collapsible — summary line stays visible, click
+      expands to per-visit editable `<input type="date">` + × remove; new
+      `+ Today` and `+ Add date` buttons. (c) All visits already persisted
+      (verified). (d) Discoverable `📅 Import Timeline JSON` button in
+      Import view's Google Data Guide → Timeline section reuses the existing
+      `parseJSON` → `parseGoogleTimelineSegments` path. 17 new jest in
+      `tests/visits-google-chrome.test.js` (visits flow + provider matrix +
+      static markup pins). Cybersec audit clean.
+    - `acd0332` Timeline import surfaced on Chronology view — small
+      `📅 Import Timeline` button in chrono-header (sibling to year/cat/trip
+      selects) + primary `📅 Import Timeline JSON` CTA in the "No Visits
+      Yet" empty state. Single hidden file input, three CTAs (Import view +
+      Chronology header + Chronology empty state) — call-to-action lands
+      where the user feels the absence. +1 test (cross-location pin).
+    - `73e6ca3` Trips-view Timeline button differentiated from the morning's
+      individual-place buttons. Pre-existing `importTripFromTimeline`
+      bundles visits into a NEW trip with stops — materially different
+      from the new buttons that drop individual places. Label
+      `📂 Import from Timeline` → `📂 Timeline → New Trip` + tooltip
+      explaining the trip-bundling behavior; the three individual-place
+      buttons each gained a tooltip cross-referencing the trip-view button.
+      Both flows stay — both legitimate. +1 test.
+    - **Beli adapter investigation** — see Open section above for verdict
+      (architecturally blocked, user-confirmed skip).
+  - **Session totals after post-compact afternoon: 752 jest + 8 e2e green (3 skip).**
