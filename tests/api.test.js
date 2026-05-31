@@ -1291,9 +1291,10 @@ describe('XSS escape invariants', () => {
     expect(html).toContain('${esc(loc.address || \'\')}');
   });
 
-  test('v.notes is escaped in visit-field value attribute', () => {
-    expect(html).toContain('value="${esc(v.notes || \'\')}"');
-  });
+  // Per-visit editing was removed in the 2026-05-31 modal declutter (the
+  // editable visits list collapsed to a 'Last visited X · N visits' summary
+  // + 'Add today's visit' button). The v.notes XSS surface no longer exists
+  // in the edit modal. Restore this assertion if a per-visit editor returns.
 
   test('restoreBackup encodes filename', () => {
     expect(html).toContain("'/api/admin/backups/' + encodeURIComponent(filename)");

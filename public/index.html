@@ -264,6 +264,22 @@ body {
 .popup-stars .popup-star.filled { color: var(--accent); opacity: 1; }
 .popup-stars .popup-star:hover { transform: scale(1.2); opacity: 1; }
 
+/* Edit modal section divider. Renders the "Organize" / "Memory" labels
+   between visually grouped form-groups so the modal reads as three chunks
+   instead of one long stack of fields. */
+.modal-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 20px 0 8px;
+}
+.modal-divider span {
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.modal-divider::before, .modal-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
 /* Tiny rating label tucked under the map marker. Uses the icon's existing
    position:relative so it can position absolutely just below the circle. */
 .marker-rating {
@@ -1882,7 +1898,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
 
-      <div class="form-row">
+      <!-- Lat/Lng inputs still drive the save handler but the UI is hidden
+           per the 2026-05-31 declutter. Set by search-pick, edit-open, and
+           map-click flows; never hand-edited from this surface. -->
+      <div class="form-row" style="display:none;">
         <div class="form-group">
           <label>Latitude</label>
           <input type="number" class="form-input" id="loc-lat" step="any" placeholder="0.0" inputmode="decimal" min="-90" max="90">
@@ -1897,6 +1916,39 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <label>Category</label>
         <div class="category-grid" id="modal-categories"></div>
       </div>
+
+      <div class="form-row">
+        <div class="form-group" style="flex:1 1 60%;">
+          <label>Status</label>
+          <div class="status-toggle">
+            <button class="status-option selected" data-status="been" data-click="selectStatus" data-arg0="been" data-arg1="this">✅ Been There</button>
+            <button class="status-option" data-status="bucket" data-click="selectStatus" data-arg0="bucket" data-arg1="this">⭐ Bucket List</button>
+          </div>
+        </div>
+        <div class="form-group" id="price-group" style="display:none;flex:1 1 40%;">
+          <label>Price</label>
+          <div class="filter-group" id="price-selector">
+            <button class="filter-group-btn active" data-price="0" data-click="setModalPrice" data-arg0="0" data-arg1="this">—</button>
+            <button class="filter-group-btn" data-price="1" data-click="setModalPrice" data-arg0="1" data-arg1="this">€</button>
+            <button class="filter-group-btn" data-price="2" data-click="setModalPrice" data-arg0="2" data-arg1="this">€€</button>
+            <button class="filter-group-btn" data-price="3" data-click="setModalPrice" data-arg0="3" data-arg1="this">€€€</button>
+            <button class="filter-group-btn" data-price="4" data-click="setModalPrice" data-arg0="4" data-arg1="this">€€€€</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group" id="bucket-strength-group" style="display:none;">
+        <label>Want-to-Go Strength <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— how much do you want to visit?</span></label>
+        <div class="star-rating" id="bucket-strength" role="radiogroup" aria-label="Want-to-go strength">
+          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        data-click="setBucketStrength" data-arg0="1" data-click="handleHeartKey" data-arg0="event" data-arg1="1"></span>
+          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              data-click="setBucketStrength" data-arg0="2" data-click="handleHeartKey" data-arg0="event" data-arg1="2"></span>
+          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           data-click="setBucketStrength" data-arg0="3" data-click="handleHeartKey" data-arg0="event" data-arg1="3"></span>
+          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  data-click="setBucketStrength" data-arg0="4" data-click="handleHeartKey" data-arg0="event" data-arg1="4"></span>
+          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         data-click="setBucketStrength" data-arg0="5" data-click="handleHeartKey" data-arg0="event" data-arg1="5"></span>
+        </div>
+      </div>
+
+      <div class="modal-divider"><span>Organize</span></div>
 
       <div class="form-group">
         <label>Tags</label>
@@ -1922,57 +1974,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
 
-      <div class="form-group" id="price-group" style="display:none;">
-        <label>Price Level</label>
-        <div class="filter-group" id="price-selector">
-          <button class="filter-group-btn active" data-price="0" data-click="setModalPrice" data-arg0="0" data-arg1="this">None</button>
-          <button class="filter-group-btn" data-price="1" data-click="setModalPrice" data-arg0="1" data-arg1="this">€</button>
-          <button class="filter-group-btn" data-price="2" data-click="setModalPrice" data-arg0="2" data-arg1="this">€€</button>
-          <button class="filter-group-btn" data-price="3" data-click="setModalPrice" data-arg0="3" data-arg1="this">€€€</button>
-          <button class="filter-group-btn" data-price="4" data-click="setModalPrice" data-arg0="4" data-arg1="this">€€€€</button>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Status</label>
-        <div class="status-toggle">
-          <button class="status-option selected" data-status="been" data-click="selectStatus" data-arg0="been" data-arg1="this">✅ Been There</button>
-          <button class="status-option" data-status="bucket" data-click="selectStatus" data-arg0="bucket" data-arg1="this">⭐ Bucket List</button>
-        </div>
-      </div>
-
-      <div class="form-group" id="bucket-strength-group" style="display:none;">
-        <label>Want-to-Go Strength <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— how much do you want to visit?</span></label>
-        <div class="star-rating" id="bucket-strength" role="radiogroup" aria-label="Want-to-go strength">
-          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        data-click="setBucketStrength" data-arg0="1" data-click="handleHeartKey" data-arg0="event" data-arg1="1"></span>
-          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              data-click="setBucketStrength" data-arg0="2" data-click="handleHeartKey" data-arg0="event" data-arg1="2"></span>
-          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           data-click="setBucketStrength" data-arg0="3" data-click="handleHeartKey" data-arg0="event" data-arg1="3"></span>
-          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  data-click="setBucketStrength" data-arg0="4" data-click="handleHeartKey" data-arg0="event" data-arg1="4"></span>
-          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         data-click="setBucketStrength" data-arg0="5" data-click="handleHeartKey" data-arg0="event" data-arg1="5"></span>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label>Google Maps Rating</label>
-          <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="4.5" readonly style="opacity:0.6">
-          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
-            <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;">📍 Google Maps</a>
-            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync Google</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>My Rating</label>
-          <div class="star-rating" id="my-rating" role="radiogroup" aria-label="My rating">
-            <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" data-click="setRating" data-arg0="1">★</span>
-            <span class="star" data-val="2" role="radio" tabindex="-1" aria-label="2 stars" data-click="setRating" data-arg0="2">★</span>
-            <span class="star" data-val="3" role="radio" tabindex="-1" aria-label="3 stars" data-click="setRating" data-arg0="3">★</span>
-            <span class="star" data-val="4" role="radio" tabindex="-1" aria-label="4 stars" data-click="setRating" data-arg0="4">★</span>
-            <span class="star" data-val="5" role="radio" tabindex="-1" aria-label="5 stars" data-click="setRating" data-arg0="5">★</span>
-          </div>
-        </div>
-      </div>
-
       <div class="form-group">
         <label>Trip</label>
         <div style="display:flex;gap:8px;">
@@ -1983,6 +1984,35 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
 
+      <div class="modal-divider"><span>Memory</span></div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>My Rating</label>
+          <div class="star-rating" id="my-rating" role="radiogroup" aria-label="My rating">
+            <span class="star" data-val="1" role="radio" tabindex="0" aria-label="1 star" data-click="setRating" data-arg0="1">★</span>
+            <span class="star" data-val="2" role="radio" tabindex="-1" aria-label="2 stars" data-click="setRating" data-arg0="2">★</span>
+            <span class="star" data-val="3" role="radio" tabindex="-1" aria-label="3 stars" data-click="setRating" data-arg0="3">★</span>
+            <span class="star" data-val="4" role="radio" tabindex="-1" aria-label="4 stars" data-click="setRating" data-arg0="4">★</span>
+            <span class="star" data-val="5" role="radio" tabindex="-1" aria-label="5 stars" data-click="setRating" data-arg0="5">★</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Google Maps Rating</label>
+          <input type="number" class="form-input" id="loc-google-rating" min="0" max="5" step="0.1" placeholder="—" readonly style="opacity:0.6">
+          <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+            <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;" title="Open in Google Maps" aria-label="Open in Google Maps">🗺️</a>
+            <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:10px;padding:2px 8px;display:none;">🔄 Sync</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Visits</label>
+        <div id="loc-visits-summary" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">No visits logged yet.</div>
+        <button class="add-small-btn" data-click="addTodayVisit">+ Add today's visit</button>
+      </div>
+
       <div class="form-group">
         <label>People</label>
         <div class="people-tags" id="loc-people-tags"></div>
@@ -1991,12 +2021,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             data-keydown="enterKey" data-arg0="addPerson" data-prevent="1">
           <button class="add-small-btn" data-click="addPerson">Add</button>
         </div>
-      </div>
-
-      <div class="form-group">
-        <label>Visits</label>
-        <div class="visits-list" id="loc-visits"></div>
-        <button class="add-small-btn" data-click="addVisitField">+ Add Visit</button>
       </div>
 
       <div class="form-group">
@@ -4306,22 +4330,30 @@ function removePerson(i) {
   renderPeopleTags();
 }
 
+// Visits section was decluttered 2026-05-31. Editable list collapsed to a
+// compact "Last visited X · N visits total" summary + a single 'Add today's
+// visit' button. Existing visit data on a location is preserved (still part
+// of the PUT payload via state.modalVisits); just the editing UI is gone.
 function renderVisitFields() {
-  const container = document.getElementById('loc-visits');
-  container.innerHTML = state.modalVisits.map((v, i) =>
-    `<div class="visit-item">
-      <input type="date" class="form-input" value="${v.date || ''}" data-change="setModalVisitField" data-idx="${i}" data-field="date" style="flex:1;">
-      <input type="text" class="form-input" value="${esc(v.notes || '')}" placeholder="Notes" data-change="setModalVisitField" data-idx="${i}" data-field="notes" style="flex:2;">
-      <span class="remove-visit" data-click="removeVisit" data-arg0="${i}">&times;</span>
-    </div>`
-  ).join('');
+  const summary = document.getElementById('loc-visits-summary');
+  if (!summary) return;
+  const visits = (state.modalVisits || []).filter(v => v.date);
+  if (visits.length === 0) {
+    summary.textContent = 'No visits logged yet.';
+    return;
+  }
+  const sorted = [...visits].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const last = sorted[0].date;
+  summary.textContent = `Last visited ${last} · ${visits.length} visit${visits.length === 1 ? '' : 's'} total`;
 }
-function addVisitField() {
-  state.modalVisits.push({ date: '', notes: '' });
-  renderVisitFields();
-}
-function removeVisit(i) {
-  state.modalVisits.splice(i, 1);
+function addTodayVisit() {
+  const today = new Date().toISOString().slice(0, 10);
+  state.modalVisits = state.modalVisits || [];
+  if (state.modalVisits.find(v => v.date === today)) {
+    if (typeof toast === 'function') toast('Already logged a visit today.', 'info');
+    return;
+  }
+  state.modalVisits.push({ date: today, notes: '' });
   renderVisitFields();
 }
 

@@ -2739,6 +2739,43 @@ describe('Popup interactive rating + marker rating label (2026-05-31)', () => {
   });
 });
 
+describe('Edit modal declutter — Light + cut Lat/Lng + cut Visits list (2026-05-31)', () => {
+  test('Organize and Memory section dividers are present, in that order', () => {
+    const orgIdx = indexHtml.indexOf('<span>Organize</span>');
+    const memIdx = indexHtml.indexOf('<span>Memory</span>');
+    expect(orgIdx).toBeGreaterThan(-1);
+    expect(memIdx).toBeGreaterThan(orgIdx);
+    // .modal-divider CSS rule exists.
+    expect(indexHtml).toMatch(/\.modal-divider\s*\{[\s\S]{0,300}display:\s*flex/);
+  });
+
+  test('Lat/Lng row is in the DOM but hidden (save handler still reads them)', () => {
+    expect(indexHtml).toMatch(/id="loc-lat"/);
+    expect(indexHtml).toMatch(/id="loc-lng"/);
+    // The form-row wrapping them carries display:none style.
+    expect(indexHtml).toMatch(/<div class="form-row" style="display:none;">[\s\S]{0,500}id="loc-lat"/);
+  });
+
+  test('Visits list UI is gone; compact summary + Add today\'s visit replaces it', () => {
+    // Old per-visit editing elements are gone.
+    expect(indexHtml).not.toMatch(/id="loc-visits"\b/);
+    expect(indexHtml).not.toMatch(/class="visits-list"/);
+    expect(indexHtml).not.toMatch(/data-click="addVisitField"/);
+    expect(indexHtml).not.toMatch(/\+ Add Visit\b/);
+    // New compact summary container + button are present.
+    expect(indexHtml).toMatch(/id="loc-visits-summary"/);
+    expect(indexHtml).toMatch(/data-click="addTodayVisit"[\s\S]{0,80}\+ Add today's visit/);
+    // renderVisitFields now writes the summary; addTodayVisit pushes today.
+    expect(indexHtml).toMatch(/function renderVisitFields\(\)[\s\S]{0,500}getElementById\(['"]loc-visits-summary['"]\)/);
+    expect(indexHtml).toMatch(/function addTodayVisit\(\)[\s\S]{0,400}state\.modalVisits/);
+  });
+
+  test('Status and Price share a single form-row (Status taking 60%)', () => {
+    expect(indexHtml).toMatch(/Status[\s\S]{0,500}status-toggle[\s\S]{0,1000}id="price-group"/);
+    expect(indexHtml).toMatch(/style="flex:1 1 60%;"[\s\S]{0,400}Status/);
+  });
+});
+
 // Regression (P0, 2026-05-29): showConfirm must return a Promise<boolean>. It was
 // callback-only, so `await showConfirm(...)` in deleteFromPopup/deleteTrip resolved
 // to undefined → those deletes silently no-opped and clicking "Delete" threw
