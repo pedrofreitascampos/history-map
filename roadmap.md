@@ -78,8 +78,6 @@ table below for the per-finding reconciliation.
   Portability API OAuth flow (blocked on Google's Restricted-scope verification
   for personal apps — monitor for relaxation). Do not build the sharable-list
   scraper (ToS risk + low value).
-- **Top-rated Google Places by category** — discovery: places near a region
-  with >1000 ratings, filtered by category, one-click bucket-list add.
 - **Time Out / website import** — generic web-scrape importer with per-site
   adapters; Time Out as first adapter.
 - **Trips — natural-language entry** — "Narrate a trip" mode parsing "Aug 3–10
@@ -180,4 +178,20 @@ See memory roadmap for full commit-level detail. Headline batches:
     Internal helper return shape preserved as a contract. `places.test.js`
     rewritten: 15 → 19 tests (+enum round-trip, +headers-present, +defensive
     unknown-enum, +key-not-in-URL).
-  - **Session totals: 573 jest + 8 e2e green.**
+  - **Batch 5** (this commit): Top-rated Discovery feature end-to-end.
+    `POST /api/places/discover` — server proxy to `places:searchText` with
+    `includedType` + `locationBias.circle` + server-side `userRatingCount`
+    filter (default ≥1000), sort by userRatingCount desc, cap at 20. A
+    `CATEGORY_TO_PLACE_TYPE` map covers the 10 queryable category keys.
+    Frontend: ✨ "Discover top-rated" button in the sidebar search section
+    → modal (category select + radius km + min-ratings) → result cards with
+    rating, count, price level, address → "+ Bucket" button adds the place
+    to the bucket list via `POST /api/locations`. All events through the
+    `data-click` dispatcher (no `onclick=`). All user/API strings escaped
+    via `esc()`. Font sizes ≥ 12px (a11y floor). 7 new tests in
+    `places.test.js` (happy/filter/sort/cap/bad-coords/bad-category/
+    api-error/radius-clamp); 1 skipped (501 no-key path: env key captured
+    at module load, can't clear mid-run). Builds on Batch 4's Places API
+    (New) infrastructure — same auth header, same FieldMask, same priceLevel
+    enum mapping.
+  - **Session totals: 579 jest + 8 e2e green (1 skip).**

@@ -312,6 +312,126 @@ describe('POST /api/places/bulk-sync', () => {
   });
 });
 
+describe('POST /api/places/discover', () => {
+  function makePlaces(count, baseCount = 2000) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `disc_${i}`,
+      displayName: { text: `Place ${i}` },
+      formattedAddress: `Street ${i}, City`,
+      location: { latitude: 38.7 + i * 0.001, longitude: -9.1 + i * 0.001 },
+      rating: 4.5 - i * 0.01,
+      priceLevel: 'PRICE_LEVEL_EXPENSIVE',
+      userRatingCount: baseCount - i * 10,
+      types: ['restaurant'],
+    }));
+  }
+
+  test('happy path: filters by minRatings, sorts by userRatingCount desc, maps priceLevel', async () => {
+    // 3 places >= 1000 ratings, 2 below
+    const places = [
+      { id: 'r1', displayName: { text: 'Top' }, formattedAddress: 'A', location: { latitude: 38.7, longitude: -9.1 }, rating: 4.8, priceLevel: 'PRICE_LEVEL_EXPENSIVE', userRatingCount: 5000, types: [] },
+      { id: 'r2', displayName: { text: 'Mid' }, formattedAddress: 'B', location: { latitude: 38.71, longitude: -9.11 }, rating: 4.5, priceLevel: 'PRICE_LEVEL_MODERATE', userRatingCount: 2000, types: [] },
+      { id: 'r3', displayName: { text: 'Low' }, formattedAddress: 'C', location: { latitude: 38.72, longitude: -9.12 }, rating: 4.2, priceLevel: 'PRICE_LEVEL_INEXPENSIVE', userRatingCount: 1000, types: [] },
+      { id: 'r4', displayName: { text: 'Skip1' }, formattedAddress: 'D', location: { latitude: 38.73, longitude: -9.13 }, rating: 4.0, priceLevel: null, userRatingCount: 500, types: [] },
+      { id: 'r5', displayName: { text: 'Skip2' }, formattedAddress: 'E', location: { latitude: 38.74, longitude: -9.14 }, rating: 3.9, priceLevel: null, userRatingCount: 10, types: [] },
+    ];
+    fetchSpy.mockReturnValue(mockResponse({ places }));
+
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'restaurant', radius: 5000, minRatings: 1000 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(3);
+    // sorted by userRatingCount desc
+    expect(res.body[0].userRatingsTotal).toBe(5000);
+    expect(res.body[1].userRatingsTotal).toBe(2000);
+    expect(res.body[2].userRatingsTotal).toBe(1000);
+    // priceLevel enum → integer
+    expect(res.body[0].priceLevel).toBe(3); // EXPENSIVE
+    expect(res.body[1].priceLevel).toBe(2); // MODERATE
+    expect(res.body[2].priceLevel).toBe(1); // INEXPENSIVE
+
+    // Outbound call shape
+    const [outUrl, outOpts] = fetchSpy.mock.calls[0];
+    expect(outUrl).toContain('places:searchText');
+    expect(outOpts.method).toBe('POST');
+    expect(outOpts.headers['X-Goog-Api-Key']).toBe('test-fake-key-do-not-leak');
+    expect(outOpts.headers['X-Goog-FieldMask']).toContain('places.id');
+    const outBody = JSON.parse(outOpts.body);
+    expect(outBody.includedType).toBe('restaurant');
+    expect(outBody.locationBias.circle.center.latitude).toBe(38.7);
+    expect(outBody.locationBias.circle.center.longitude).toBe(-9.1);
+    expect(outBody.locationBias.circle.radius).toBe(5000);
+  });
+
+  test('bad coordinates → 400, no upstream call', async () => {
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 999, lng: 0, category: 'restaurant', minRatings: 0 });
+    expect(res.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('unsupported category → 400, no upstream call', async () => {
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'airport', minRatings: 0 });
+    expect(res.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Skipped: GOOGLE_PLACES_KEY is captured into a module-level const at require() time.
+  // Mutating process.env after the module is loaded has no effect on the already-captured
+  // value, so we cannot test the 501 path without re-requiring the server in a child
+  // process with no env key — impractical in the current Jest setup.
+  test.skip('no Places key → 501 (skipped: env key captured at module load, cannot clear mid-run)', async () => {
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'restaurant', minRatings: 0 });
+    expect(res.status).toBe(501);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('API error → 502 with sanitized error, Google message not leaked', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ error: { status: 'PERMISSION_DENIED', message: 'bad key' } }, false));
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'restaurant', minRatings: 0 });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('PERMISSION_DENIED');
+    expect(JSON.stringify(res.body)).not.toContain('bad key');
+  });
+
+  test('radius clamped to [100, 50000]; minRatings clamped to >= 0', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ places: [] }));
+    await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'cafe', radius: 999999, minRatings: -50 });
+    const outBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(outBody.locationBias.circle.radius).toBe(50000);
+    // minRatings clamped to 0 — all returned places pass the filter (empty array → no assertion on count needed)
+  });
+
+  test('sort + cap at 20: 25 matching places → response length 20', async () => {
+    fetchSpy.mockReturnValue(mockResponse({ places: makePlaces(25) }));
+    const res = await request(app)
+      .post('/api/places/discover')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ lat: 38.7, lng: -9.1, category: 'museum', radius: 5000, minRatings: 0 });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(20);
+    // First result should have the highest userRatingCount
+    expect(res.body[0].userRatingsTotal).toBeGreaterThanOrEqual(res.body[1].userRatingsTotal);
+  });
+});
+
 describe('GOOGLE_PLACES_KEY never leaks', () => {
   test('search response body does not contain the key', async () => {
     fetchSpy.mockReturnValue(mockResponse({

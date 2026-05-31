@@ -1461,6 +1461,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
       <div id="map-search-results" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
+      <button id="discover-btn" data-click="openDiscoverModal"
+        style="width:100%;margin-top:8px;padding:8px 10px;font-size:12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;"
+        aria-label="Discover top-rated places nearby">
+        ✨ Discover top-rated
+      </button>
     </div>
 
     <div class="filter-section">
@@ -2228,6 +2233,47 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <button class="btn btn-secondary" data-click="closeAttachPicker">Cancel</button>
       <button class="btn btn-primary" id="attach-submit-btn" data-click="submitAttachPicker" disabled>Attach 0 transits</button>
+    </div>
+  </div>
+</div>
+
+<!-- Discover Modal -->
+<div id="discover-modal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="discover-modal-title">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 id="discover-modal-title">✨ Discover top-rated places</h3>
+      <button class="modal-close" data-click="closeDiscoverModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="discover-category">Category</label>
+        <select id="discover-category" class="form-input">
+          <option value="restaurant">🍽️ Restaurant</option>
+          <option value="cafe">☕ Café</option>
+          <option value="bar">🍸 Bar</option>
+          <option value="club">🎶 Club</option>
+          <option value="hotel">🛏️ Sleep</option>
+          <option value="museum">🏛️ Museum</option>
+          <option value="monument">🏛️ Monument</option>
+          <option value="park">🌿 Nature</option>
+          <option value="stadium">🏟️ Stadium</option>
+          <option value="shopping">🛍️ Shopping</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label for="discover-radius">Radius (km)</label>
+          <input id="discover-radius" class="form-input" type="number" min="1" max="50" value="5">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label for="discover-min-ratings">Min ratings</label>
+          <input id="discover-min-ratings" class="form-input" type="number" min="0" max="100000" value="1000" step="100">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+        <button class="btn-primary" data-click="runDiscover" style="flex:1;">Discover</button>
+      </div>
+      <div id="discover-results" style="max-height:380px;overflow-y:auto;"></div>
     </div>
   </div>
 </div>
@@ -9666,6 +9712,76 @@ async function submitFr24Import() {
     btn.disabled = false;
     btn.textContent = `Import ${_fr24ResolvedTransits.length} flights`;
     showToast('Import failed: ' + err.message, 'error');
+  }
+}
+
+/* ── Discover top-rated places ─────────────────────────────────────────── */
+function openDiscoverModal() {
+  document.getElementById('discover-results').innerHTML = '';
+  document.getElementById('discover-modal').style.display = 'flex';
+}
+function closeDiscoverModal() {
+  document.getElementById('discover-modal').style.display = 'none';
+}
+async function runDiscover() {
+  const category = document.getElementById('discover-category').value;
+  const radiusKm = parseFloat(document.getElementById('discover-radius').value) || 5;
+  const minRatings = parseInt(document.getElementById('discover-min-ratings').value, 10) || 1000;
+  const center = map.getCenter();
+  const resultsEl = document.getElementById('discover-results');
+  resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">Searching…</div>';
+  try {
+    const places = await api('POST', '/places/discover', {
+      lat: center.lat, lng: center.lng, category,
+      radius: Math.round(radiusKm * 1000), minRatings,
+    });
+    if (!places.length) {
+      resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">No places found. Try a wider radius or lower min ratings.</div>';
+      return;
+    }
+    resultsEl.innerHTML = places.map((p, i) => `
+      <div class="discover-card" style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:13px;">${esc(p.name)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">
+              ⭐ ${p.googleRating ?? '—'} (${p.userRatingsTotal.toLocaleString()})
+              ${p.priceLevel ? ' \xB7 ' + '€'.repeat(p.priceLevel) : ''}
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${esc(p.address)}</div>
+          </div>
+          <button class="add-small-btn" data-click="addDiscoveryToBucket" data-arg0="${i}"
+            style="padding:4px 10px;font-size:12px;flex-shrink:0;">+ Bucket</button>
+        </div>
+      </div>
+    `).join('');
+    window._discoverResults = places; // stash for addDiscoveryToBucket
+  } catch (err) {
+    resultsEl.innerHTML = `<div style="color:var(--danger);padding:12px;">Error: ${esc(err.message)}</div>`;
+  }
+}
+async function addDiscoveryToBucket(idxStr) {
+  const idx = parseInt(idxStr, 10);
+  const p = (window._discoverResults || [])[idx];
+  if (!p) return;
+  try {
+    const category = document.getElementById('discover-category').value;
+    const newLoc = await api('POST', '/locations', {
+      name: p.name,
+      address: p.address,
+      lat: p.lat,
+      lng: p.lng,
+      category,
+      status: 'bucket',
+      googleRating: p.googleRating,
+      priceLevel: p.priceLevel,
+      _googlePlaceId: p.placeId,
+    });
+    state.locations.push(mapId(newLoc));
+    renderMarkers();
+    showToast(`Added "${p.name}" to bucket`, 'success');
+  } catch (err) {
+    showToast('Failed to add: ' + err.message, 'error');
   }
 }
 </script>

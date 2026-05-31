@@ -1122,6 +1122,83 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
   }
 });
 
+// Internal category → Google Places (New) included type.
+// Only categories with a clean Google type are queryable.
+const CATEGORY_TO_PLACE_TYPE = {
+  restaurant: 'restaurant',
+  hotel: 'hotel',
+  bar: 'bar',
+  club: 'night_club',
+  monument: 'tourist_attraction',
+  museum: 'museum',
+  park: 'park',
+  stadium: 'stadium',
+  shopping: 'shopping_mall',
+  cafe: 'cafe',
+};
+
+app.post('/api/places/discover', auth, async (req, res) => {
+  const placesKey = await getPlacesKey(req.user.id);
+  if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });
+  try {
+    const { lat, lng, category, radius, minRatings } = req.body;
+    const fLat = parseFloat(lat);
+    const fLng = parseFloat(lng);
+    if (!Number.isFinite(fLat) || !Number.isFinite(fLng) || Math.abs(fLat) > 90 || Math.abs(fLng) > 180) {
+      return res.status(400).json({ error: 'Invalid coordinates' });
+    }
+    const placeType = CATEGORY_TO_PLACE_TYPE[category];
+    if (!placeType) return res.status(400).json({ error: 'Unsupported category for discovery' });
+    const fRadius = Math.min(Math.max(parseInt(radius, 10) || 5000, 100), 50000);
+    const fMinRatings = Math.max(parseInt(minRatings, 10) || 1000, 0);
+
+    const body = {
+      textQuery: `top rated ${category}`,
+      includedType: placeType,
+      locationBias: {
+        circle: { center: { latitude: fLat, longitude: fLng }, radius: fRadius },
+      },
+    };
+    const _t0 = Date.now();
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'X-Goog-Api-Key': placesKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.priceLevel,places.userRatingCount,places.types',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    const ms = Date.now() - _t0;
+    const allPlaces = data.places || [];
+    log('info', 'places_api_call', { endpoint: 'discover', category, lat: fLat, lng: fLng, radius: fRadius, minRatings: fMinRatings, httpStatus: response.status, results: allPlaces.length, ms, userId: req.user.id });
+    if (!response.ok) {
+      const apiStatus = data.error?.status || `HTTP_${response.status}`;
+      log('warn', 'places_api_error', { endpoint: 'discover', status: apiStatus, userId: req.user.id });
+      return res.status(502).json({ error: 'Places API: ' + apiStatus });
+    }
+    const filtered = allPlaces
+      .filter(p => (p.userRatingCount || 0) >= fMinRatings)
+      .sort((a, b) => (b.userRatingCount || 0) - (a.userRatingCount || 0) || (b.rating || 0) - (a.rating || 0))
+      .slice(0, 20)
+      .map(p => ({
+        name: p.displayName?.text || '',
+        address: p.formattedAddress || '',
+        lat: p.location?.latitude,
+        lng: p.location?.longitude,
+        googleRating: p.rating || null,
+        priceLevel: mapPriceLevel(p.priceLevel),
+        placeId: p.id || '',
+        types: p.types || [],
+        userRatingsTotal: p.userRatingCount || 0,
+      }));
+    res.json(filtered);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Auto-backup (daily, per user) ────────────────────────
 const BACKUP_DIR = path.join(process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..', 'data')), 'backups');
 const MAX_BACKUPS_PER_USER = 7; // Keep last 7 daily backups
