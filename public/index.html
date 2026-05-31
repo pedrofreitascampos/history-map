@@ -1667,7 +1667,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
         <select class="filter-select" id="trip-selector" data-click="selectTrip" data-arg0="this.value" style="flex:1;max-width:300px;"></select>
-        <button class="btn btn-secondary" data-click="promptNewTrip" data-arg0=").then(()=>{populateTripSelector();}" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
+        <button class="btn btn-secondary" data-click="promptNewTrip" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
         <button class="btn btn-secondary" data-click="importTripFromTimeline" title="Parse a Google Timeline export into a NEW trip — all visits become stops in one bundle. For backfilling individual places without a trip, use the button in Import or Chronology." style="font-size:12px;padding:6px 12px;">📂 Timeline → New Trip</button>
         <input type="file" id="trip-timeline-input" accept=".json" style="display:none">
       </div>
@@ -5230,6 +5230,7 @@ async function promptNewTrip() {
     populateModalTrips();
     document.getElementById('loc-trip').value = trip.id;
     populateFilterDropdowns();
+    populateTripSelector();
   } catch (err) { showToast('Failed to create trip: ' + err.message, 'error'); }
 }
 
@@ -7464,11 +7465,18 @@ function setAttachSearch(v) {
   renderAttachPickerList();
 }
 
-function toggleAttachSelect(id, on) {
+function toggleAttachSelect(id, el) {
+  const on = el && typeof el.checked === 'boolean' ? el.checked : !_attachSelected.has(id);
   if (on) _attachSelected.add(id); else _attachSelected.delete(id);
   const n = _attachSelected.size;
   document.getElementById('attach-submit-btn').textContent = `Attach ${n} transit${n === 1 ? '' : 's'}`;
   document.getElementById('attach-submit-btn').disabled = n === 0;
+}
+// Collection view: clicking a location card jumps to map + opens its editor.
+// Replaces a pre-CSP split-onclick that had setTimeout(...) baked into data-arg0.
+function switchToMapAndEdit(locId) {
+  switchView('map-view');
+  setTimeout(() => openEditModal(locId), 300);
 }
 
 function renderAttachPickerList() {
@@ -7491,7 +7499,7 @@ function renderAttachPickerList() {
     const currentTrip = t.tripId ? (stateIndex.tripById ? stateIndex.tripById.get(t.tripId) : null) : null;
     const tripLabel = currentTrip ? `<span style="font-size:12px;color:var(--accent);margin-left:6px;">in: ${esc(currentTrip.name)}</span>` : '';
     return `<label class="attach-row">
-      <input type="checkbox" data-click="toggleAttachSelect" data-arg0="${esc(t.id)}" data-arg1="this.checked" ${_attachSelected.has(t.id) ? 'checked' : ''}>
+      <input type="checkbox" data-click="toggleAttachSelect" data-arg0="${esc(t.id)}" data-arg1="this" ${_attachSelected.has(t.id) ? 'checked' : ''}>
       <span style="color:${m.color};font-size:18px;">${m.emoji}</span>
       <span class="attach-route">${esc(t.fromName || '?')} → ${esc(t.toName || '?')}</span>
       <span class="attach-date">${esc(t.date || '')}</span>
@@ -7632,7 +7640,7 @@ function viewCollection(colId) {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
       const statusIcon = loc.status === 'been' ? '✅' : '⭐';
       const rating = loc.myRating ? ' · ★' + loc.myRating : '';
-      return `<div class="cat-stat-card" style="cursor:pointer;" data-click="switchView" data-arg0="'map-view');setTimeout(()=>openEditModal('${loc.id}')" data-arg1="300">
+      return `<div class="cat-stat-card" style="cursor:pointer;" data-click="switchToMapAndEdit" data-arg0="${esc(loc.id)}">
         <span class="cat-stat-emoji">${cat.emoji}</span>
         <div class="cat-stat-info">
           <div class="cat-stat-name">${statusIcon} ${esc(loc.name)}</div>
