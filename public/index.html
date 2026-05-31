@@ -1807,6 +1807,16 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
 
       <div class="import-section">
+        <h3>🌐 Web Import</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Paste an article URL (currently supports Time Out city guides). We'll extract the venue list and let you pick which to add as bucket places.</p>
+        <div style="display:flex;gap:8px;">
+          <input type="url" id="web-import-url" class="form-input" placeholder="https://www.timeout.com/lisbon/restaurants/best-restaurants" style="flex:1;font-size:13px;" />
+          <button class="btn btn-primary" data-click="webImportFetch">Fetch</button>
+        </div>
+        <div id="web-import-status" style="margin-top:8px;font-size:12px;color:var(--text-secondary);"></div>
+      </div>
+
+      <div class="import-section">
         <h3>📍 Google Data Guide</h3>
         <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-direction:column;gap:12px;">
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
@@ -2122,6 +2132,29 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
       <div id="narrate-preview"></div>
       <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">Stops are auto-geocoded into your bucket list.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Web Import Review Modal -->
+<div id="web-import-modal" class="modal-overlay" style="display:none;" data-click="closeWebImportModal" data-arg0="web-import-modal">
+  <div class="modal" style="width:640px;max-width:90vw;" data-stop="1">
+    <div class="modal-header">
+      <h3 id="web-import-modal-title">🌐 Review venues</h3>
+      <button class="modal-close" data-click="closeWebImportModal" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="web-import-meta" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="web-import-toggle-all" data-change="toggleAllWebImport" data-arg0="this" checked /> Select all
+        </label>
+      </div>
+      <div id="web-import-list" style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:6px;"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+        <button class="btn btn-secondary" data-click="closeWebImportModal">Cancel</button>
+        <button class="btn btn-primary" id="web-import-confirm-btn" data-click="confirmWebImport">Import 0 selected</button>
+      </div>
     </div>
   </div>
 </div>
@@ -10515,6 +10548,146 @@ async function addDiscoveryToBucket(idxStr) {
   } catch (err) {
     showToast('Failed to add: ' + err.message, 'error');
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* WEB IMPORT                                                             */
+/* ═══════════════════════════════════════════════════════════════════════ */
+async function webImportFetch() {
+  const url = document.getElementById('web-import-url').value.trim();
+  if (!url) { showToast('Paste a URL first', 'warn'); return; }
+  const statusEl = document.getElementById('web-import-status');
+  statusEl.textContent = 'Fetching…';
+  try {
+    const data = await api('POST', '/import/website', { url });
+    window._webImport = { url, ...data };
+    statusEl.textContent = '';
+    openWebImportModal();
+  } catch (err) {
+    const friendly = mapWebImportError(err.message);
+    statusEl.textContent = '';
+    showToast(friendly, 'error');
+  }
+}
+
+function mapWebImportError(msg) {
+  if (!msg) return 'Import failed';
+  if (msg.includes('invalid_url')) return 'That URL is not valid (must be https:// and not localhost)';
+  if (msg.includes('host_not_supported')) return 'This site is not supported yet. We currently parse Time Out city guides.';
+  if (msg.includes('fetch_failed')) return 'Could not fetch that page. The site may be blocking us or the URL is wrong.';
+  if (msg.includes('response_too_large')) return 'That page is too large to parse.';
+  return 'Import failed: ' + msg;
+}
+
+function openWebImportModal() {
+  const payload = window._webImport;
+  if (!payload) return;
+  const venues = Array.isArray(payload.venues) ? payload.venues : [];
+  const metaEl = document.getElementById('web-import-meta');
+  const metaParts = [];
+  if (payload.articleTitle) metaParts.push(esc(payload.articleTitle));
+  if (payload.city) metaParts.push(esc(payload.city));
+  if (payload.source && payload.source !== 'timeout') metaParts.push('source: ' + esc(payload.source));
+  metaEl.textContent = metaParts.join(' · ') || '';
+  const listEl = document.getElementById('web-import-list');
+  listEl.innerHTML = venues.map((v, i) => {
+    const escapedName = esc(v.name || '');
+    const escapedAddress = esc(v.address || '');
+    const escapedSnippet = v.snippet ? esc(v.snippet) : '';
+    const isLast = i === venues.length - 1;
+    return `<div class="web-import-row" style="padding:10px;${isLast ? '' : 'border-bottom:1px solid var(--border);'}">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+        <input type="checkbox" class="web-import-check" data-change="updateWebImportSelectedCount" checked data-idx="${i}" style="margin-top:4px;" />
+        <div style="flex:1;">
+          <input type="text" class="web-import-name form-input" value="${escapedName}" data-idx="${i}" style="width:100%;font-size:13px;font-weight:600;margin-bottom:4px;" />
+          <input type="text" class="web-import-address form-input" value="${escapedAddress}" placeholder="Address (optional, helps geocoding)" data-idx="${i}" style="width:100%;font-size:12px;" />
+          ${escapedSnippet ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${escapedSnippet}</div>` : ''}
+        </div>
+      </label>
+    </div>`;
+  }).join('');
+  const toggleAll = document.getElementById('web-import-toggle-all');
+  if (toggleAll) toggleAll.checked = true;
+  updateWebImportSelectedCount();
+  document.getElementById('web-import-modal').style.display = 'flex';
+}
+
+function closeWebImportModal() {
+  document.getElementById('web-import-modal').style.display = 'none';
+}
+
+function toggleAllWebImport(el) {
+  const checked = el.checked;
+  document.querySelectorAll('.web-import-check').forEach(cb => { cb.checked = checked; });
+  updateWebImportSelectedCount();
+}
+
+function updateWebImportSelectedCount() {
+  const checks = document.querySelectorAll('.web-import-check');
+  let count = 0;
+  checks.forEach(cb => { if (cb.checked) count++; });
+  const btn = document.getElementById('web-import-confirm-btn');
+  if (btn) {
+    btn.textContent = `Import ${count} selected`;
+    btn.disabled = count === 0;
+  }
+}
+
+async function confirmWebImport() {
+  const payload = window._webImport;
+  if (!payload) return;
+  const rows = document.querySelectorAll('.web-import-row');
+  const selected = [];
+  rows.forEach((row, i) => {
+    const check = row.querySelector('.web-import-check');
+    if (!check || !check.checked) return;
+    const name = (row.querySelector('.web-import-name')?.value || '').trim();
+    const address = (row.querySelector('.web-import-address')?.value || '').trim();
+    const venue = payload.venues[i] || {};
+    if (name) selected.push({ name, address, snippet: venue.snippet || '' });
+  });
+  if (selected.length === 0) { showToast('Nothing selected', 'warn'); return; }
+  closeWebImportModal();
+  let located = 0, unmatched = 0, failed = 0;
+  for (let i = 0; i < selected.length; i++) {
+    const v = selected[i];
+    showToast(`Geocoding ${i + 1}/${selected.length}: ${esc(v.name)}…`, 'info');
+    const query = [v.name, v.address || payload.city || ''].filter(Boolean).join(', ');
+    const geo = await geocodeNarratedStop(query);
+    const tags = ['timeout'];
+    if (payload.source && payload.source !== 'timeout') tags.push(payload.source);
+    const notesParts = [];
+    if (payload.articleTitle) notesParts.push(`From: ${payload.articleTitle}`);
+    if (v.snippet) notesParts.push(v.snippet);
+    const body = {
+      name: v.name,
+      status: 'bucket',
+      category: geo?.category || 'restaurant',
+      notes: notesParts.join('\n\n'),
+      tags,
+    };
+    if (geo) {
+      body.lat = geo.lat; body.lng = geo.lng;
+      if (geo.address) body.address = geo.address;
+      else if (v.address) body.address = v.address;
+      located++;
+    } else {
+      if (v.address) body.address = v.address;
+      unmatched++;
+    }
+    try {
+      const created = await api('POST', '/locations', body);
+      state.locations.push(mapId(created));
+    } catch {
+      failed++;
+    }
+    if (i < selected.length - 1) await new Promise(r => setTimeout(r, 200));
+  }
+  if (typeof renderMarkers === 'function') renderMarkers();
+  const bits = [`${located} located`];
+  if (unmatched > 0) bits.push(`${unmatched} unmatched`);
+  if (failed > 0) bits.push(`${failed} failed`);
+  showToast(`Web import done — ${bits.join(', ')}`, failed > 0 ? 'warn' : 'success');
 }
 </script>
 </body>
