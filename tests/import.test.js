@@ -2756,18 +2756,28 @@ describe('Edit modal declutter — Light + cut Lat/Lng + cut Visits list (2026-0
     expect(indexHtml).toMatch(/<div class="form-row" style="display:none;">[\s\S]{0,500}id="loc-lat"/);
   });
 
-  test('Visits list UI is gone; compact summary + Add today\'s visit replaces it', () => {
-    // Old per-visit editing elements are gone.
+  test('Visits collapsible: summary + expandable list with per-visit remove + custom date', () => {
+    // Legacy per-visit elements gone.
     expect(indexHtml).not.toMatch(/id="loc-visits"\b/);
     expect(indexHtml).not.toMatch(/class="visits-list"/);
     expect(indexHtml).not.toMatch(/data-click="addVisitField"/);
     expect(indexHtml).not.toMatch(/\+ Add Visit\b/);
-    // New compact summary container + button are present.
-    expect(indexHtml).toMatch(/id="loc-visits-summary"/);
-    expect(indexHtml).toMatch(/data-click="addTodayVisit"[\s\S]{0,80}\+ Add today's visit/);
-    // renderVisitFields now writes the summary; addTodayVisit pushes today.
-    expect(indexHtml).toMatch(/function renderVisitFields\(\)[\s\S]{0,500}getElementById\(['"]loc-visits-summary['"]\)/);
+    // Summary is now a button (toggles expand) with chevron + text spans.
+    expect(indexHtml).toMatch(/id="loc-visits-summary"[\s\S]{0,400}data-click="toggleVisitsExpanded"/);
+    expect(indexHtml).toMatch(/id="loc-visits-chevron"/);
+    expect(indexHtml).toMatch(/id="loc-visits-summary-text"/);
+    // Expanded list container + new action buttons.
+    expect(indexHtml).toMatch(/id="loc-visits-list"/);
+    expect(indexHtml).toMatch(/data-click="addTodayVisit"[\s\S]{0,40}\+ Today/);
+    expect(indexHtml).toMatch(/id="loc-visit-custom-date"/);
+    expect(indexHtml).toMatch(/data-click="addCustomVisit"[\s\S]{0,40}\+ Add date/);
+    // Handlers exist and touch state.modalVisits.
+    expect(indexHtml).toMatch(/function renderVisitFields\(\)[\s\S]{0,1200}loc-visits-summary-text/);
+    expect(indexHtml).toMatch(/function renderVisitFields\(\)[\s\S]{0,1800}loc-visits-list/);
+    expect(indexHtml).toMatch(/function toggleVisitsExpanded\(\)[\s\S]{0,400}rotate\(90deg\)/);
     expect(indexHtml).toMatch(/function addTodayVisit\(\)[\s\S]{0,400}state\.modalVisits/);
+    expect(indexHtml).toMatch(/function addCustomVisit\(\)[\s\S]{0,500}state\.modalVisits/);
+    expect(indexHtml).toMatch(/function removeVisit\(idx\)[\s\S]{0,300}splice/);
   });
 
   test('Status and Price share a single form-row (Status taking 60%)', () => {

@@ -1766,7 +1766,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="btn btn-secondary" data-click="openFillMissingModal" style="font-size:12px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
         <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:6px 10px;" title="Enrich selected via Photon (Komoot) — free, address + OSM category">🌍 Photon</button>
         <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:6px 10px;" title="Enrich selected via OpenStreetMap Nominatim — free, address + OSM category">🗺️ Nominatim</button>
-        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="font-size:12px;padding:6px 10px;" title="Sync selected with Google Places — ratings + prices (requires API key)">📍 Google</button>
+        <button id="bulk-google-sync-btn" class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="display:none;font-size:12px;padding:6px 10px;" title="Sync selected with Google Places — ratings + prices (requires API key)">📍 Google</button>
         <button class="btn btn-danger" data-click="deleteBulkSelection" style="font-size:12px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
       </div>
     </div>
@@ -1844,8 +1844,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📅 Timeline (place visits)</strong>
             <p style="color:var(--text-muted);margin-top:4px;"><strong>Heads-up:</strong> since late 2024 Google moved Timeline to on-device storage. Takeout's "Location History" folder no longer ships your visits — only an encrypted blob and settings files.</p>
-            <p style="color:var(--text-muted);margin-top:6px;">To export today, use the <strong>Google Maps app on your phone</strong>: <strong>your profile picture → Your Timeline → ⋮ → Location &amp; privacy settings → Export Timeline data</strong>. You'll get a single large <code>.json</code> with <code>semanticSegments</code> — drop it here. Place names, addresses, and place IDs are preserved; Places API enrichment runs automatically if a key is configured.</p>
-            <p style="color:var(--text-muted);margin-top:6px;">Have a pre-2024 Takeout archive? The monthly files in <code>Semantic Location History/</code> still work — drop them all in.</p>
+            <p style="color:var(--text-muted);margin-top:6px;">To export today, use the <strong>Google Maps app on your phone</strong>: <strong>your profile picture → Your Timeline → ⋮ → Location &amp; privacy settings → Export Timeline data</strong>. You'll get a single large <code>.json</code> with <code>semanticSegments</code>. Place names, addresses, place IDs, and per-visit dates are preserved.</p>
+            <p style="color:var(--text-muted);margin-top:6px;">Have a pre-2024 Takeout archive? The monthly files in <code>Semantic Location History/</code> still work — pick them all.</p>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" data-click="openFileDialog" data-target="timeline-json-input" style="font-size:12px;padding:6px 12px;">📅 Import Timeline JSON</button>
+              <span style="font-size:12px;color:var(--text-muted);">Each visit becomes a "been" place with the actual visit date.</span>
+              <input type="file" id="timeline-json-input" accept=".json,application/json" multiple style="display:none;" data-change="onTimelineImport" data-arg0="this">
+            </div>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📌 Mapstr</strong>
@@ -2049,8 +2054,16 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
       <div class="form-group">
         <label>Visits</label>
-        <div id="loc-visits-summary" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">No visits logged yet.</div>
-        <button class="add-small-btn" data-click="addTodayVisit">+ Add today's visit</button>
+        <div id="loc-visits-summary" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;" data-click="toggleVisitsExpanded" role="button" tabindex="0" aria-expanded="false" aria-controls="loc-visits-list">
+          <span id="loc-visits-chevron" style="font-size:10px;display:inline-block;width:10px;transition:transform 0.15s;">▶</span>
+          <span id="loc-visits-summary-text">No visits logged yet.</span>
+        </div>
+        <div id="loc-visits-list" style="display:none;flex-direction:column;gap:4px;margin-bottom:8px;"></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <button class="add-small-btn" data-click="addTodayVisit">+ Today</button>
+          <input type="date" id="loc-visit-custom-date" class="form-input" style="font-size:12px;padding:4px 6px;width:140px;" aria-label="Custom visit date">
+          <button class="add-small-btn" data-click="addCustomVisit">+ Add date</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -4535,10 +4548,12 @@ function openEditModal(id) {
   const gmapsUrl = getGoogleMapsUrl(loc);
   if (gmapsUrl) { gmapsLink.href = gmapsUrl; gmapsLink.style.display = ''; }
   else { gmapsLink.style.display = 'none'; }
-  // Show sync button (async - check if Places API configured)
+  // Show sync button only if Google is the active search provider AND
+  // Places API is configured. Provider selection (Account → Search Provider)
+  // gates Google chrome end-to-end so Photon/Nominatim users don't see it.
   const syncBtn = document.getElementById('loc-google-sync-btn');
   syncBtn.style.display = 'none';
-  checkPlacesEnabled().then(ok => { if (ok) syncBtn.style.display = ''; });
+  shouldUseGoogle().then(ok => { if (ok) syncBtn.style.display = ''; });
   document.getElementById('loc-notes').value = loc.notes || '';
 
   populateModalTrips();
@@ -4870,30 +4885,82 @@ function removePerson(i) {
   renderPeopleTags();
 }
 
-// Visits section was decluttered 2026-05-31. Editable list collapsed to a
-// compact "Last visited X · N visits total" summary + a single 'Add today's
-// visit' button. Existing visit data on a location is preserved (still part
-// of the PUT payload via state.modalVisits); just the editing UI is gone.
+// Visits section: collapsed-by-default summary ("Last visited X · N total"),
+// expand to reveal full editable list with per-visit remove. All visits are
+// persisted in state.modalVisits and round-trip through PUT.
 function renderVisitFields() {
-  const summary = document.getElementById('loc-visits-summary');
-  if (!summary) return;
+  const summaryText = document.getElementById('loc-visits-summary-text');
+  const list = document.getElementById('loc-visits-list');
+  if (!summaryText || !list) return;
   const visits = (state.modalVisits || []).filter(v => v.date);
   if (visits.length === 0) {
-    summary.textContent = 'No visits logged yet.';
-    return;
+    summaryText.textContent = 'No visits logged yet.';
+  } else {
+    const sorted = [...visits].sort((a, b) => (a.date < b.date ? 1 : -1));
+    summaryText.textContent = `Last visited ${sorted[0].date} · ${visits.length} visit${visits.length === 1 ? '' : 's'} total`;
   }
-  const sorted = [...visits].sort((a, b) => (a.date < b.date ? 1 : -1));
-  const last = sorted[0].date;
-  summary.textContent = `Last visited ${last} · ${visits.length} visit${visits.length === 1 ? '' : 's'} total`;
+  // Render expanded list (visible only when toggled). Sorted newest-first.
+  const listSorted = [...(state.modalVisits || [])].filter(v => v.date).sort((a, b) => (a.date < b.date ? 1 : -1));
+  list.innerHTML = '';
+  listSorted.forEach(v => {
+    const realIdx = state.modalVisits.indexOf(v);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = v.date;
+    dateInput.className = 'form-input';
+    dateInput.style.cssText = 'font-size:12px;padding:3px 6px;width:140px;';
+    dateInput.setAttribute('aria-label', 'Visit date');
+    dateInput.addEventListener('change', () => { if (dateInput.value) { state.modalVisits[realIdx].date = dateInput.value; renderVisitFields(); } });
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'add-small-btn';
+    rm.textContent = '×';
+    rm.title = 'Remove visit';
+    rm.setAttribute('aria-label', 'Remove visit ' + v.date);
+    rm.style.cssText = 'border-style:solid;font-size:12px;padding:2px 8px;min-width:28px;';
+    rm.addEventListener('click', () => removeVisit(realIdx));
+    row.appendChild(dateInput);
+    row.appendChild(rm);
+    list.appendChild(row);
+  });
+}
+function toggleVisitsExpanded() {
+  const list = document.getElementById('loc-visits-list');
+  const chevron = document.getElementById('loc-visits-chevron');
+  const summary = document.getElementById('loc-visits-summary');
+  if (!list) return;
+  const opening = list.style.display === 'none' || !list.style.display;
+  list.style.display = opening ? 'flex' : 'none';
+  if (chevron) chevron.style.transform = opening ? 'rotate(90deg)' : 'rotate(0)';
+  if (summary) summary.setAttribute('aria-expanded', opening ? 'true' : 'false');
 }
 function addTodayVisit() {
   const today = new Date().toISOString().slice(0, 10);
   state.modalVisits = state.modalVisits || [];
   if (state.modalVisits.find(v => v.date === today)) {
-    if (typeof toast === 'function') toast('Already logged a visit today.', 'info');
+    showToast('Already logged a visit today.', 'info');
     return;
   }
   state.modalVisits.push({ date: today, notes: '' });
+  renderVisitFields();
+}
+function addCustomVisit() {
+  const input = document.getElementById('loc-visit-custom-date');
+  if (!input || !input.value) { showToast('Pick a date first.', 'warn'); return; }
+  state.modalVisits = state.modalVisits || [];
+  if (state.modalVisits.find(v => v.date === input.value)) {
+    showToast('Visit already logged for that date.', 'info');
+    return;
+  }
+  state.modalVisits.push({ date: input.value, notes: '' });
+  input.value = '';
+  renderVisitFields();
+}
+function removeVisit(idx) {
+  if (!state.modalVisits || idx < 0 || idx >= state.modalVisits.length) return;
+  state.modalVisits.splice(idx, 1);
   renderVisitFields();
 }
 
@@ -8199,11 +8266,25 @@ function setSearchProvider(val) {
 async function shouldUseGoogle() {
   return getSearchProvider() === 'google' && await checkPlacesEnabled();
 }
+// Single point of truth for showing/hiding Google-enrichment chrome across
+// the app: edit-modal sync button, bulk toolbar sync button, import-view
+// auto-sync checkbox. Re-runs on provider change + app boot. The 🗺️ "Open
+// in Google Maps" popup link is a plain URL (no API call) and stays.
+async function _refreshGoogleChromeVisibility() {
+  const show = await shouldUseGoogle();
+  const ids = ['loc-google-sync-btn', 'bulk-google-sync-btn', 'import-sync-label'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = show ? (id === 'import-sync-label' ? 'flex' : '') : 'none';
+  });
+}
 function onSearchProviderChange() {
   const el = document.getElementById('account-search-provider');
   if (!el) return;
   setSearchProvider(el.value);
   showToast('Search provider: ' + el.options[el.selectedIndex].text.split('—')[0].trim());
+  _refreshGoogleChromeVisibility();
 }
 
 // Background sync for freshly imported locations (non-blocking)
@@ -8717,6 +8798,18 @@ function initImport() {
   });
   fileInput.addEventListener('change', e => handleFiles(e.target.files));
   document.getElementById('folder-input').addEventListener('change', e => handleFiles(e.target.files));
+}
+
+// Discoverable entry point for Google Timeline JSON imports. Same handler
+// path as the generic dropzone — parseJSON auto-routes any timelineObjects /
+// semanticSegments / rawSignals / placeVisit / timelineEdits shape to the
+// matching parser. The dedicated button just makes the action visible to
+// users who wouldn't think to drop a .json on a generic dropzone.
+function onTimelineImport(el) {
+  if (!el || !el.files || !el.files.length) return;
+  const files = el.files;
+  el.value = '';
+  handleFiles(files);
 }
 
 async function handleFiles(files) {
@@ -9701,8 +9794,9 @@ function showImportPreview(items) {
     }
   }
 
-  // Show Google sync toggle if Places API is configured
-  checkPlacesEnabled().then(enabled => {
+  // Show Google sync toggle only if Google is the configured search provider
+  // AND Places API is set up. Honors the provider choice in Account settings.
+  shouldUseGoogle().then(enabled => {
     const label = document.getElementById('import-sync-label');
     if (label) label.style.display = enabled ? 'flex' : 'none';
   });
@@ -9984,6 +10078,7 @@ async function startApp(username) {
   initImport();
   updateApprovalBadge();
   renderApproval();
+  _refreshGoogleChromeVisibility();
 
   if (!map) initMap();
   else { renderMarkers(); setTimeout(() => map.invalidateSize(), 100); }
