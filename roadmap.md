@@ -64,16 +64,20 @@ table below for the per-finding reconciliation.
 ### Wishlist (P1+)
 
 - **Google data — easier ingestion path.** Research spike completed 2026-05-30
-  (`a537b43` — see `docs/research/google-data-ingestion.md`). **Two follow-ups
+  (`a537b43` — see `docs/research/google-data-ingestion.md`). **Three follow-ups
   shipped:** `99d0ea2` patched the phone-export parsers
   (`parseGoogleTimelineSegments` + `parseGoogleTimelineNew`) to read real place
   names, capture `placeId` + `address`, and stop mangling diacritic casing;
   `ac88ce0` updated the Google Data Guide with the 2024+ on-device export path
-  and the Takeout `Saved/` CSV-list path. **Still open:** KML/KMZ import for
-  My Maps (~1 day, `togeojson`), legacy Places API → Places API (New)
-  migration (not urgent), Data Portability API OAuth flow (blocked on Google's
-  Restricted-scope verification for personal apps — monitor for relaxation).
-  Do not build the sharable-list scraper (ToS risk + low value).
+  and the Takeout `Saved/` CSV-list path; `5d93e62` migrated the server proxy
+  off the legacy Places API onto Places API (New) — `X-Goog-Api-Key` header
+  (key no longer in URL query string), `X-Goog-FieldMask` cost control,
+  `priceLevel` enum→0-4 mapping at the helper boundary so downstream consumers
+  stay unchanged. **KML/KMZ already shipped** (`parseKML` + JSZip unzip — the
+  research brief's "~1 day, `togeojson`" note was stale). **Still open:** Data
+  Portability API OAuth flow (blocked on Google's Restricted-scope verification
+  for personal apps — monitor for relaxation). Do not build the sharable-list
+  scraper (ToS risk + low value).
 - **Top-rated Google Places by category** — discovery: places near a region
   with >1000 ratings, filtered by category, one-click bucket-list add.
 - **Time Out / website import** — generic web-scrape importer with per-site
@@ -165,4 +169,15 @@ See memory roadmap for full commit-level detail. Headline batches:
     · N visits total" summary + a single "Add today's visit" button
     (`addTodayVisit()`). Existing visit data preserved in PUT payload.
     New `.modal-divider` CSS rule.
-  - **Session totals: 570 jest + 8 e2e green.**
+  - **Batch 4** (`5d93e62`): Places API legacy → Places API (New) migration.
+    All 3 server helper paths (`fetchPlaceByPlaceId`, `fetchPlaceByText`,
+    `/api/places/search` inline) cut over to `places.googleapis.com/v1/places...`
+    Key moved from URL query string to `X-Goog-Api-Key` request header
+    (security upgrade — never appears in URL/logs again). `X-Goog-FieldMask`
+    on every outbound call to cap cost. `priceLevel` string enum
+    (`PRICE_LEVEL_MODERATE` etc.) → 0-4 integer mapping at the helper
+    boundary, so bulk-sync downstream + frontend consumers stay unchanged.
+    Internal helper return shape preserved as a contract. `places.test.js`
+    rewritten: 15 → 19 tests (+enum round-trip, +headers-present, +defensive
+    unknown-enum, +key-not-in-URL).
+  - **Session totals: 573 jest + 8 e2e green.**
