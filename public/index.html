@@ -3214,6 +3214,36 @@ function createMarkerIcon(loc, opts) {
 
 function bindMarkerBehavior(marker, loc) {
   marker.bindPopup(() => createPopupContent(loc), { maxWidth: 320, className: '' });
+  marker.on('dragend', (e) => { handleMarkerDrop(marker, loc, e.target.getLatLng()); });
+}
+
+// Per-loc in-flight guard for marker drag — prevents a second drop from
+// racing the first's PUT (which would leave the optimistic state out of
+// sync if the second fails before the first succeeds).
+const _dragDropInFlight = new Set();
+async function handleMarkerDrop(marker, loc, newLatLng) {
+  if (_dragDropInFlight.has(loc.id)) return;
+  const lat = newLatLng && newLatLng.lat;
+  const lng = newLatLng && newLatLng.lng;
+  // Bounds sanity (mirrors server validateLocation).
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    marker.setLatLng([loc.lat, loc.lng]);
+    showToast('Invalid drop location', 'error');
+    return;
+  }
+  const prevLat = loc.lat, prevLng = loc.lng;
+  loc.lat = lat; loc.lng = lng;
+  _dragDropInFlight.add(loc.id);
+  try {
+    await api('PUT', '/locations/' + encodeURIComponent(loc.id), { lat, lng });
+    showToast('📍 Moved place', 'success');
+  } catch (err) {
+    loc.lat = prevLat; loc.lng = prevLng;
+    marker.setLatLng([prevLat, prevLng]);
+    showToast('Failed to move: ' + (err && err.message ? err.message : 'error'), 'error');
+  } finally {
+    _dragDropInFlight.delete(loc.id);
+  }
 }
 
 // Escape HTML to prevent XSS in innerHTML
@@ -3582,13 +3612,13 @@ function renderMarkers() {
         const sig = markerHash(loc);
         const existing = _renderState.markerById.get(loc.id);
         if (!existing) {
-          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc), draggable: true });
           bindMarkerBehavior(m, loc);
           toAdd.push({ id: loc.id, marker: m, hash: sig });
         } else if (existing.hash !== sig) {
           // Content (icon-affecting fields) changed → rebuild this marker
           toRemoveById.add(loc.id);
-          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc), draggable: true });
           bindMarkerBehavior(m, loc);
           toAdd.push({ id: loc.id, marker: m, hash: sig });
         }
@@ -3634,7 +3664,7 @@ function renderMarkers() {
         _heatLazyHandler = null;
         _individualMarkersLayer = L.layerGroup();
         _heatFiltered.forEach(loc => {
-          const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+          const marker = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc), draggable: true });
           bindMarkerBehavior(marker, loc);
           _individualMarkersLayer.addLayer(marker);
         });
@@ -3650,7 +3680,7 @@ function renderMarkers() {
       // Cluster mode — batch add and populate the diff registry
       const markers = [];
       for (const loc of filtered) {
-        const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc) });
+        const m = L.marker([loc.lat, loc.lng], { icon: createMarkerIcon(loc), draggable: true });
         bindMarkerBehavior(m, loc);
         markers.push(m);
         _renderState.markerById.set(loc.id, { marker: m, hash: markerHash(loc) });
