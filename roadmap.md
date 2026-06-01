@@ -19,6 +19,8 @@ table below for the per-finding reconciliation.
 
 ### Other open items
 
+- **Import Pedro's `#bucketlist` Google Tasks list (49 items) → Oikumene bucket locations.** Source: Google Tasks list id `VzM0QTAyMnpIbVcySG5kYQ`, dumped to backup `~/.claude/backups/google-tasks/2026-06-01-010047-archive-2023.json` is for #archive-2023; re-pull #bucketlist when picked up. Split needed: ~14 items are geographic (Bombonera, North Korea, Bora Bora, Trans-siberian, 1yr around the world, Australia, Walk Berlin→Lisbon, Antarctica, Wimbledon, Cross Africa, Mecca, Bike Berlin→Athens, Carnaval Brasil event, GP F1 Monaco) → import as `status: bucket` locations via `POST /api/locations` using the same geocode-or-placeholder pattern as Trips v2 (Photon → Nominatim → placeholder). Non-geographic items (Yoga, Skydive, Learn to meditate, Build PC, Cricket, etc.) — leave in source list for separate disposition (probably into Google Tasks `#sprint` → 🤖 Hobbies / wants or 🎓 Personal development). Added 2026-06-01 per Pedro: "#bucketlist should likely go into oikumene bucket list - it's just another data source among a myriad others".
+
 - **Marker layer-diff** — ✅ shipped 2026-05-30 (commit `d1b37ba`).
 - **FR24 "not an export" guard** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
 - **LOW polish bundle** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
@@ -365,3 +367,146 @@ See memory roadmap for full commit-level detail. Headline batches:
     - **Beli adapter investigation** — see Open section above for verdict
       (architecturally blocked, user-confirmed skip).
   - **Session totals after post-compact afternoon: 752 jest + 8 e2e green (3 skip).**
+
+- **2026-05-31 late evening — popup + cluster + dispatcher batch (5 commits, +32 jest).**
+  - `fdc4ef8` Inline "Log visit today" button on marker popup. New
+    `logTodayFromPopup(locId)` async fn: optimistic visit append + PUT,
+    rollback on failure. TOCTOU race guard via module-level
+    `_logTodayInFlight = new Set()`. Popup patched in-place via
+    `marker.getPopup().setContent(...)` so it stays open on success;
+    bucket→been status flip path closes the popup + re-renders markers
+    (status change affects icon class). +7 jest in
+    `tests/visits-google-chrome.test.js` (idempotent / popup-patch /
+    flip path / rollback / race / missing-loc / static markup).
+  - `4de764f` Cluster threshold `disableClusteringAtZoom: 15→12`. User
+    wanted unclustered markers earlier; at z=12 viewport holds ~50-200
+    markers — well within Leaflet's budget, and the incremental-diff
+    render path viewport-culls already.
+  - `18f92ef` Fix 3 split-onclick leftovers from the CSP dispatcher
+    migration. The `c9f7ec9` migration mechanically split
+    `onclick="fn(arg).then(...)..."` at the first `(`, capturing the
+    tail as a literal string in `data-arg0`. Three hits: (a) `+ New
+    Trip` button — removed `.then(()=>{populateTripSelector();}` from
+    arg0, added explicit call at end of `promptNewTrip` try block; (b)
+    Collection-card click — replaced inline-composed `switchView`+
+    `setTimeout(openEditModal)` with new `switchToMapAndEdit(locId)`
+    composer; (c) Attach checkbox — `data-arg1="this.checked"` →
+    `data-arg1="this"` + `toggleAttachSelect(id, el)` reads
+    `el.checked` (canonical sentinel pattern). +6 jest in
+    `tests/dispatcher-arg-leftovers.test.js` (all three call sites
+    pinned + receiver-signature pins).
+  - `0b8c42f` Popup consolidation + enrichment confirmation flow (5
+    user asks). (a) Popup actions: removed redundant Bucket/Been
+    toggle — clicking "Been" now logs today's visit AND atomically
+    flips bucket→been (`toggleStatusFromPopup` deleted; consolidated
+    into `logTodayFromPopup`). (b) Edit button alignment fixed — all 3
+    popup-row buttons (Been / Edit / Delete) now share
+    `padding:8px 12px` for uniform appearance. (c) Edit modal: new
+    "Enrich data" form-group at the TOP with 🌍 Photon / 🗺️ Nominatim /
+    🔄 Google buttons (was buried under Google Maps Rating); old row
+    removed. (d) **Photon "doesn't work" fix** — root cause was the
+    fill-only conservative filter that silently skipped fields with
+    any existing value. Refactor: fetch ALL fields, build diff list
+    with `buildEnrichmentDiffs(loc, proposed)`, surface in new
+    `showEnrichmentConfirm(sourceLabel, diffs)` modal — per-field
+    checkbox, fills default-checked, overwrites default-unchecked.
+    `applyEnrichmentUpdates(loc, updates, syncedAtField)` PUTs only
+    user-approved subset + stamps source-specific syncedAt. All three
+    sync functions (`syncFromEditModal`, `syncPhotonFromEditModal`,
+    `syncNominatimFromEditModal`) now route through this flow. (e)
+    Google Maps button moved out of enrich row — now inline next to
+    Name label as "🗺️ View on Maps" link; the actual `🔄 Google` sync
+    button lives in the new Enrich row with consistent styling.
+    +14 jest in `tests/enrichment-confirm.test.js` (pure
+    `buildEnrichmentDiffs` + interactive `showEnrichmentConfirm` with
+    JSDOM + XSS regression + static markup pins).
+  - `94bedd3` Trips view zero-trips empty state. New
+    `_renderTripDetailEmpty()` helper picks "No Trips Yet" copy + 3
+    CTAs (manual / Timeline → New Trip / AI Narrate) when
+    `state.trips.length === 0`; falls through to "Select a Trip" copy
+    otherwise. Wired into `selectTrip(null)`, delete-trip flow, and
+    `switchView('trips-view')` hook so zero-trip users see actionable
+    CTAs instead of "Choose a trip from the dropdown" (which is empty).
+    +5 jest in `tests/trips-empty-state.test.js`.
+  - **Session totals after late-evening batch: 784 jest + 8 e2e green
+    (3 skip).**
+
+- **2026-06-01 marker batch — bucket fill + gold/silver stars + popup
+  labels + drag-drop + bucketlist bootstrap (4 commits, +26 jest).**
+  - UX consult (ux-designer subagent) for bucket marker visibility +
+    star badge composition + rating-source pick. Memo recommendations:
+    violet wishlist fill `rgba(139,92,246,0.18) !important` + ring
+    shadow (replaces opacity:0.8 penalty); 14px gold/silver `★` badge
+    top-right `-6px`; prefer first-person score (myRating) over
+    Google aggregate.
+  - `37860c6` Popup button differentiation + bucket fill + gold/silver
+    star badge (5 edits). (a) Popup button text differentiates by
+    status — bucket → `✅ Mark as Been`, been → `📍 Visit today` (was
+    always "✅ Been" — confusing). (b) `.marker-icon.bucket` violet
+    fill + ring shadow per UX memo, opacity penalty removed. (c) New
+    `.marker-rating-badge` CSS (`.gold` #f59e0b + `.silver` #94a3b8),
+    top-right corner. (d) `createMarkerIcon` renders star badge for
+    rating ≥ 4.0 (gold ≥ 4.5, silver 4.0-4.5), numeric tag for <4.0,
+    nothing for unrated. (e) `logTodayFromPopup` gains falsy-locId
+    guard. +10 jest in `tests/marker-style.test.js` (6 vm-sandbox
+    `createMarkerIcon` + 4 static markup pins) + adjusted
+    `tests/visits-google-chrome.test.js` button label pin +
+    `tests/import.test.js` rating-source pin. Cybersec audit clean.
+  - `16e69b9` Status-conditional rating source for marker badge. User
+    feedback: "i meant google maps rating" — fix the source pick so
+    bucket items use `bucketStrength` (the user's want-to-go score)
+    rather than `myRating` (which is 0 for bucket — they haven't been
+    yet). Bucket → `bucketStrength || googleRating`; been →
+    `myRating || googleRating`. Same gold/silver thresholds applied
+    to whichever number wins. +7 jest covering bucket-source paths
+    (strength 5/4/3, fallback to google, source-wins-over-google,
+    no-rating, been regression).
+  - `5839558` Show numeric rating tag alongside the gold/silver star
+    badge. User: "i still want the rating below". Prior behavior:
+    badge REPLACED numeric. New: badge complements — at-a-glance star
+    PLUS precise value (`5.0`, `4.7`, etc). Negligible perf — one
+    extra `<span>` per qualifying marker. Sub-4.0 ratings keep
+    numeric-only; no-rating still renders nothing.
+  - `795256f` Drag markers to relocate (drag-drop on the main map).
+    All 4 main-render L.marker calls pick up `draggable: true`;
+    `bindMarkerBehavior` wires `dragend` → new
+    `handleMarkerDrop(marker, loc, newLatLng)` async fn. Optimistic
+    update of loc.lat/lng + PUT `{lat,lng}`. Per-loc in-flight Set
+    guard (`_dragDropInFlight`) prevents racing PUTs. Client bounds
+    guard mirrors server `validateLocation` (NaN/|lat|>90/|lng|>180 →
+    snap marker back + error toast, no PUT). Failure path:
+    rollback loc + `marker.setLatLng(prev)` + error toast. Trip-view
+    and Collection-focus markers stay non-draggable (sequence
+    semantics + they don't call `bindMarkerBehavior`). +7 jest in
+    `tests/marker-drag.test.js` (happy + rollback + 3 bounds guards
+    + concurrent in-flight + 3 static markup pins). Cybersec audit
+    clean (server PUT already filters by `userId`, no IDOR; toast
+    uses `textContent` not `innerHTML`).
+  - **Data-side bootstrap (no commits — JSON staged on Desktop +
+    Google Tasks #bucketlist cleanup):**
+    - 17 items from Google Tasks `#bucketlist` (list id
+      `VzM0QTAyMnpIbVcySG5kYQ`) geocoded via Photon (1.1s polite
+      gap + Nominatim fallback) into Oikumene-export-shape JSON
+      ready to drop into Import view. Two coords manually patched:
+      "1 year around the world" (Photon matched "Equator" to a
+      Washington State street) → Lisbon home anchor;
+      "Trans-Siberian Railway" → Moscow western terminus (Photon
+      picked Vladivostok end). Three Berlin-start routes will
+      stack at 52.517,13.395 — drag-drop ships in the same batch
+      so user can spread them post-import.
+    - All 17 imported titles deleted from Google Tasks
+      `#bucketlist` via `gws tasks tasks delete`. 32
+      non-geographic items remain (Yoga, Skydive, Build PC,
+      Cricket, programming reddit links, etc. — separate
+      disposition path).
+    - **9 family places ("Fazer com miúdas")** geocoded same way:
+      Planetário Gulbenkian, Galeria do Loreto, MUDE, Museu do
+      Ar, Aldeia da Mata Pequena, Palácio de Monserrate, Museu
+      dos Coches, Casa-Museu Amália Rodrigues, Casa Fernando
+      Pessoa. MUDE coord patched manually (Photon matched a
+      different museum at Largo Júlio de Castilho in Restelo —
+      real MUDE is Rua Augusta 24, Baixa). Tagged
+      `fazer-com-miudas` + `family`, `bucketStrength: 4`. JSON
+      staged at `~/Desktop/bucketlist-import-2026-06-01/`.
+  - **Session totals after marker batch: 810 jest + 8 e2e green
+    (3 skip).**
