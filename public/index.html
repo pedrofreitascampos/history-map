@@ -3186,20 +3186,21 @@ function createMarkerIcon(loc, opts) {
   // Google's aggregate, falling back to it when unset):
   //   bucket → bucketStrength (1-5) else googleRating
   //   been   → myRating (1-5) else googleRating
-  // For values ≥ 4.0 we render a gold/silver ★ badge in the top-right corner
-  // (gold ≥ 4.5, silver 4.0-4.5) instead of the numeric tag — a clearer
-  // signal at small marker sizes. The numeric tag still shows for ratings
-  // below the star threshold; nothing renders when no rating exists.
+  // We always render the numeric tag under the marker when a rating exists
+  // (the precise value), and additionally a gold/silver ★ corner badge for
+  // top-tier ratings (gold ≥ 4.5, silver 4.0-4.5) as an at-a-glance signal.
+  // Both can co-exist on the same marker — the badge complements the number.
   const rl = loc.status === 'bucket'
     ? (loc.bucketStrength || loc.googleRating)
     : (loc.myRating || loc.googleRating);
   let ratingLabel = '';
-  if (typeof rl === 'number' && rl >= 4.5) {
-    ratingLabel = `<span class="marker-rating-badge gold" aria-label="Top rated">★</span>`;
-  } else if (typeof rl === 'number' && rl >= 4.0) {
-    ratingLabel = `<span class="marker-rating-badge silver" aria-label="Highly rated">★</span>`;
-  } else if (rl) {
-    ratingLabel = `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`;
+  if (rl) {
+    if (typeof rl === 'number' && rl >= 4.5) {
+      ratingLabel += `<span class="marker-rating-badge gold" aria-label="Top rated">★</span>`;
+    } else if (typeof rl === 'number' && rl >= 4.0) {
+      ratingLabel += `<span class="marker-rating-badge silver" aria-label="Highly rated">★</span>`;
+    }
+    ratingLabel += `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`;
   }
 
   return L.divIcon({

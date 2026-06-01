@@ -38,21 +38,22 @@ describe('createMarkerIcon — rating star badge + source priority', () => {
     return { ctx, divIconCalls };
   }
 
-  test('rating >= 4.5 renders gold star badge (no numeric tag)', () => {
+  test('rating >= 4.5 renders gold star badge AND numeric tag (badge complements number)', () => {
     const { ctx, divIconCalls } = makeCtx();
     vm.runInContext(`createMarkerIcon({ status: 'been', category: 'restaurant', myRating: 4.7 }, {})`, ctx);
     const html = divIconCalls[0].html;
     expect(html).toMatch(/marker-rating-badge gold/);
     expect(html).toContain('★');
-    expect(html).not.toMatch(/class="marker-rating"/);
+    // Numeric tag also shows — at-a-glance star + precise value.
+    expect(html).toMatch(/class="marker-rating">4.7</);
   });
 
-  test('rating 4.0-4.5 renders silver star badge (no numeric tag)', () => {
+  test('rating 4.0-4.5 renders silver star badge AND numeric tag', () => {
     const { ctx, divIconCalls } = makeCtx();
     vm.runInContext(`createMarkerIcon({ status: 'been', category: 'restaurant', myRating: 4.2 }, {})`, ctx);
     const html = divIconCalls[0].html;
     expect(html).toMatch(/marker-rating-badge silver/);
-    expect(html).not.toMatch(/class="marker-rating"/);
+    expect(html).toMatch(/class="marker-rating">4.2</);
   });
 
   test('rating < 4.0 keeps numeric tag, no star', () => {
@@ -90,12 +91,12 @@ describe('createMarkerIcon — rating star badge + source priority', () => {
   // first-person score is `bucketStrength` (1-5 from the heart slider).
   // myRating doesn't apply to a place the user hasn't visited yet.
 
-  test('bucket: bucketStrength=5 → gold star (1-5 scale maps cleanly to 4.5+ threshold)', () => {
+  test('bucket: bucketStrength=5 → gold star AND numeric "5.0"', () => {
     const { ctx, divIconCalls } = makeCtx();
     vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 5 }, {})`, ctx);
     const html = divIconCalls[0].html;
     expect(html).toMatch(/marker-rating-badge gold/);
-    expect(html).not.toMatch(/class="marker-rating"/);
+    expect(html).toMatch(/class="marker-rating">5.0</);
   });
 
   test('bucket: bucketStrength=4 → silver star', () => {
