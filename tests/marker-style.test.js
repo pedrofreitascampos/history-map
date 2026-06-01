@@ -78,9 +78,68 @@ describe('createMarkerIcon — rating star badge + source priority', () => {
     expect(html).toMatch(/marker-rating-badge gold/);
   });
 
-  test('falls back to googleRating when myRating absent', () => {
+  test('been: falls back to googleRating when myRating absent', () => {
     const { ctx, divIconCalls } = makeCtx();
     vm.runInContext(`createMarkerIcon({ status: 'been', category: 'restaurant', googleRating: 4.7 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).toMatch(/marker-rating-badge gold/);
+  });
+
+  // ── Bucket source: bucketStrength wins, falls back to googleRating ──
+  // The rating-driving signal differs by status. For bucket items the
+  // first-person score is `bucketStrength` (1-5 from the heart slider).
+  // myRating doesn't apply to a place the user hasn't visited yet.
+
+  test('bucket: bucketStrength=5 → gold star (1-5 scale maps cleanly to 4.5+ threshold)', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 5 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).toMatch(/marker-rating-badge gold/);
+    expect(html).not.toMatch(/class="marker-rating"/);
+  });
+
+  test('bucket: bucketStrength=4 → silver star', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 4 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).toMatch(/marker-rating-badge silver/);
+  });
+
+  test('bucket: bucketStrength=3 → numeric tag, no star', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 3 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).toMatch(/class="marker-rating">3.0</);
+    expect(html).not.toMatch(/marker-rating-badge/);
+  });
+
+  test('bucket: bucketStrength wins over googleRating (4 silver beats 4.8 gold)', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 4, googleRating: 4.8 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    // bucketStrength=4 → silver, not gold (otherwise google's 4.8 would have won)
+    expect(html).toMatch(/marker-rating-badge silver/);
+    expect(html).not.toMatch(/marker-rating-badge gold/);
+  });
+
+  test('bucket: bucketStrength=0 (unset) → falls back to googleRating', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant', bucketStrength: 0, googleRating: 4.6 }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).toMatch(/marker-rating-badge gold/);
+  });
+
+  test('bucket: bucketStrength unset, no googleRating → nothing', () => {
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'bucket', category: 'restaurant' }, {})`, ctx);
+    const html = divIconCalls[0].html;
+    expect(html).not.toMatch(/marker-rating/);
+  });
+
+  test('been: myRating still trumps googleRating (regression for status-conditional branch)', () => {
+    // Sanity: changing the bucket branch must not affect the been branch.
+    const { ctx, divIconCalls } = makeCtx();
+    vm.runInContext(`createMarkerIcon({ status: 'been', category: 'restaurant', myRating: 5, googleRating: 3.2, bucketStrength: 1 }, {})`, ctx);
     const html = divIconCalls[0].html;
     expect(html).toMatch(/marker-rating-badge gold/);
   });

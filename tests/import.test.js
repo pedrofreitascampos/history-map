@@ -2732,8 +2732,11 @@ describe('Popup interactive rating + marker rating label (2026-05-31)', () => {
 
   test('marker icon renders a tiny .marker-rating label when rating exists', () => {
     expect(indexHtml).toMatch(/class="marker-rating"/);
-    // Prefer myRating (first-person); fall back to googleRating.
-    expect(indexHtml).toMatch(/const rl = loc\.myRating \|\| loc\.googleRating/);
+    // Rating source is status-conditional (see marker-style.test.js for the
+    // full table): bucket → bucketStrength else googleRating; been → myRating
+    // else googleRating.
+    expect(indexHtml).toMatch(/loc\.status === 'bucket'[\s\S]{0,200}loc\.bucketStrength \|\| loc\.googleRating/);
+    expect(indexHtml).toMatch(/loc\.myRating \|\| loc\.googleRating/);
     // CSS rule defines the position and look of the label.
     expect(indexHtml).toMatch(/\.marker-rating\s*\{[\s\S]{0,300}position:\s*absolute/);
   });

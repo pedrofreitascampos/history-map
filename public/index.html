@@ -3182,12 +3182,17 @@ function createMarkerIcon(loc, opts) {
   const fontSize = Math.round(size * 0.5);
   const half = size / 2;
 
-  // Rating signal. Prefer user's own rating (first-person judgment) over
-  // Google (aggregate proxy). For high ratings, render a gold/silver star
-  // badge in the top-right corner instead of the numeric tag — a clearer
+  // Rating signal. Source depends on status (first-person judgment outranks
+  // Google's aggregate, falling back to it when unset):
+  //   bucket → bucketStrength (1-5) else googleRating
+  //   been   → myRating (1-5) else googleRating
+  // For values ≥ 4.0 we render a gold/silver ★ badge in the top-right corner
+  // (gold ≥ 4.5, silver 4.0-4.5) instead of the numeric tag — a clearer
   // signal at small marker sizes. The numeric tag still shows for ratings
-  // below the star threshold (4.0).
-  const rl = loc.myRating || loc.googleRating;
+  // below the star threshold; nothing renders when no rating exists.
+  const rl = loc.status === 'bucket'
+    ? (loc.bucketStrength || loc.googleRating)
+    : (loc.myRating || loc.googleRating);
   let ratingLabel = '';
   if (typeof rl === 'number' && rl >= 4.5) {
     ratingLabel = `<span class="marker-rating-badge gold" aria-label="Top rated">★</span>`;
