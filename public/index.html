@@ -243,7 +243,11 @@ body {
 .zoom-close .marker-icon { transform: scale(0.82); }
 .zoom-close .marker-icon:hover { transform: scale(1.1); }
 .marker-icon.been { border: 2.5px solid; }
-.marker-icon.bucket { border: 2.5px dashed; opacity: 0.8; }
+.marker-icon.bucket {
+  border: 2.5px dashed;
+  background-color: rgba(139, 92, 246, 0.18) !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(139, 92, 246, 0.35);
+}
 .marker-icon.needs-approval {
   border: 2.5px solid var(--danger);
   animation: pulse-approval 2s infinite;
@@ -314,6 +318,27 @@ body {
   white-space: nowrap;
   pointer-events: none;
 }
+/* Top-right corner star badge for highly-rated places. Replaces the numeric
+   .marker-rating tag when rating qualifies — at small marker sizes a star is
+   a stronger signal than digits. Source: myRating if set, else googleRating
+   (see createMarkerIcon). */
+.marker-rating-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-weight: 700;
+  border: 1px solid rgba(0,0,0,0.35);
+  z-index: 10;
+  pointer-events: none;
+}
+.marker-rating-badge.gold { background: #f59e0b; color: #1c1000; }
+.marker-rating-badge.silver { background: #94a3b8; color: #0f172a; }
 .popup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .popup-tag {
@@ -3157,13 +3182,20 @@ function createMarkerIcon(loc, opts) {
   const fontSize = Math.round(size * 0.5);
   const half = size / 2;
 
-  // Tiny rating label tucked under the marker. Prefer Google rating (more
-  // signal — based on many reviewers); fall back to user's own rating. Hidden
-  // when no rating exists so unrated markers stay clean.
-  const rl = loc.googleRating || loc.myRating;
-  const ratingLabel = rl
-    ? `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`
-    : '';
+  // Rating signal. Prefer user's own rating (first-person judgment) over
+  // Google (aggregate proxy). For high ratings, render a gold/silver star
+  // badge in the top-right corner instead of the numeric tag — a clearer
+  // signal at small marker sizes. The numeric tag still shows for ratings
+  // below the star threshold (4.0).
+  const rl = loc.myRating || loc.googleRating;
+  let ratingLabel = '';
+  if (typeof rl === 'number' && rl >= 4.5) {
+    ratingLabel = `<span class="marker-rating-badge gold" aria-label="Top rated">★</span>`;
+  } else if (typeof rl === 'number' && rl >= 4.0) {
+    ratingLabel = `<span class="marker-rating-badge silver" aria-label="Highly rated">★</span>`;
+  } else if (rl) {
+    ratingLabel = `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`;
+  }
 
   return L.divIcon({
     className: '',
@@ -3467,7 +3499,7 @@ function createPopupContent(loc) {
     ${peopleTags ? `<div class="popup-tags">${peopleTags}</div>` : ''}
     ${loc.notes ? `<div class="popup-meta" style="color:var(--text-secondary)">${esc(loc.notes)}</div>` : ''}
     <div style="display:flex;gap:6px;margin-top:8px;align-items:stretch;">
-      <button class="popup-btn" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="${isBeen ? 'Log another visit today' : 'Mark as Been and log a visit today'}" aria-label="Mark as been" style="flex:0 0 auto;width:auto;padding:8px 12px;">✅ Been</button>
+      <button class="popup-btn" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="${isBeen ? 'Log another visit today' : 'Mark as Been and log a visit today'}" aria-label="${isBeen ? '📍 Visit today' : '✅ Mark as Been'}" style="flex:0 0 auto;width:auto;padding:8px 12px;">${isBeen ? '📍 Visit today' : '✅ Mark as Been'}</button>
       <button class="popup-btn" data-click="openEditModal" data-arg0="${esc(loc.id)}" style="flex:1;padding:8px 12px;">✏️ Edit</button>
       <button data-click="deleteFromPopup" data-arg0="${esc(loc.id)}" title="Remove location" aria-label="Remove location" style="background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:12px;padding:8px 12px;border-radius:var(--radius);flex:0 0 auto;">🗑️</button>
     </div>
@@ -4812,8 +4844,9 @@ function setRating(val) {
 // either PUT resolves → two entries for today).
 const _logTodayInFlight = new Set();
 async function logTodayFromPopup(locId) {
+  if (!locId) { console.warn('[logTodayFromPopup] no locId'); return; }
   const loc = stateIndex.locationById.get(locId);
-  if (!loc) return;
+  if (!loc) { console.warn('[logTodayFromPopup] loc not found', locId); return; }
   if (_logTodayInFlight.has(locId)) return;
   const today = new Date().toISOString().slice(0, 10);
   if ((loc.visits || []).find(v => v.date === today)) {
