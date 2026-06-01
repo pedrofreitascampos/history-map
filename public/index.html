@@ -904,6 +904,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   font-weight: 500;
 }
 
+.wishlist-item .ti-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.wishlist-item .ti-strength { font-size: 13px; }
+.wishlist-item .ti-addr { color: var(--text-muted); font-size: 12px; }
+.wishlist-item .ti-tag { display: inline-block; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; font-size: 12px; color: var(--text-secondary); margin-left: 4px; }
+.ti-badge { font-size: 12px; padding: 2px 6px; border-radius: 8px; font-weight: 700; margin-left: 8px; }
+.ti-badge.gold { background: #f59e0b; color: #1c1000; }
+.ti-badge.silver { background: #94a3b8; color: #0f172a; }
+.ti-badge.plain { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
+
 /* ═══════════════════════════════════════════════════════════ */
 /* IMPORT VIEW                                                */
 /* ═══════════════════════════════════════════════════════════ */
@@ -1444,6 +1453,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="chrono-view" data-click="switchView" data-arg0="chrono-view">
       📅 <span class="tab-label">Chronology</span>
     </button>
+    <button class="nav-tab" data-view="wishlist-view" data-click="switchView" data-arg0="wishlist-view">
+      ⭐ <span class="tab-label">Wishlist</span>
+    </button>
     <button class="nav-tab" data-view="trips-view" data-click="switchView" data-arg0="trips-view">
       🧳 <span class="tab-label">Trips</span>
     </button>
@@ -1684,6 +1696,25 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
     <div class="timeline" id="timeline"></div>
+  </div>
+
+  <!-- WISHLIST VIEW -->
+  <div class="view" id="wishlist-view">
+    <div class="chrono-header">
+      <h1>Wishlist</h1>
+      <div class="chrono-filters">
+        <select id="wishlist-sort" data-click="onWishlistFilterChange" title="Sort order">
+          <option value="strength">Sort: Strength</option>
+          <option value="rating">Sort: Rating</option>
+          <option value="name">Sort: Name</option>
+          <option value="recent">Sort: Recently added</option>
+        </select>
+        <select id="wishlist-tag" data-click="onWishlistFilterChange"><option value="">All Tags</option></select>
+        <select id="wishlist-cat" data-click="onWishlistFilterChange"><option value="">All Categories</option></select>
+        <input type="text" class="form-input" id="wishlist-search" placeholder="🔍 Search..." data-input="onWishlistFilterChange" style="flex:1;max-width:200px;min-width:120px;">
+      </div>
+    </div>
+    <div class="timeline" id="wishlist"></div>
   </div>
 
   <!-- TRIPS VIEW -->
@@ -4503,6 +4534,7 @@ function switchView(viewId, skipHash) {
   if (viewId === 'import-view') renderApproval();
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
+  if (viewId === 'wishlist-view') renderWishlist();
   if (viewId === 'collections-view') renderCollections();
   if (viewId === 'bulk-view') initBulkView();
   if (viewId === 'regions-view') renderRegionsMap();
@@ -6231,6 +6263,178 @@ function populateChronoFilters() {
 function formatDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* WISHLIST                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+let _wishlistFiltersGen = -1;
+function populateWishlistFilters() {
+  if (_wishlistFiltersGen === stateIndex.generation) return;
+  _wishlistFiltersGen = stateIndex.generation;
+  // Collect tags from bucket locations only
+  const tags = new Set();
+  state.locations.forEach(l => {
+    if (l.status !== 'bucket' || l.needsApproval) return;
+    (l.tags || []).forEach(t => { if (t) tags.add(t); });
+  });
+  const tagSel = document.getElementById('wishlist-tag');
+  if (tagSel) {
+    const cur = tagSel.value;
+    tagSel.innerHTML = '<option value="">All Tags</option>' +
+      [...tags].sort().map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    tagSel.value = cur;
+  }
+  const catSel = document.getElementById('wishlist-cat');
+  if (catSel) {
+    const cur = catSel.value;
+    catSel.innerHTML = '<option value="">All Categories</option>' +
+      Object.entries(CATEGORIES).map(([k,c]) => `<option value="${k}">${c.emoji} ${c.label}</option>`).join('');
+    catSel.value = cur;
+  }
+}
+
+function onWishlistFilterChange() { renderWishlist(); }
+
+function renderWishlist() {
+  populateWishlistFilters();
+  const container = document.getElementById('wishlist');
+  if (!container) return;
+
+  const sortBy = (document.getElementById('wishlist-sort') || {}).value || 'strength';
+  const tagFilter = (document.getElementById('wishlist-tag') || {}).value || '';
+  const catFilter = (document.getElementById('wishlist-cat') || {}).value || '';
+  const searchRaw = (document.getElementById('wishlist-search') || {}).value || '';
+  const search = searchRaw.trim().toLowerCase();
+
+  let items = state.locations.filter(l => l.status === 'bucket' && !l.needsApproval);
+  if (catFilter) items = items.filter(l => l.category === catFilter);
+  if (tagFilter) items = items.filter(l => (l.tags || []).includes(tagFilter));
+  if (search) items = items.filter(l => {
+    const hay = [l.name, l.address, (l.notes || ''), ((l.tags || []).join(' '))].join(' ').toLowerCase();
+    return hay.includes(search);
+  });
+
+  // Effective rating for sort: same source the marker badge uses.
+  // Bucket → bucketStrength || googleRating; missing → 0 (sorts last).
+  const ratingOf = (l) => (l.bucketStrength || l.googleRating || 0);
+
+  if (sortBy === 'strength') {
+    items.sort((a, b) => (b.bucketStrength || 0) - (a.bucketStrength || 0)
+      || (a.name || '').localeCompare(b.name || ''));
+  } else if (sortBy === 'rating') {
+    items.sort((a, b) => ratingOf(b) - ratingOf(a) || (a.name || '').localeCompare(b.name || ''));
+  } else if (sortBy === 'name') {
+    items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } else if (sortBy === 'recent') {
+    // _id is nedb-generated and lexicographically sorts by insertion order.
+    items.sort((a, b) => (b._id || b.id || '').localeCompare(a._id || a.id || ''));
+  }
+
+  if (items.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⭐</div><h3>No Wishlist Items Yet</h3><p>Bucket items are places you want to visit. Add one via the sidebar, import from a website, or narrate a trip.</p><div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"><button class="btn btn-primary" data-click="switchView" data-arg0="map-view" style="font-size:13px;padding:8px 18px;">🗺️ Go to Map</button><button class="btn btn-secondary" data-click="switchView" data-arg0="import-view" style="font-size:13px;padding:8px 18px;">📥 Import</button></div></div>`;
+    return;
+  }
+
+  const WISHLIST_PAGE = 100;
+  let _wishlistItems = items;
+  let _wishlistRendered = 0;
+
+  function _renderWishlistPage(from, to) {
+    let html = '';
+    for (let i = from; i < to; i++) {
+      const loc = _wishlistItems[i];
+      const cat = CATEGORIES[loc.category] || CATEGORIES.location;
+      const strength = Math.max(0, Math.min(5, loc.bucketStrength || 0));
+      const hearts = strength > 0
+        ? `<span class="ti-strength" style="color:#ec4899;">${'♥'.repeat(strength)}${'♡'.repeat(5 - strength)}</span>`
+        : '';
+      // Star badge (gold ≥4.5, silver ≥4.0) on whichever rating wins:
+      const rl = loc.bucketStrength || loc.googleRating || 0;
+      let badge = '';
+      if (typeof rl === 'number' && rl >= 4.5) badge = `<span class="ti-badge gold" aria-label="Top">★ ${rl.toFixed(1)}</span>`;
+      else if (typeof rl === 'number' && rl >= 4.0) badge = `<span class="ti-badge silver" aria-label="Highly rated">★ ${rl.toFixed(1)}</span>`;
+      else if (typeof rl === 'number' && rl > 0) badge = `<span class="ti-badge plain">${rl.toFixed(1)}</span>`;
+      const tagChips = (loc.tags || []).map(t => `<span class="ti-tag">${esc(t)}</span>`).join('');
+      const addr = loc.address ? `<span class="ti-addr">${esc(loc.address)}</span>` : '';
+      html += `<div class="timeline-item wishlist-item">
+        <div class="ti-top">
+          <span class="ti-emoji">${cat.emoji}</span>
+          <span class="ti-name">${esc(loc.name)}</span>
+          ${badge}
+        </div>
+        <div class="ti-bottom">
+          ${addr}
+          ${hearts}
+          ${tagChips}
+        </div>
+        <div class="ti-actions">
+          <button class="btn btn-secondary" data-click="showOnMapFromWishlist" data-arg0="${esc(loc.id)}" title="Show on map" style="font-size:12px;padding:5px 10px;">📍 Map</button>
+          <button class="btn btn-secondary" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="Mark as Been and log a visit today" style="font-size:12px;padding:5px 10px;">✅ Been</button>
+          <button class="btn btn-secondary" data-click="openEditModal" data-arg0="${esc(loc.id)}" title="Edit" style="font-size:12px;padding:5px 10px;">✏️ Edit</button>
+          <button class="btn btn-secondary" data-click="deleteFromWishlist" data-arg0="${esc(loc.id)}" title="Remove" style="font-size:12px;padding:5px 10px;">🗑️</button>
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  function _appendWishlistPage() {
+    const moreBtn = document.getElementById('wishlist-load-more');
+    if (moreBtn) moreBtn.remove();
+    const nextEnd = Math.min(_wishlistRendered + WISHLIST_PAGE, _wishlistItems.length);
+    const frag = document.createElement('div');
+    frag.innerHTML = _renderWishlistPage(_wishlistRendered, nextEnd);
+    while (frag.firstChild) container.appendChild(frag.firstChild);
+    _wishlistRendered = nextEnd;
+    if (_wishlistRendered < _wishlistItems.length) {
+      const more = document.createElement('button');
+      more.id = 'wishlist-load-more';
+      more.className = 'btn btn-secondary';
+      more.style.cssText = 'display:block;margin:16px auto;padding:8px 24px;';
+      more.textContent = `Load more (${_wishlistItems.length - _wishlistRendered} remaining)`;
+      more.onclick = _appendWishlistPage;
+      container.appendChild(more);
+    }
+  }
+
+  container.innerHTML = '';
+  _appendWishlistPage();
+}
+
+async function showOnMapFromWishlist(locId) {
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  switchView('map-view');
+  // Defer pan/zoom until the map view is visible (Leaflet needs visibility for invalidateSize).
+  setTimeout(() => {
+    try {
+      if (typeof map !== 'undefined' && map && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+        map.invalidateSize();
+        map.setView([loc.lat, loc.lng], 14);
+        const entry = _renderState && _renderState.markerById.get(locId);
+        if (entry && entry.marker && entry.marker.openPopup) entry.marker.openPopup();
+      }
+    } catch (e) { /* swallow — map may not be ready */ }
+  }, 100);
+}
+
+async function deleteFromWishlist(locId) {
+  const loc = stateIndex.locationById.get(locId);
+  if (!loc) return;
+  const confirmed = await showConfirm(`Remove "${loc.name}" from your wishlist?`, undefined, 'Remove');
+  if (!confirmed) return;
+  try {
+    await api('DELETE', '/locations/' + encodeURIComponent(locId));
+    state.locations = state.locations.filter(l => (l.id || l._id) !== locId);
+    if (typeof rebuildIndexes === 'function') rebuildIndexes();
+    renderWishlist();
+    renderMarkers();
+    showToast('🗑️ Removed from wishlist', 'success');
+  } catch (e) {
+    showToast('Failed to remove: ' + (e && e.message ? e.message : 'error'), 'error');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
