@@ -74,6 +74,17 @@ table below for the per-finding reconciliation.
 
 ### Wishlist (P1+)
 
+- **Dynamic map overlays — fun, live data layers.** Toggleable overlays on the main map for things that move/change in real time. Targets:
+  - **FlightRadar live overlay** — `/api/flightradar/live` proxy to FR24 (or ADS-B Exchange as a free alt) bounded by current map viewport; render small ✈ markers with heading rotation + on-click panel showing flight number/route/altitude/speed; auto-refresh every 15-30s; rate-limit guard. Plays nicely with existing FR24 *import* (transits), but this one is "see what's flying NOW" not "import where I've been".
+  - **Weather overlay** — clouds / precip / temperature tiles via OpenWeatherMap or RainViewer (RainViewer is free, no key). Tile layer slot in `mapStyle` toggle next to cluster/heat.
+  - **Wind / jet-stream layer** — windy.com tile feed (paid) or Earth Nullschool style WebGL render (free, BYO). Lower priority — niche.
+  - **Marine traffic (AIS)** — AISHub or MarineTraffic free tier for vessels in viewport. Niche but cool for coastal locations.
+  - **ISS / satellite ground tracks** — pull from N2YO API or open-notify; tiny 🛰 dot moving across the map.
+  - **Earthquake / volcano feed** — USGS GeoJSON (free, no key); circle-radius by magnitude. Educational, low-cost ship.
+  - **Cruise ships / aircraft carriers** — for travel-curious users; spotter community data sources exist but ToS-grey.
+
+  Architecture: each overlay = a registered entry in `DYNAMIC_OVERLAYS` map → `{label, icon, fetch(bounds), render(layer, data), refreshIntervalSec, attribution}`. Single overlay-control UI in the map (similar to `.map-tools-control`) opens a panel with toggle switches per source. Server side: thin proxies in `server/overlays/` (rate-limit + key shielding + caching). Per-overlay logging + provider-key gating like the Places provider pattern. **Ship order: RainViewer (free, no key, instant win) → FlightRadar (requires key or ADS-B Exchange free) → USGS quakes (free) → others.**
+
 - **Google data — easier ingestion path.** Research spike completed 2026-05-30
   (`a537b43` — see `docs/research/google-data-ingestion.md`). **Three follow-ups
   shipped:** `99d0ea2` patched the phone-export parsers

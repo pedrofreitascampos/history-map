@@ -571,7 +571,7 @@ describe('Frontend invariants (code checks)', () => {
     // renderMarkers must create a new L.heatLayer() each time heat mode renders.
     const renderBody = indexHtml.substring(
       indexHtml.indexOf('function renderMarkers()'),
-      indexHtml.indexOf('function renderMarkers()') + 3000
+      indexHtml.indexOf('function renderMarkers()') + 4000
     );
     expect(renderBody).toContain('heatLayer = L.heatLayer(');
     expect(renderBody).not.toContain('heatLayer.setOptions');
@@ -1605,7 +1605,9 @@ describe('XSS escape invariants (emoji + regions)', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
 
   test('marker emoji override is escaped', () => {
-    expect(html).toContain('${esc(pickMarkerEmoji(loc, opts))}');
+    // esc() wraps the emoji — either inline in the template literal or via
+    // the emojiChar variable (both patterns are safe; we pin the call-site).
+    expect(html).toMatch(/esc\(pickMarkerEmoji\(loc,\s*opts\)\)/);
   });
 
   test('user-editable col.emoji is escaped on render', () => {

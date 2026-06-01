@@ -257,6 +257,104 @@ body {
   50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
 }
 
+/* ── Marker style variants. The default `.marker-icon` is a circle.
+   Each variant below tweaks shape / anchor / chrome while keeping the
+   emoji centrepiece + status semantics (.been / .bucket / .needs-approval). */
+
+/* Squircle: iOS app-icon superellipse via border-radius 22%. Same size
+   as circle but reads as a "stamp" instead of a balloon. */
+.marker-icon.style-squircle { border-radius: 22%; }
+
+/* Teardrop: circular face with a CSS triangle pointing down to the coord.
+   Anchor is set in JS to the bottom of the triangle for accuracy. */
+.marker-icon.style-teardrop {
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  transform-origin: 50% 100%;
+}
+.marker-icon.style-teardrop::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px; height: 10px;
+  background: inherit;
+  border: inherit;
+  border-top: none;
+  border-left: none;
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+  z-index: -1;
+}
+
+/* Glyph: no background, no border. Just the emoji floating with a soft
+   shadow. A tiny coloured dot below anchors to the coord. Status colour
+   comes through on the dot via category colour. */
+.marker-icon.style-glyph {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-size: calc(var(--mfs, 17px) * 1.25);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.6), 0 0 6px rgba(0,0,0,0.4);
+  overflow: visible;
+}
+.marker-icon.style-glyph::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.4);
+}
+.marker-icon.style-glyph.bucket::after {
+  background: rgba(139, 92, 246, 1);
+}
+.marker-icon.style-glyph.bucket {
+  /* Dashed ring behind the emoji for bucket items so glyph still
+     differentiates status. */
+  outline: 1.5px dashed rgba(139, 92, 246, 0.7);
+  outline-offset: -2px;
+  border-radius: 50%;
+}
+
+/* Pill: horizontal chip with emoji + optional rating chip inline.
+   Variable width depending on whether rating exists. */
+.marker-icon.style-pill {
+  border-radius: 999px;
+  width: auto !important;
+  min-width: var(--ms, 34px) !important;
+  padding: 0 10px;
+  gap: 4px;
+  white-space: nowrap;
+}
+.marker-icon.style-pill .pill-rating {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.95;
+  color: #f59e0b;
+}
+.marker-icon.style-pill::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 7px; height: 7px;
+  background: inherit;
+  border: inherit;
+  border-top: none;
+  border-left: none;
+  z-index: -1;
+}
+
+/* Hide the bottom .marker-rating numeric tag when the style already
+   shows the rating inline (pill) or chooses not to (glyph keeps the
+   corner badge but hides the bottom tag for cleaner minimalism). */
+.marker-icon.style-pill .marker-rating,
+.marker-icon.style-glyph .marker-rating { display: none; }
+
 /* Popup */
 .leaflet-popup-content-wrapper {
   background: var(--bg-secondary) !important;
@@ -1608,6 +1706,18 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <span id="marker-size-desc" style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;"></span>
     </div>
 
+    <div class="filter-section">
+      <h4>Marker Style</h4>
+      <select class="filter-select" id="marker-style" data-click="setMarkerStyle" data-arg0="this.value">
+        <option value="circle">⬤ Circle (default)</option>
+        <option value="squircle">▢ Squircle</option>
+        <option value="teardrop">📍 Teardrop pin</option>
+        <option value="glyph">✨ Floating glyph</option>
+        <option value="pill">▭ Pill chip</option>
+      </select>
+      <span id="marker-style-desc" style="font-size:12px;color:var(--text-muted);display:block;margin-top:4px;"></span>
+    </div>
+
   </aside>
 
   <button class="sidebar-toggle" id="sidebar-toggle" data-click="toggleSidebar" aria-label="Toggle sidebar">◀</button>
@@ -2745,6 +2855,7 @@ let state = {
   modalBucketStrength: 0,
   mapStyle: 'clusters', // 'clusters' or 'heat'
   markerSizeMode: 'default', // 'default' | 'my-rating' | 'google-pop' | 'visits' | 'bucket'
+  markerStyle: 'circle', // 'circle' | 'squircle' | 'teardrop' | 'glyph' | 'pill'
   pendingImport: [],
   pendingRestoreTrips: [],
   contextMenuLatLng: null,
@@ -3221,6 +3332,8 @@ function createMarkerIcon(loc, opts) {
   // (the precise value), and additionally a gold/silver ★ corner badge for
   // top-tier ratings (gold ≥ 4.5, silver 4.0-4.5) as an at-a-glance signal.
   // Both can co-exist on the same marker — the badge complements the number.
+  // Exception: pill style renders the rating inline; glyph suppresses the
+  // bottom tag via CSS (cleaner minimalism) but keeps the corner badge.
   const rl = loc.status === 'bucket'
     ? (loc.bucketStrength || loc.googleRating)
     : (loc.myRating || loc.googleRating);
@@ -3234,12 +3347,55 @@ function createMarkerIcon(loc, opts) {
     ratingLabel += `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`;
   }
 
+  const style = (state && state.markerStyle) || 'circle';
+  const styleClass = style === 'circle' ? '' : ' style-' + style;
+  const emojiChar = esc(pickMarkerEmoji(loc, opts));
+
+  // Pill style: emoji + optional inline rating chip (no corner badge needed
+  // for rating — it's already inline). Corner badge stays for status signal.
+  let inner;
+  if (style === 'pill') {
+    const pillRating = (typeof rl === 'number' && rl > 0)
+      ? `<span class="pill-rating">★ ${rl.toFixed(1)}</span>`
+      : '';
+    inner = `${emojiChar}${pillRating}`;
+  } else {
+    inner = emojiChar;
+  }
+
+  // Per-style iconSize + iconAnchor:
+  //   circle / squircle: square icon, anchor at centre.
+  //   teardrop / glyph:  anchor at the bottom point/dot so the coord lands
+  //                      exactly at the tip — iconAnchor.y = total height.
+  //   pill:              variable CSS width; we give Leaflet a generous fixed
+  //                      width (emoji + rating chip) and centre the anchor.
+  let iconSize, iconAnchor, popupAnchor;
+  if (style === 'teardrop') {
+    iconSize = [size, size + 8];
+    iconAnchor = [half, size + 8];
+    popupAnchor = [0, -size - 4];
+  } else if (style === 'glyph') {
+    iconSize = [size, size + 8];
+    iconAnchor = [half, size + 8];
+    popupAnchor = [0, -size - 4];
+  } else if (style === 'pill') {
+    // Generous fixed width to fit emoji + ★X.X — CSS overrides to auto.
+    iconSize = [size + 60, size + 6];
+    iconAnchor = [(size + 60) / 2, size + 6];
+    popupAnchor = [0, -size - 2];
+  } else {
+    // circle, squircle
+    iconSize = [size, size];
+    iconAnchor = [half, half];
+    popupAnchor = [0, -half - 3];
+  }
+
   return L.divIcon({
     className: '',
-    html: `<div class="marker-icon ${cls}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};">${esc(pickMarkerEmoji(loc, opts))}${ratingLabel}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [half, half],
-    popupAnchor: [0, -half - 3],
+    html: `<div class="marker-icon ${cls}${styleClass}" style="--ms:${size}px;--mfs:${fontSize}px;border-color:${hex};background:${bg};opacity:${opacity};color:${hex};">${inner}${ratingLabel}</div>`,
+    iconSize,
+    iconAnchor,
+    popupAnchor,
   });
 }
 
@@ -3601,7 +3757,7 @@ function _heatZoomHandler() {
 // Per-loc icon hash detects content changes (status flip, rating edit, etc.) so the marker
 // is rebuilt when its visual depends on changed data.
 let _renderMarkersPending = false;
-const _renderState = { markerById: new Map(), mapStyle: null, markerSizeMode: null };
+const _renderState = { markerById: new Map(), mapStyle: null, markerSizeMode: null, markerStyle: null };
 // e2e hook: expose registry so Playwright specs can assert that diff updates
 // the live set (no side effects in normal use; the rest of the app reads the
 // const directly).
@@ -3632,9 +3788,10 @@ function renderMarkers() {
     const filtered = getFilteredLocations();
     const styleChanged = state.mapStyle !== _renderState.mapStyle;
     const sizeChanged = state.markerSizeMode !== _renderState.markerSizeMode;
+    const markerStyleChanged = state.markerStyle !== _renderState.markerStyle;
 
     // ── INCREMENTAL DIFF (cluster ↔ cluster, no mode flip) ───────────────────
-    if (state.mapStyle !== 'heat' && !styleChanged && !sizeChanged && _renderState.markerById.size > 0) {
+    if (state.mapStyle !== 'heat' && !styleChanged && !sizeChanged && !markerStyleChanged && _renderState.markerById.size > 0) {
       const newIds = new Set();
       const toAdd = [];
       const toRemoveById = new Set();
@@ -3720,6 +3877,7 @@ function renderMarkers() {
     }
     _renderState.mapStyle = state.mapStyle;
     _renderState.markerSizeMode = state.markerSizeMode;
+    _renderState.markerStyle = state.markerStyle;
   } catch (err) {
     console.warn('renderMarkers error (map may not be visible):', err.message);
   }
@@ -3922,6 +4080,25 @@ function setMarkerSizeMode(mode) {
   try { localStorage.setItem('markerSizeMode', mode); } catch {}
   const desc = document.getElementById('marker-size-desc');
   if (desc) desc.textContent = MARKER_SIZE_DESCRIPTIONS[mode] || '';
+  renderMarkers();
+}
+
+const VALID_MARKER_STYLES = ['circle', 'squircle', 'teardrop', 'glyph', 'pill'];
+const MARKER_STYLE_DESCRIPTIONS = {
+  'circle':   'Classic round marker (default)',
+  'squircle': 'iOS-style rounded square stamp',
+  'teardrop': 'Apple Maps pin — point lands at coord',
+  'glyph':    'Minimal floating emoji with anchor dot',
+  'pill':     'Horizontal chip with rating inline',
+};
+function setMarkerStyle(style) {
+  if (!VALID_MARKER_STYLES.includes(style)) style = 'circle';
+  state.markerStyle = style;
+  try { localStorage.setItem('markerStyle', style); } catch {}
+  const desc = document.getElementById('marker-style-desc');
+  if (desc) desc.textContent = MARKER_STYLE_DESCRIPTIONS[style] || '';
+  // Bust the renderMarkers cache so all markers rebuild with the new style.
+  if (typeof _renderState !== 'undefined') _renderState.markerStyle = null;
   renderMarkers();
 }
 
@@ -10540,6 +10717,16 @@ async function startApp(username) {
   }
   const initDesc = document.getElementById('marker-size-desc');
   if (initDesc) initDesc.textContent = MARKER_SIZE_DESCRIPTIONS[state.markerSizeMode] || MARKER_SIZE_DESCRIPTIONS['default'];
+
+  // Restore marker-style preference
+  const savedStyle = localStorage.getItem('markerStyle');
+  if (savedStyle && VALID_MARKER_STYLES.includes(savedStyle)) {
+    state.markerStyle = savedStyle;
+    const styleSel = document.getElementById('marker-style');
+    if (styleSel) styleSel.value = savedStyle;
+  }
+  const styleDesc = document.getElementById('marker-style-desc');
+  if (styleDesc) styleDesc.textContent = MARKER_STYLE_DESCRIPTIONS[state.markerStyle] || MARKER_STYLE_DESCRIPTIONS['circle'];
 
   await loadFromServer();
   // No sample data seeding — start with a clean slate
