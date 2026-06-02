@@ -214,6 +214,15 @@ body {
 .map-tools-control button:last-child  { border-bottom: 1px solid var(--border); border-bottom-left-radius: var(--radius); border-bottom-right-radius: var(--radius); }
 .map-tools-control button:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
 .map-tools-control button:disabled { opacity: 0.6; cursor: wait; }
+/* Overlay button toggled-on state: solid accent fill so it reads as "active". */
+.map-tools-control button.overlay-active {
+  background: var(--accent) !important;
+  color: var(--bg-primary) !important;
+  border-color: var(--accent) !important;
+}
+.map-tools-control button.overlay-loading {
+  opacity: 0.6; cursor: progress;
+}
 
 .leaflet-tooltip {
   background: var(--bg-secondary) !important; color: var(--text-primary) !important;
@@ -2856,6 +2865,7 @@ let state = {
   mapStyle: 'clusters', // 'clusters' or 'heat'
   markerSizeMode: 'default', // 'default' | 'my-rating' | 'google-pop' | 'visits' | 'bucket'
   markerStyle: 'circle', // 'circle' | 'squircle' | 'teardrop' | 'glyph' | 'pill'
+  activeOverlays: new Set(), // ids of currently-active dynamic overlays (rainviewer, etc.)
   pendingImport: [],
   pendingRestoreTrips: [],
   contextMenuLatLng: null,
@@ -3204,13 +3214,16 @@ function initMap() {
       const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control map-tools-control');
       div.innerHTML =
         '<button type="button" id="locate-me-btn" data-click="locateMe" title="Pan map to my current GPS location" aria-label="My location">📍</button>' +
-        '<button type="button" id="discover-btn" data-click="openDiscoverModal" title="Discover top-rated places nearby" aria-label="Discover">✨</button>';
+        '<button type="button" id="discover-btn" data-click="openDiscoverModal" title="Discover top-rated places nearby" aria-label="Discover">✨</button>' +
+        '<button type="button" id="overlay-rainviewer-btn" data-click="toggleOverlay" data-arg0="rainviewer" title="Toggle live weather radar (RainViewer)" aria-label="Toggle weather overlay">🌧️</button>';
       // Stop click bubble so map drag/zoom doesn't fire when clicking the buttons.
       L.DomEvent.disableClickPropagation(div);
       return div;
     },
   });
   new MapToolsControl().addTo(map);
+  // Restore persisted overlays after the control buttons exist.
+  if (typeof restorePersistedOverlays === 'function') restorePersistedOverlays();
 
   // Track manual layer changes
   map.on('baselayerchange', e => { window._activeBaseLayer = e.layer; });
@@ -4100,6 +4113,142 @@ function setMarkerStyle(style) {
   // Bust the renderMarkers cache so all markers rebuild with the new style.
   if (typeof _renderState !== 'undefined') _renderState.markerStyle = null;
   renderMarkers();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* DYNAMIC OVERLAYS (weather radar, future: flights, quakes, ISS, ...)   */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+// Per-overlay live layer references so we can detach. Keyed by overlay id.
+const _activeOverlayLayers = new Map();
+// In-flight attach guard — prevents a rapid double-click from double-attaching
+// (the second click would otherwise pass the !activeOverlays.has(key) check
+// while the first attach is still awaiting).
+const _overlayAttachInFlight = new Set();
+// Allow-list for RainViewer URL components. The metadata response is a 3rd-party
+// JSON blob; if upstream were compromised, an attacker-controlled `host` could
+// be a `javascript:`/`data:`/exfil URL. We pin to the rainviewer.com domain
+// and a safe path-character set before constructing the tile URL.
+const RAINVIEWER_HOST_RE = /^https:\/\/[a-z0-9-]+\.rainviewer\.com$/i;
+const RAINVIEWER_PATH_RE = /^\/[a-zA-Z0-9/_-]+$/;
+
+// RainViewer frame metadata cache. Refetched after 10 minutes since frames
+// roll over every 10 minutes upstream.
+let _rainviewerFramesCache = null;
+let _rainviewerFramesFetchedAt = 0;
+
+async function _fetchRainviewerFrames() {
+  const now = Date.now();
+  if (_rainviewerFramesCache && (now - _rainviewerFramesFetchedAt < 10 * 60 * 1000)) {
+    return _rainviewerFramesCache;
+  }
+  const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+  if (!r.ok) throw new Error('RainViewer fetch failed: ' + r.status);
+  const json = await r.json();
+  _rainviewerFramesCache = json;
+  _rainviewerFramesFetchedAt = now;
+  return json;
+}
+
+// SECURITY: attribution strings are rendered as HTML by Leaflet's attribution
+// control. They MUST be hardcoded constants — never interpolate API responses
+// or user-supplied data into the attribution field.
+const DYNAMIC_OVERLAYS = {
+  rainviewer: {
+    label: 'Weather radar',
+    icon: '🌧️',
+    attribution: 'Radar by <a href="https://www.rainviewer.com" target="_blank" rel="noopener">RainViewer</a>',
+    attach: async function(map) {
+      const meta = await _fetchRainviewerFrames();
+      const past = (meta && meta.radar && Array.isArray(meta.radar.past)) ? meta.radar.past : [];
+      if (past.length === 0) throw new Error('No radar frames available');
+      const latest = past[past.length - 1];
+      // Allowlist the 3rd-party host + path before URL construction (see
+      // RAINVIEWER_*_RE above for rationale). Falls back to known-good host
+      // on malformed input; throws on a malformed path (callers see toast).
+      const host = RAINVIEWER_HOST_RE.test(meta && meta.host)
+        ? meta.host
+        : 'https://tilecache.rainviewer.com';
+      if (!latest.path || !RAINVIEWER_PATH_RE.test(latest.path)) {
+        throw new Error('Invalid RainViewer frame path');
+      }
+      // URL template: {host}{path}/256/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+      // color=4 (universal blue), smooth=1, snow=1.
+      const tileUrl = host + latest.path + '/256/{z}/{x}/{y}/4/1_1.png';
+      const layer = L.tileLayer(tileUrl, {
+        opacity: 0.6,
+        attribution: this.attribution,
+        zIndex: 400, // above base map (1), below markers
+      });
+      layer.addTo(map);
+      return layer;
+    },
+    detach: function(map, layer) {
+      if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+    },
+  },
+};
+
+function _persistActiveOverlays() {
+  try {
+    localStorage.setItem('activeOverlays', JSON.stringify([...state.activeOverlays]));
+  } catch {}
+}
+
+async function toggleOverlay(key) {
+  // hasOwnProperty guard — `key === '__proto__'` etc. would otherwise resolve
+  // to inherited prototype properties and pass a truthy check.
+  if (!Object.prototype.hasOwnProperty.call(DYNAMIC_OVERLAYS, key)) {
+    console.warn('[toggleOverlay] unknown overlay key:', key);
+    return;
+  }
+  const btn = document.getElementById('overlay-' + key + '-btn');
+  if (state.activeOverlays.has(key)) {
+    // Detach
+    const layer = _activeOverlayLayers.get(key);
+    try { DYNAMIC_OVERLAYS[key].detach(map, layer); } catch (e) { console.warn(e); }
+    _activeOverlayLayers.delete(key);
+    state.activeOverlays.delete(key);
+    if (btn) btn.classList.remove('overlay-active');
+    _persistActiveOverlays();
+    showToast(DYNAMIC_OVERLAYS[key].icon + ' ' + DYNAMIC_OVERLAYS[key].label + ' off', 'info');
+    return;
+  }
+  // Attach (async). Guard against double-attach from rapid double-clicks —
+  // without this, the second click passes the !activeOverlays.has(key) check
+  // while the first attach is still awaiting → two layers leaked.
+  if (_overlayAttachInFlight.has(key)) return;
+  _overlayAttachInFlight.add(key);
+  if (btn) btn.classList.add('overlay-loading');
+  try {
+    const layer = await DYNAMIC_OVERLAYS[key].attach(map);
+    _activeOverlayLayers.set(key, layer);
+    state.activeOverlays.add(key);
+    if (btn) btn.classList.add('overlay-active');
+    _persistActiveOverlays();
+    showToast(DYNAMIC_OVERLAYS[key].icon + ' ' + DYNAMIC_OVERLAYS[key].label + ' on', 'success');
+  } catch (e) {
+    showToast('Failed to load ' + DYNAMIC_OVERLAYS[key].label + ': ' + (e && e.message ? e.message : 'error'), 'error');
+  } finally {
+    _overlayAttachInFlight.delete(key);
+    if (btn) btn.classList.remove('overlay-loading');
+  }
+}
+
+async function restorePersistedOverlays() {
+  let saved;
+  try {
+    const raw = localStorage.getItem('activeOverlays');
+    if (!raw) return;
+    saved = JSON.parse(raw);
+  } catch { return; }
+  if (!Array.isArray(saved)) return;
+  for (const key of saved) {
+    if (typeof key === 'string' && Object.prototype.hasOwnProperty.call(DYNAMIC_OVERLAYS, key)) {
+      // Sequential to avoid hammering RainViewer on boot when more overlays exist.
+      await toggleOverlay(key);
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */

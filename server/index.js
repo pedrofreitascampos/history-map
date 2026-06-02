@@ -94,6 +94,7 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: [
         "'self'",
+        "https://api.rainviewer.com",  // dynamic overlay: weather radar metadata
         "https://nominatim.openstreetmap.org",
         "https://maps.googleapis.com",
         "https://router.project-osrm.org",
