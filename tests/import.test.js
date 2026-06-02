@@ -3412,9 +3412,15 @@ describe('_readPositionalArgs "this" sentinel — restores element-passing acros
   // The CSP refactor (c9f7ec9) migrated onclick="fn('x', this)" → data-click=fn data-arg0=x data-arg1=this.
   // But dataset reads strings — selectStatus / setStatusFilter / etc. expected the element ref and crashed
   // on "this".classList.add(...). _readPositionalArgs now maps the literal string "this" → el.
-  test('_readPositionalArgs maps "this" to el', () => {
-    const fn = extractFunction('_readPositionalArgs');
-    expect(fn).toMatch(/v\s*===\s*'this'\s*\?\s*el\s*:\s*v/);
+  test('_readPositionalArgs delegates to _resolveArgSentinel which maps "this" to el', () => {
+    // Refactored 2026-06-03: the "this" mapping moved out of _readPositionalArgs
+    // into a sibling _resolveArgSentinel that also handles "this.value",
+    // "this.checked", "this.files[0]", "this.dataset.X". See the dedicated
+    // _resolveArgSentinel describe-block below for the per-pattern tests.
+    const reader = extractFunction('_readPositionalArgs');
+    expect(reader).toMatch(/_resolveArgSentinel\(v,\s*el\)/);
+    const resolver = extractFunction('_resolveArgSentinel');
+    expect(resolver).toMatch(/v\s*===\s*'this'\s*\)\s*return\s*el/);
   });
 
   test('modal status toggle still uses data-arg1="this" (selectStatus needs the button)', () => {
@@ -3434,6 +3440,110 @@ describe('_readPositionalArgs "this" sentinel — restores element-passing acros
     expect(selectStatus).toMatch(/btn\.classList\.add\(/);
     expect(setStatusFilter).toMatch(/function setStatusFilter\(status,\s*btn\)/);
     expect(setStatusFilter).toMatch(/btn\.classList\.add\(/);
+  });
+});
+
+describe('_resolveArgSentinel "this.X" — fixes silent dropdown breakage (2026-06-03)', () => {
+  // The 2026-06-02 audit caught that `data-arg0="this.value"` passed the literal
+  // string "this.value" to handlers (the old resolver only mapped bare "this"
+  // to el). 9 callsites silently broke: Marker Style / Marker Size Mode / Trip
+  // Selector dropdowns; Replay scrubber + Realistic-routes checkbox; FR24 file
+  // picker; Attach-search input; renamePerson + removePersonGlobal buttons via
+  // `this.dataset.personIdx`. New resolver maps "this", "this.value",
+  // "this.checked", "this.files[0]", and "this.dataset.X" to the right ref.
+
+  const vm = require('vm');
+  function runResolver(v, el) {
+    const fn = extractFunction('_resolveArgSentinel');
+    const ctx = vm.createContext({ v, el });
+    return vm.runInContext(fn + '\n_resolveArgSentinel(v, el)', ctx);
+  }
+
+  test('"this" → el (preserved)', () => {
+    const el = { tag: 'EL' };
+    expect(runResolver('this', el)).toBe(el);
+  });
+
+  test('"this.value" → el.value', () => {
+    const el = { value: 'squircle' };
+    expect(runResolver('this.value', el)).toBe('squircle');
+  });
+
+  test('"this.checked" → el.checked', () => {
+    const el = { checked: true };
+    expect(runResolver('this.checked', el)).toBe(true);
+  });
+
+  test('"this.files[0]" → el.files[0]', () => {
+    const f = { name: 'foo.csv' };
+    const el = { files: [f] };
+    expect(runResolver('this.files[0]', el)).toBe(f);
+  });
+
+  test('"this.dataset.personIdx" → el.dataset.personIdx', () => {
+    const el = { dataset: { personIdx: '3' } };
+    expect(runResolver('this.dataset.personIdx', el)).toBe('3');
+  });
+
+  test('unknown literal string falls through unchanged', () => {
+    expect(runResolver('plain-string', { value: 'should-not-be-returned' })).toBe('plain-string');
+  });
+
+  test('select dropdowns use data-change (not data-click) so the action fires AFTER value updates', () => {
+    // Click on a <select> fires when the user opens the dropdown — the value
+    // hasn't changed yet. The proper event is `change`. The 3 selects flagged
+    // by the audit must use data-change to actually propagate the picked value.
+    expect(indexHtml).toMatch(/id="marker-style"[^>]*data-change="setMarkerStyle"/);
+    expect(indexHtml).toMatch(/id="marker-size-mode"[^>]*data-change="setMarkerSizeMode"/);
+    expect(indexHtml).toMatch(/id="trip-selector"[^>]*data-change="selectTrip"/);
+  });
+
+  test('FR24 file input uses data-change (file inputs fire change when a file is picked)', () => {
+    expect(indexHtml).toMatch(/id="fr24-file"[^>]*data-change="handleFr24File"/);
+  });
+
+  test('replay scrubber + attach-search use data-input for live updates', () => {
+    expect(indexHtml).toMatch(/id="replay-scrubber"[^>]*data-input="seekReplay"/);
+    expect(indexHtml).toMatch(/placeholder="Search transits…"[^>]*data-input="setAttachSearch"/);
+  });
+});
+
+describe('Hearts widget duplicate-attribute bug fix (2026-06-03)', () => {
+  // Pre-2026-06-03: each heart span had `data-click="setBucketStrength"
+  // data-arg0="N"` AND `data-click="handleHeartKey" data-arg0="event"
+  // data-arg1="N"` on the same element. Per HTML spec, repeated attrs
+  // drop all but the last — so setBucketStrength was silently overridden
+  // by handleHeartKey, and arg0 became "event" not the val. Hearts could
+  // not be set from the keyboard (and click was also broken). UX agent
+  // caught this in the 2026-06-02 audit.
+
+  test('no heart span has duplicate data-click attributes', () => {
+    // Extract the bucket-strength container and confirm each .heart has
+    // exactly one data-click and one data-keydown (not two data-clicks).
+    const bs = indexHtml.match(/<div class="star-rating" id="bucket-strength"[\s\S]*?<\/div>/);
+    expect(bs).not.toBeNull();
+    const heartLines = bs[0].match(/<span class="heart"[^>]*>/g) || [];
+    expect(heartLines.length).toBe(5);
+    for (const line of heartLines) {
+      const clickCount = (line.match(/data-click=/g) || []).length;
+      const keydownCount = (line.match(/data-keydown=/g) || []).length;
+      const arg0Count = (line.match(/data-arg0=/g) || []).length;
+      expect(clickCount).toBe(1);
+      expect(keydownCount).toBe(1);
+      expect(arg0Count).toBe(1);
+    }
+  });
+
+  test('each heart routes click → setBucketStrength(N) and keydown → onHeartKey', () => {
+    for (let n = 1; n <= 5; n++) {
+      const pat = new RegExp(`<span class="heart" data-val="${n}"[^>]*data-click="setBucketStrength" data-arg0="${n}" data-keydown="onHeartKey"`);
+      expect(indexHtml).toMatch(pat);
+    }
+  });
+
+  test('onHeartKey ACTIONS entry reads val from el.dataset and calls handleHeartKey(e, val)', () => {
+    // Find the ACTIONS object's onHeartKey entry; confirm it reads dataset.val.
+    expect(indexHtml).toMatch(/onHeartKey:\s*\(el,\s*e\)\s*=>\s*\{[\s\S]{0,300}el\.dataset\.val[\s\S]{0,300}handleHeartKey\(e,\s*val\)/);
   });
 });
 

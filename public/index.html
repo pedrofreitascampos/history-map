@@ -1705,7 +1705,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
     <div class="filter-section">
       <h4>Marker Size</h4>
-      <select class="filter-select" id="marker-size-mode" data-click="setMarkerSizeMode" data-arg0="this.value">
+      <select class="filter-select" id="marker-size-mode" data-change="setMarkerSizeMode" data-arg0="this.value">
         <option value="default">Default (fixed)</option>
         <option value="my-rating">⭐ My rating</option>
         <option value="google-pop">🌟 Google popularity</option>
@@ -1717,7 +1717,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
     <div class="filter-section">
       <h4>Marker Style</h4>
-      <select class="filter-select" id="marker-style" data-click="setMarkerStyle" data-arg0="this.value">
+      <select class="filter-select" id="marker-style" data-change="setMarkerStyle" data-arg0="this.value">
         <option value="circle">⬤ Circle (default)</option>
         <option value="squircle">▢ Squircle</option>
         <option value="teardrop">📍 Teardrop pin</option>
@@ -1795,7 +1795,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="replay-controls">
         <button class="replay-play-btn" id="replay-play-btn" data-click="toggleReplayPlay" aria-label="Play or pause replay">▶</button>
         <div class="replay-scrubber-wrap">
-          <input type="range" id="replay-scrubber" min="0" max="0" value="0" step="1" data-click="seekReplay" data-arg0="this.value" aria-label="Replay position">
+          <input type="range" id="replay-scrubber" min="0" max="0" value="0" step="1" data-input="seekReplay" data-arg0="this.value" aria-label="Replay position">
           <div class="replay-position-label" id="replay-position-label">—</div>
         </div>
         <div class="replay-speed-group" role="group" aria-label="Playback speed">
@@ -1841,7 +1841,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
-        <select class="filter-select" id="trip-selector" data-click="selectTrip" data-arg0="this.value" style="flex:1;max-width:300px;"></select>
+        <select class="filter-select" id="trip-selector" data-change="selectTrip" data-arg0="this.value" style="flex:1;max-width:300px;"></select>
         <button class="btn btn-secondary" data-click="promptNewTrip" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
         <button class="btn btn-secondary" data-click="importTripFromTimeline" title="Parse a Google Timeline export into a NEW trip — all visits become stops in one bundle. For backfilling individual places without a trip, use the button in Import or Chronology." style="font-size:12px;padding:6px 12px;">📂 Timeline → New Trip</button>
         <input type="file" id="trip-timeline-input" accept=".json" style="display:none">
@@ -2171,11 +2171,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-group" id="bucket-strength-group" style="display:none;">
         <label>Want-to-Go Strength <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— how much do you want to visit?</span></label>
         <div class="star-rating" id="bucket-strength" role="radiogroup" aria-label="Want-to-go strength">
-          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        data-click="setBucketStrength" data-arg0="1" data-click="handleHeartKey" data-arg0="event" data-arg1="1"></span>
-          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              data-click="setBucketStrength" data-arg0="2" data-click="handleHeartKey" data-arg0="event" data-arg1="2"></span>
-          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           data-click="setBucketStrength" data-arg0="3" data-click="handleHeartKey" data-arg0="event" data-arg1="3"></span>
-          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  data-click="setBucketStrength" data-arg0="4" data-click="handleHeartKey" data-arg0="event" data-arg1="4"></span>
-          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         data-click="setBucketStrength" data-arg0="5" data-click="handleHeartKey" data-arg0="event" data-arg1="5"></span>
+          <span class="heart" data-val="1" role="radio" tabindex="0"  aria-label="Mild interest"        data-click="setBucketStrength" data-arg0="1" data-keydown="onHeartKey"></span>
+          <span class="heart" data-val="2" role="radio" tabindex="-1" aria-label="Curious"              data-click="setBucketStrength" data-arg0="2" data-keydown="onHeartKey"></span>
+          <span class="heart" data-val="3" role="radio" tabindex="-1" aria-label="Want to go"           data-click="setBucketStrength" data-arg0="3" data-keydown="onHeartKey"></span>
+          <span class="heart" data-val="4" role="radio" tabindex="-1" aria-label="Strongly want to go"  data-click="setBucketStrength" data-arg0="4" data-keydown="onHeartKey"></span>
+          <span class="heart" data-val="5" role="radio" tabindex="-1" aria-label="Top priority"         data-click="setBucketStrength" data-arg0="5" data-keydown="onHeartKey"></span>
         </div>
       </div>
 
@@ -2476,7 +2476,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div id="fr24-dropzone" style="border:2px dashed var(--border); border-radius:8px; padding:32px; text-align:center; color:var(--text-secondary); margin-bottom:12px; cursor:pointer;">
         <div style="font-size:32px;">📥</div>
         <div>Drop CSV here or <a href="#" data-click="openFileDialog" data-target="fr24-file" style="color:var(--accent);">browse</a></div>
-        <input id="fr24-file" type="file" accept=".csv,text/csv" style="display:none;" data-click="handleFr24File" data-arg0="this.files[0]">
+        <input id="fr24-file" type="file" accept=".csv,text/csv" style="display:none;" data-change="handleFr24File" data-arg0="this.files[0]">
       </div>
       <div id="fr24-status" style="color:var(--text-secondary); font-size:13px;"></div>
       <div id="fr24-preview" style="margin-top:12px;"></div>
@@ -2549,7 +2549,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="modal-close" data-click="closeAttachPicker" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" style="overflow:auto;flex:1;">
-      <input type="text" placeholder="Search transits…" data-click="setAttachSearch" data-arg0="this.value" style="width:100%;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;margin-bottom:12px;">
+      <input type="text" placeholder="Search transits…" data-input="setAttachSearch" data-arg0="this.value" style="width:100%;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;margin-bottom:12px;">
       <div id="attach-list"></div>
     </div>
     <div class="modal-footer">
@@ -2714,6 +2714,20 @@ const ACTIONS = {
     const files = e.dataTransfer && e.dataTransfer.files;
     if (files && files.length) _handlePhotoFiles(files);
   },
+  // Hearts widget keyboard handler. Reads the heart's value from
+  // `data-val` so we don't need data-arg0 (which collides with the
+  // click handler's data-arg0). Pre-2026-06-03 the markup had BOTH
+  // data-click="setBucketStrength" data-arg0="N" AND
+  // data-click="handleHeartKey" data-arg0="event" on the same span —
+  // per HTML spec duplicate attributes drop all but the last, so the
+  // click handler was silently overridden and hearts were not
+  // keyboard-settable. Now: data-click for click, data-keydown for
+  // keyboard; arg0 only on click (=N).
+  onHeartKey: (el, e) => {
+    const val = parseInt(el.dataset.val, 10);
+    if (!Number.isFinite(val)) return;
+    handleHeartKey(e, val);
+  },
 };
 
 function _readPositionalArgs(el) {
@@ -2721,18 +2735,32 @@ function _readPositionalArgs(el) {
   for (let i = 0; ; i++) {
     const v = el.dataset['arg' + i];
     if (v === undefined) break;
-    // Sentinel: the literal string "this" maps to the element itself.
-    // Holdover from the inline-onclick → dispatcher migration (commit
-    // c9f7ec9): `onclick="fn('x', this)"` became `data-arg1="this"`,
-    // but dataset reads strings, so receivers like selectStatus/
-    // setStatusFilter would get the string "this" and crash when they
-    // tried to call .classList on it. Mapping "this" → el here fixes
-    // every site at once. If any callsite ever needs the literal string
-    // "this" as a value, escape it (e.g. "_this") and unescape inside
-    // the receiver — none currently do.
-    args.push(v === 'this' ? el : v);
+    args.push(_resolveArgSentinel(v, el));
   }
   return args;
+}
+
+// Resolve "this" / "this.value" / "this.checked" / "this.files[0]" /
+// "this.dataset.X" against the dispatching element. Holdover from the
+// inline-onclick → dispatcher migration (commit c9f7ec9): `onclick="fn(x,
+// this.value)"` became `data-arg1="this.value"`. dataset reads strings,
+// so without this resolver receivers get the literal "this.value" and
+// silently do the wrong thing — e.g. setMarkerStyle('this.value') falls
+// through the allowlist and resets to 'circle'. This silently broke
+// Marker Style / Marker Size Mode / Trip Selector / Replay scrubber /
+// Replay realistic-routes / FR24 file picker / Attach search / two
+// person-row buttons until the 2026-06-02 audit caught it. Any callsite
+// that needs a literal "this..." string as a value should escape it
+// (e.g. "_this.value") and unescape inside the receiver — none do today.
+function _resolveArgSentinel(v, el) {
+  if (v === 'this') return el;
+  if (v === 'this.value') return el.value;
+  if (v === 'this.checked') return el.checked;
+  if (v === 'this.files[0]') return el.files && el.files[0];
+  // this.dataset.X → el.dataset[X]
+  const dataMatch = /^this\.dataset\.([a-zA-Z][a-zA-Z0-9_]*)$/.exec(v);
+  if (dataMatch) return el.dataset[dataMatch[1]];
+  return v;
 }
 
 function _runAction(actionName, el, e) {
