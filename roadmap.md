@@ -11,135 +11,28 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 ## Open
 
-### Security (audit 2026-05-30, reconciled against shipped work)
+**Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-The 2026-05-30 audit produced 12 findings. **All 12 are now resolved**
-(H-2 cookie migration shipped 2026-05-30 in `ade84d8`). See Resolved
-table below for the per-finding reconciliation.
+This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
-### Other open items
+### Carry-over from prior backlog
 
-- **Import Pedro's `#bucketlist` Google Tasks list (49 items) → Oikumene bucket locations.** Source: Google Tasks list id `VzM0QTAyMnpIbVcySG5kYQ`, dumped to backup `~/.claude/backups/google-tasks/2026-06-01-010047-archive-2023.json` is for #archive-2023; re-pull #bucketlist when picked up. Split needed: ~14 items are geographic (Bombonera, North Korea, Bora Bora, Trans-siberian, 1yr around the world, Australia, Walk Berlin→Lisbon, Antarctica, Wimbledon, Cross Africa, Mecca, Bike Berlin→Athens, Carnaval Brasil event, GP F1 Monaco) → import as `status: bucket` locations via `POST /api/locations` using the same geocode-or-placeholder pattern as Trips v2 (Photon → Nominatim → placeholder). Non-geographic items (Yoga, Skydive, Learn to meditate, Build PC, Cricket, etc.) — leave in source list for separate disposition (probably into Google Tasks `#sprint` → 🤖 Hobbies / wants or 🎓 Personal development). Added 2026-06-01 per Pedro: "#bucketlist should likely go into oikumene bucket list - it's just another data source among a myriad others".
+- **`#bucketlist` Google Tasks → Oikumene bucket — Phase 2.** Phase 1 (17 geographic items + 9 family places) imported 2026-06-01 via Photon→Nominatim geocode pipeline; staged JSON at `~/Desktop/bucketlist-import-2026-06-01/`. Source list ID: `VzM0QTAyMnpIbVcySG5kYQ`. **Still open:** ~32 non-geographic items (Yoga, Skydive, Learn to meditate, Build PC, Cricket, etc.) — separate disposition into Google Tasks `#sprint` (🤖 Hobbies or 🎓 Personal development), NOT Oikumene.
+- **Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner (`projects/ai/travel_planner`). No design spike yet.
+- **Bootstrap from sources without an export API** — Playwright/headless-browser scraper pattern. Adapter slot in `WEBSITE_IMPORT_ADAPTERS` is open for per-target use. Targets to be picked case-by-case (beliapp.co is blocked, see Dropped below).
+- **Dynamic overlays — Tier 2+.** RainViewer ✅ shipped 2026-06-02 in `20e00d7` (registry pattern + first overlay). Remaining: **USGS earthquakes** (free GeoJSON, low-cost ship next), **FlightRadar live** (needs ADS-B Exchange or FR24 key, viewport-bounded refresh), **ISS ground track**, **wind/jet-stream** (Earth Nullschool style), **marine AIS**. Architecture in place — each new overlay is ~30 lines (label + icon + attach/detach), no toggle-handler changes.
 
-- **Marker layer-diff** — ✅ shipped 2026-05-30 (commit `d1b37ba`).
-- **FR24 "not an export" guard** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
-- **LOW polish bundle** — ✅ shipped 2026-05-30 (commit `9f34cd4`).
-- **CSP nonce on `script-src`** — ✅ shipped 2026-05-30 (commit `aa479d5`).
-  Per-request nonce on every inline `<script>` block.
-- **H-2: HttpOnly cookie for bearer** — ✅ shipped 2026-05-30 (commit `ade84d8`).
-  Cookie is `HttpOnly` + `SameSite=Strict` + `Secure` in prod, 30d TTL. JS
-  can no longer read the bearer (closes the XSS-exfiltration window).
-  `auth()` reads cookie first, Authorization header as back-compat fallback.
-- **CSP `script-src-attr 'none'`** — ✅ shipped 2026-05-30 (commit `c9f7ec9`).
-  All 217 inline event handlers (`onclick=` / `onchange=` / `onmouseover=` /
-  `oninput=` / `onkeydown=` / `onfocus=`) migrated to a document-level
-  capture-phase dispatcher reading `data-<event>=` + `data-argN=` attributes.
-  No `'unsafe-inline'` remains on any JS-execution directive. A stored XSS
-  that lands `<button onclick="alert(1)">` is silently ignored.
-- **`style-src` stays permissive** (deferred). Leaflet injects nonceless
-  inline styles at runtime for cursors/panes/tiles; per CSP-3, mixing
-  `'unsafe-inline'` with a nonce in `style-src` causes browsers to ignore
-  `'unsafe-inline'` and enforce nonces strictly. Until we have a strict-
-  dynamic-for-CSS story (or migrate off Leaflet inline styles), this
-  residual remains as accepted defense-in-depth gap. Lower severity than
-  script injection — style injection cannot execute code.
-- **CSS-ify legacy hover-bg ACTIONS** — ✅ shipped 2026-05-30 (commit `342cf0d`).
-  Single `.hover-bg-tertiary:hover` rule replaces the 4 bridged sites; `hoverIn`
-  / `hoverOut` removed from the dispatcher. Pure presentational refactor.
-- **Bootstrap map/collections/trips DBs** — waiting on user inputs. Existing
-  bootstrap surfaces: bulk JSON/CSV/KML, Google Timeline, OSM enrich, Google
-  Places sync, FR24 (transits + auto-airport stops). Additional candidate
-  paths queued for the bootstrapping push:
-  - **Playwright/headless-browser scraper** for sources without an export
-    API. Spin up Chromium server-side, log in as the user (cookies
-    forwarded), scrape the place list + metadata, normalize into the
-    location-import shape. Targets: anywhere the user has a curated list
-    that won't export cleanly. ToS-grey per source; gate per-target.
-  - **beliapp.co import** — ⛔ **architecturally blocked (investigated 2026-05-31).**
-    `https://beliapp.co/app/<username>` does NOT host a web profile. With
-    any UA it redirects: WebFetch (default UA) → Branch.io `app.link` deep-link
-    page ("install mobile app"); desktop Chrome UA via curl → 200 ending at
-    `apps.apple.com/us/app/beli/id1478375386` (App Store). The public URL is
-    pure install-marketing — zero list data, zero JSON, no SPA bootstrap to
-    parse. The browser web app exists but is auth-gated; the user reported
-    "I have the export on Gmail" but Gmail search across 9 angles (sender,
-    subject, attachments, snoozed, `in:anywhere beli`, self-sent, etc.)
-    found nothing — Beli does not appear to email exports. Practical paths
-    if revisited: (1) export feature in the Beli mobile app that produces a
-    CSV/JSON file (status unknown — needs in-app check); (2) ~2-3 day
-    Playwright + stored-credentials scraper (ToS-grey, brittle, adds
-    Chromium dependency); (3) skip Beli. **Current verdict: skipped per
-    user 2026-05-31.** Pattern still useful for other apps with similar
-    architecture — adapter slot in `WEBSITE_IMPORT_ADAPTERS` is open.
+### Wishlist (P1+, lower priority)
 
-### Wishlist (P1+)
+- **Google Data Portability API OAuth flow** — blocked on Google's Restricted-scope verification for personal apps. Monitor for relaxation. Sharable-list scraper NOT to be built (ToS + low value).
+- **Google Photos — Path 2 (photo-org bridge)** — Path 3 (manual EXIF drop) ✅ shipped 2026-05-31 in `c417584`. Path 2 requires repaired photo-org (DB columns + NAS path pivot since Google scope removal). Queued.
+- **`style-src` strict CSP** (deferred) — Leaflet injects nonceless inline styles; per CSP-3, mixing `'unsafe-inline'` + nonce makes browsers ignore `'unsafe-inline'`. Accepted defense-in-depth gap until strict-dynamic-for-CSS story or migration off Leaflet inline styles. Lower severity than script injection.
 
-- **Dynamic map overlays — fun, live data layers.** Toggleable overlays on the main map for things that move/change in real time. Targets:
-  - **FlightRadar live overlay** — `/api/flightradar/live` proxy to FR24 (or ADS-B Exchange as a free alt) bounded by current map viewport; render small ✈ markers with heading rotation + on-click panel showing flight number/route/altitude/speed; auto-refresh every 15-30s; rate-limit guard. Plays nicely with existing FR24 *import* (transits), but this one is "see what's flying NOW" not "import where I've been".
-  - **Weather overlay** — clouds / precip / temperature tiles via OpenWeatherMap or RainViewer (RainViewer is free, no key). Tile layer slot in `mapStyle` toggle next to cluster/heat.
-  - **Wind / jet-stream layer** — windy.com tile feed (paid) or Earth Nullschool style WebGL render (free, BYO). Lower priority — niche.
-  - **Marine traffic (AIS)** — AISHub or MarineTraffic free tier for vessels in viewport. Niche but cool for coastal locations.
-  - **ISS / satellite ground tracks** — pull from N2YO API or open-notify; tiny 🛰 dot moving across the map.
-  - **Earthquake / volcano feed** — USGS GeoJSON (free, no key); circle-radius by magnitude. Educational, low-cost ship.
-  - **Cruise ships / aircraft carriers** — for travel-curious users; spotter community data sources exist but ToS-grey.
+## ⛔ Blocked / Dropped
 
-  Architecture: each overlay = a registered entry in `DYNAMIC_OVERLAYS` map → `{label, icon, fetch(bounds), render(layer, data), refreshIntervalSec, attribution}`. Single overlay-control UI in the map (similar to `.map-tools-control`) opens a panel with toggle switches per source. Server side: thin proxies in `server/overlays/` (rate-limit + key shielding + caching). Per-overlay logging + provider-key gating like the Places provider pattern. **Ship order: RainViewer (free, no key, instant win) → FlightRadar (requires key or ADS-B Exchange free) → USGS quakes (free) → others.**
-
-- **Google data — easier ingestion path.** Research spike completed 2026-05-30
-  (`a537b43` — see `docs/research/google-data-ingestion.md`). **Three follow-ups
-  shipped:** `99d0ea2` patched the phone-export parsers
-  (`parseGoogleTimelineSegments` + `parseGoogleTimelineNew`) to read real place
-  names, capture `placeId` + `address`, and stop mangling diacritic casing;
-  `ac88ce0` updated the Google Data Guide with the 2024+ on-device export path
-  and the Takeout `Saved/` CSV-list path; `5d93e62` migrated the server proxy
-  off the legacy Places API onto Places API (New) — `X-Goog-Api-Key` header
-  (key no longer in URL query string), `X-Goog-FieldMask` cost control,
-  `priceLevel` enum→0-4 mapping at the helper boundary so downstream consumers
-  stay unchanged. **KML/KMZ already shipped** (`parseKML` + JSZip unzip — the
-  research brief's "~1 day, `togeojson`" note was stale). **Still open:** Data
-  Portability API OAuth flow (blocked on Google's Restricted-scope verification
-  for personal apps — monitor for relaxation). Do not build the sharable-list
-  scraper (ToS risk + low value).
-- **Time Out / website import** — ✅ shipped 2026-05-31 (commits `febb14d` +
-  `8134bdb`). `POST /api/import/website` with extensible adapter registry
-  (`WEBSITE_IMPORT_ADAPTERS` in server/index.js); Time Out is the first
-  registered adapter (`server/import-adapters/timeout.js`). HTTPS-only +
-  SSRF guard (rejects localhost, RFC1918, IPv6 loopback). 10s timeout, 5MB
-  cap. Adapter uses JSON-LD ItemList as primary signal, falls back to
-  numbered h2/h3 headings + nearby `<address>` blocks. Client UI lives in
-  the Import view ("🌐 Web Import") + review modal with editable
-  name/address per row and Select-all toggle; on confirm, each selected
-  venue is geocoded via `geocodeNarratedStop` (shipped in Trips v2) and
-  POSTed as a bucket-status location with `tags: ['timeout']` + notes that
-  carry the article title and snippet. 53 new jest tests (31 server,
-  22 client). Next adapter slot ready for Beli, Bon Appétit, Eater, etc.
-- **Trips — natural-language entry v2** — ✅ shipped 2026-05-31. Each parsed stop
-  is now geocoded via Photon (fallback Nominatim) and POSTed as a bucket-status
-  location linked to the trip via `tripId` + `tripOrder`. Unmatched stops still
-  create placeholder bucket locations (no lat/lng) so nothing is lost. Helper
-  `geocodeNarratedStop(name)` factored out for testability; 15 new jest tests in
-  `tests/trips-v2.test.js`.
-- **Google Photos integration** — per-location photo fetch via GPS+date.
-- **Sync to Google Maps saved lists** — **blocker**: no public write API;
-  research spike needed.
-- **Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange.
-
-## Resolved (audit 2026-05-30 → reconciled)
-
-| Finding | Resolution |
-|---|---|
-| **[H-1]** Admin bypass when `ALLOWED_EMAILS` unset | ✅ Phase A `0d2c74c`. `requireAdmin` (`server/index.js:160`) fail-closes when `ADMIN_EMAIL` empty. |
-| **[H-3]** `path-to-regexp` ReDoS via Express 4.18.2 | ✅ Lockfile already resolves `express@4.22.1` + `path-to-regexp@0.1.12` (the patched 0.1.x release). |
-| **[M-1]** CSP disabled + 7 CDN no SRI | ✅ Phase B `c9f35aa` enabled Helmet CSP with explicit `scriptSrcAttr`/`styleSrcAttr`; `1b10643` added SRI sha384 to 9 pinned CDN URLs. |
-| **[M-2]** CORS wildcard when `ALLOWED_ORIGINS` unset | ✅ Phase B `c9f35aa`. `server/index.js:95-98` fail-closes in production (`origin: false`). |
-| **[M-4]** `loc.address` rendered unescaped at 4961/5630 | ✅ Phase A. Audit line numbers are stale; current render sites (`4529`, `6689`) use `esc()`. |
-| **[L-1]** Password min length 4 | ✅ Phase B `c9f35aa`. `server/index.js:188` checks `< 8`. |
-| **[L-2]** `data/admin1-simplified.json` not in `.gitignore` | ✅ Already present (`.gitignore:3`). |
-| **[M-3]** `_googleUrl` `javascript:` URI via `getGoogleMapsUrl` | ✅ `e4d0b4f`. `getGoogleMapsUrl` requires `^https?://`; server `sanitizeLocationUpdate` strips bad URIs on write. |
-| **[M-5]** `express.json` 10MB global body limit | ✅ `e4d0b4f`. Global dropped to 1MB; path-mounted 10MB on `/api/locations/bulk` + `/api/transits/bulk`. |
-| **[L-3]** `render.yaml` `npm install` not `npm ci` | ✅ `e4d0b4f`. Switched to `npm ci` (lockfile-strict). |
-| **[L-4]** `render.yaml` missing `ALLOWED_EMAILS` + `ALLOWED_ORIGINS` | ✅ `e4d0b4f`. Both declared with `sync: false`. |
-| **[H-2]** JWT bearer in `localStorage`, 90-day TTL, no revocation | ✅ Full path shipped. `53e2db7`: TTL 30d + `jti` revocation + `/api/auth/logout`. `ade84d8`: bearer migrated to `HttpOnly` + `SameSite=Strict` + `Secure`-in-prod cookie; JS can no longer read the token (XSS-exfiltration window closed). |
+- **beliapp.co import** — architecturally blocked. `https://beliapp.co/app/<username>` is install-marketing only (redirects to App Store; no web profile, no JSON, no SPA bootstrap). Gmail search across 9 angles found no exports. Investigated 2026-05-31; user-confirmed skip. Practical paths if revisited: in-app export feature (status unknown), or 2-3 day Playwright+credentials scraper (ToS-grey + brittle + Chromium dep).
+- **Sync to Google Maps Saved Lists** — no public write API exists.
+- **Google Photos Library API (Path 1)** — dead since 2025-03-31 (scope removed; Picker API interactive-only; GPS never in API schema). Confirmed via photo-org's own `_parse_media_item` hardcoding `lat,lon=None,None`.
 
 ## Audit 2026-06-02 (full multi-domain)
 
@@ -248,6 +141,23 @@ Ranked by impact-vs-effort:
 - **What was already in good shape** (per cybersec agent): server hygiene (Helmet CSP+nonce, HttpOnly+Strict+Secure cookies, ALLOWED_EMAILS fail-closed, ALLOWED_ORIGINS CORS, JWT revocation, rate limiting, sanitizeDoc, path-traversal guard, RainViewer URL allowlist, recent enrichment confirm + Wishlist all clean from XSS).
 - **What the static audits missed but live caught:** the `data-arg0="this.value"` dispatcher gap. Recommend adding a Playwright sweep test that exercises every dropdown in the app + asserts state mutation per `change`.
 - **What live missed but static caught:** the `data-click="handleHeartKey"` duplicate-attribute keyboard accessibility bug — silently broken keyboard heart-setting was not exercised in live testing because the agent used mouse clicks.
+
+## Resolved (audit 2026-05-30 → reconciled)
+
+| Finding | Resolution |
+|---|---|
+| **[H-1]** Admin bypass when `ALLOWED_EMAILS` unset | ✅ Phase A `0d2c74c`. `requireAdmin` (`server/index.js:160`) fail-closes when `ADMIN_EMAIL` empty. |
+| **[H-3]** `path-to-regexp` ReDoS via Express 4.18.2 | ✅ Lockfile already resolves `express@4.22.1` + `path-to-regexp@0.1.12` (the patched 0.1.x release). |
+| **[M-1]** CSP disabled + 7 CDN no SRI | ✅ Phase B `c9f35aa` enabled Helmet CSP with explicit `scriptSrcAttr`/`styleSrcAttr`; `1b10643` added SRI sha384 to 9 pinned CDN URLs. |
+| **[M-2]** CORS wildcard when `ALLOWED_ORIGINS` unset | ✅ Phase B `c9f35aa`. `server/index.js:95-98` fail-closes in production (`origin: false`). |
+| **[M-4]** `loc.address` rendered unescaped at 4961/5630 | ✅ Phase A. Audit line numbers are stale; current render sites (`4529`, `6689`) use `esc()`. |
+| **[L-1]** Password min length 4 | ✅ Phase B `c9f35aa`. `server/index.js:188` checks `< 8`. |
+| **[L-2]** `data/admin1-simplified.json` not in `.gitignore` | ✅ Already present (`.gitignore:3`). |
+| **[M-3]** `_googleUrl` `javascript:` URI via `getGoogleMapsUrl` | ✅ `e4d0b4f`. `getGoogleMapsUrl` requires `^https?://`; server `sanitizeLocationUpdate` strips bad URIs on write. |
+| **[M-5]** `express.json` 10MB global body limit | ✅ `e4d0b4f`. Global dropped to 1MB; path-mounted 10MB on `/api/locations/bulk` + `/api/transits/bulk`. |
+| **[L-3]** `render.yaml` `npm install` not `npm ci` | ✅ `e4d0b4f`. Switched to `npm ci` (lockfile-strict). |
+| **[L-4]** `render.yaml` missing `ALLOWED_EMAILS` + `ALLOWED_ORIGINS` | ✅ `e4d0b4f`. Both declared with `sync: false`. |
+| **[H-2]** JWT bearer in `localStorage`, 90-day TTL, no revocation | ✅ Full path shipped. `53e2db7`: TTL 30d + `jti` revocation + `/api/auth/logout`. `ade84d8`: bearer migrated to `HttpOnly` + `SameSite=Strict` + `Secure`-in-prod cookie; JS can no longer read the token (XSS-exfiltration window closed). |
 
 ## Major shipped batches (chronological)
 
@@ -628,4 +538,59 @@ See memory roadmap for full commit-level detail. Headline batches:
       `fazer-com-miudas` + `family`, `bucketStrength: 4`. JSON
       staged at `~/Desktop/bucketlist-import-2026-06-01/`.
   - **Session totals after marker batch: 810 jest + 8 e2e green
+    (3 skip).**
+
+- **2026-06-02 — Wishlist + 4 marker style variants + RainViewer
+  weather overlay + full multi-domain audit (4 commits, +60 jest).**
+  - `087df07` **Wishlist view** — new ⭐ nav tab between Chronology and
+    Trips. Cards for every `status:'bucket'` location with star badge
+    (gold ≥4.5 / silver ≥4.0), ♥ strength hearts, tag chips, and a
+    4-action row (📍 Map / ✅ Been / ✏️ Edit / 🗑️). Sort by Strength
+    (default) / Rating / Name / Recently-added. Filter by tag, category,
+    or full-text search. Pagination 100/page. Closes the visibility gap
+    from the 26 imported bucket items. Reuses `logTodayFromPopup` for
+    Been action, `openEditModal` for Edit, `showConfirm` for delete.
+    Cybersec audit found 2 issues (native `confirm()` → `showConfirm`;
+    missing numeric guard on badge `toFixed`) — both fixed pre-commit.
+    +13 jest in `tests/wishlist-view.test.js`.
+  - `1a71d0f` **4 marker style variants + sidebar toggle.** New "Marker
+    Style" dropdown next to "Marker Size" with 5 options: Circle
+    (default, preserved), **Squircle** (iOS app-icon superellipse via
+    `border-radius: 22%`), **Teardrop** (Apple Maps pin, anchor at
+    bottom-point), **Glyph** (Mapbox/Raycast minimal: emoji + dot, no
+    bg), **Pill** (Linear-style chip with `★X.X` rating inline).
+    Architecture mirrors `markerSizeMode`: `VALID_MARKER_STYLES` +
+    `setMarkerStyle` + localStorage + `createMarkerIcon` branches per
+    shape (`iconSize`/`iconAnchor`/`popupAnchor` differ). Status colors
+    + corner badge preserved for all styles except pill (inline rating)
+    and glyph (suppresses bottom numeric tag for cleaner minimalism).
+    Live-tested with 4 seeded locations (2 been, 2 bucket, mixed
+    ratings). +21 jest. Cybersec audit clean (8 focus areas, zero
+    issues + 1 LOW cosmetic note on glyph mobile visibility).
+    **⚠️ Live audit 2026-06-02 later surfaced that the sidebar
+    dropdown is silently broken via `data-arg0="this.value"` — see
+    Audit 2026-06-02 P0 above.**
+  - `20e00d7` **RainViewer weather radar overlay** — first dynamic
+    overlay shipped via the `DYNAMIC_OVERLAYS` registry. 🌧️ button in
+    map top-right next to 📍 and ✨. Browser-side fetch of
+    `api.rainviewer.com/public/weather-maps.json` → `L.tileLayer` at
+    `zIndex:400` with opacity 0.6. Frame metadata cached 10 min.
+    localStorage persistence. CSP `connectSrc` gets `api.rainviewer.com`;
+    tile loads covered by existing `imgSrc: https:`. **Registry pattern
+    is the extensible deliverable** — future overlays (USGS, FlightRadar,
+    ISS) slot in as new entries without touching toggle handler.
+    Cybersec found 2 MEDIUM + 1 LOW, all fixed pre-commit with
+    regression pins: `RAINVIEWER_HOST_RE` + `RAINVIEWER_PATH_RE`
+    allowlists block `javascript:` host injection; `_overlayAttachInFlight`
+    Set guards double-click race; `hasOwnProperty.call` blocks inherited
+    prototype keys in `DYNAMIC_OVERLAYS[key]` access. Live-verified in
+    Playwright: poisoned host blocked + fell back to safe default,
+    double-click attached exactly 1 layer, ~60 tiles loaded from
+    `tilecache.rainviewer.com` on toggle-on, clean detach.
+    +26 jest in `tests/overlays.test.js`.
+  - `c5d229d` **Full multi-domain audit** logged (this batch — security
+    + UX + code + perf + live functionality, 4 parallel specialist
+    agents). See [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain)
+    section above for the full table.
+  - **Session totals after 2026-06-02 batch: ~870 jest + 8 e2e green
     (3 skip).**
