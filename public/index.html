@@ -1873,9 +1873,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
   <!-- REGIONS VIEW -->
   <div class="view" id="regions-view" style="flex-direction:column;overflow:hidden;">
-    <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg-glass);backdrop-filter:blur(12px);z-index:10;">
+    <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg-glass);backdrop-filter:blur(12px);z-index:10;flex-wrap:wrap;">
       <h2 style="font-family:var(--font-display);font-size:18px;margin:0;">🌍 Visited Regions</h2>
-      <select class="filter-select" id="region-color-scheme" data-click="updateRegionsColorScheme" style="width:160px;">
+      <div class="filter-group" id="regions-mode-switcher" role="tablist" aria-label="Region granularity" style="flex:0 0 auto;">
+        <button class="filter-group-btn" role="tab" data-mode="country" data-click="setRegionsMode" data-arg0="country" style="flex:0 0 auto;padding:8px 14px;">🏳️ Country</button>
+        <button class="filter-group-btn active" role="tab" aria-selected="true" data-mode="region" data-click="setRegionsMode" data-arg0="region" style="flex:0 0 auto;padding:8px 14px;">🗺️ Region</button>
+        <button class="filter-group-btn" role="tab" data-mode="city" data-click="setRegionsMode" data-arg0="city" style="flex:0 0 auto;padding:8px 14px;">🏙️ City</button>
+      </div>
+      <select class="filter-select" id="region-color-scheme" data-change="updateRegionsColorScheme" data-arg0="this.value" style="width:160px;">
         <option value="amber">🟡 Amber</option>
         <option value="blue">🔵 Blue</option>
         <option value="green">🟢 Green</option>
@@ -8752,30 +8757,210 @@ function _updateRegionsSummary(geo, regionCounts) {
     `${visitedRegions.size} regions · ${visitedCountries.size} countries · ${stateIndex.beenLocations.length} locations`;
 }
 
+// ── View mode (country | region | city) ────────────────────────────────
+let regionsViewMode = 'region';
+let citiesData = null;        // { count, minPop, cities: [[lat,lng,name,iso2,pop], ...] } — sorted by pop desc
+let _citiesGrid = null;       // Map<"latCell|lngCell", number[]> — indices into citiesData.cities
+let _citySnapCache = null;    // { gen, snaps: Map<cityIdx, locations[]> }
+let _cityLayer = null;        // L.layerGroup of circleMarkers
+
+function setRegionsMode(mode) {
+  if (mode !== 'country' && mode !== 'region' && mode !== 'city') return;
+  regionsViewMode = mode;
+  document.querySelectorAll('#regions-mode-switcher .filter-group-btn').forEach(b => {
+    const active = b.dataset.mode === mode;
+    b.classList.toggle('active', active);
+    if (active) b.setAttribute('aria-selected', 'true'); else b.removeAttribute('aria-selected');
+  });
+  renderRegionsMap();
+}
+
+// ── Country aggregation ────────────────────────────────────────────────
+// Roll admin1 region counts up to per-country totals. Reuses
+// `countLocationsByRegion` so we point-in-polygon at most once per
+// data generation across all three views.
+function aggregateRegionsByCountry(geo, regionCounts) {
+  const countryCounts = new Map();      // country name -> visit count
+  const countryFeatures = new Map();    // country name -> feature indices
+  const countryLocs = new Map();        // country name -> locations[]
+  const { regionLocs } = countLocationsByRegion(geo);
+  geo.features.forEach((f, i) => {
+    const country = f.properties && f.properties.country;
+    if (!country) return;
+    if (!countryFeatures.has(country)) countryFeatures.set(country, []);
+    countryFeatures.get(country).push(i);
+    const count = regionCounts.get(i) || 0;
+    if (count > 0) {
+      countryCounts.set(country, (countryCounts.get(country) || 0) + count);
+      if (!countryLocs.has(country)) countryLocs.set(country, []);
+      countryLocs.get(country).push(...(regionLocs.get(i) || []));
+    }
+  });
+  return { countryCounts, countryFeatures, countryLocs };
+}
+
+function _countryStyleFn(featureIdx, countryCounts, minCount, maxCount, range, scheme) {
+  return function(feature) {
+    const country = feature.properties && feature.properties.country;
+    const count = country ? (countryCounts.get(country) || 0) : 0;
+    const rank = count > 0 ? (count - minCount) / range : 0;
+    const logIntensity = count > 0 ? Math.log(count + 1) / Math.log(maxCount + 1) : 0;
+    const intensity = count > 0 ? 0.15 + 0.85 * Math.max(rank, logIntensity) : 0;
+    return {
+      fillColor: count > 0 ? interpolateColor(scheme.light, scheme.dark, intensity) : 'transparent',
+      fillOpacity: count > 0 ? 0.45 + 0.45 * intensity : 0,
+      // weight: 0 lets adjacent same-country admin1s blend into one country shape.
+      // basemap (dark_nolabels) provides faint country outlines for empty countries.
+      weight: 0,
+      color: 'transparent',
+    };
+  };
+}
+
+// ── City snapping (haversine, grid-indexed for O(~10) per visit) ──────
+async function loadCities() {
+  if (citiesData) return citiesData;
+  document.getElementById('regions-summary').textContent = 'Loading cities (4.4MB)...';
+  try {
+    const res = await fetch('/cities.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    if (text.startsWith('<!')) throw new Error('Got HTML instead of JSON — file may not be deployed yet');
+    citiesData = JSON.parse(text);
+    console.log('Loaded', citiesData.count, 'cities (min pop:', citiesData.minPop + ')');
+    return citiesData;
+  } catch (err) {
+    console.error('Failed to load cities dataset:', err);
+    document.getElementById('regions-summary').textContent = 'Failed to load cities: ' + err.message;
+    return null;
+  }
+}
+
+// Bucket cities into 1°×1° grid cells. ~135k cities / 64,800 cells ≈ 2 per cell.
+// Nearest-city lookup then scans 9 cells (center + 8 neighbors) → ~20 candidates.
+function buildCitiesGrid(data) {
+  if (_citiesGrid) return _citiesGrid;
+  _citiesGrid = new Map();
+  for (let i = 0; i < data.cities.length; i++) {
+    const [lat, lng] = data.cities[i];
+    const key = Math.floor(lat) + '|' + Math.floor(lng);
+    let bucket = _citiesGrid.get(key);
+    if (!bucket) { bucket = []; _citiesGrid.set(key, bucket); }
+    bucket.push(i);
+  }
+  return _citiesGrid;
+}
+
+// Haversine km between two lat/lng pairs.
+function _haversineKmCity(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Snap one location to a city in the dataset. Returns city index or -1.
+//
+// Tiered selection (UX rationale: a visit on Liberty Island should label as
+// "New York", not the nearest tiny populated place):
+//   1. If any city lies within `nearKm` (default 25), pick the MOST POPULOUS
+//      among them — close calls go to the dominant metro.
+//   2. Otherwise, pick the NEAREST city within `maxKm` (default 50) — handles
+//      remote villages where there's no big-city candidate nearby.
+//   3. Past `maxKm` from anything → return -1, visit is dropped from view.
+function snapLocationToCity(lat, lng, data, grid, maxKm, nearKm) {
+  if (nearKm === undefined) nearKm = 25;
+  const latC = Math.floor(lat), lngC = Math.floor(lng);
+  let bestPop = -1, bestPopIdx = -1;
+  let bestDist = maxKm, bestDistIdx = -1;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const bucket = grid.get((latC + dy) + '|' + (lngC + dx));
+      if (!bucket) continue;
+      for (const idx of bucket) {
+        const [clat, clng, , , pop] = data.cities[idx];
+        const d = _haversineKmCity(lat, lng, clat, clng);
+        if (d > maxKm) continue;
+        if (d <= nearKm && pop > bestPop) { bestPop = pop; bestPopIdx = idx; }
+        if (d < bestDist) { bestDist = d; bestDistIdx = idx; }
+      }
+    }
+  }
+  return bestPopIdx !== -1 ? bestPopIdx : bestDistIdx;
+}
+
+// Snap all been locations and group by city idx.
+function snapAllVisitsToCities(data, grid) {
+  if (_citySnapCache && _citySnapCache.gen === stateIndex.generation) return _citySnapCache.snaps;
+  const snaps = new Map();
+  const beenLocs = stateIndex.beenLocations;
+  for (const loc of beenLocs) {
+    if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number') continue;
+    const idx = snapLocationToCity(loc.lat, loc.lng, data, grid, 50);
+    if (idx === -1) continue;
+    let arr = snaps.get(idx);
+    if (!arr) { arr = []; snaps.set(idx, arr); }
+    arr.push(loc);
+  }
+  _citySnapCache = { gen: stateIndex.generation, snaps };
+  return snaps;
+}
+
+// Radius scale: sqrt(pop) gives a smoother visual spread than linear.
+// Clamped to [4, 40] px so tiny villages stay visible and megacities
+// stay readable.
+function cityDotRadius(pop, maxPop) {
+  if (!pop || pop < 1) return 4;
+  const r = Math.sqrt(pop) / Math.sqrt(maxPop) * 36 + 4;
+  return Math.max(4, Math.min(40, r));
+}
+
+// ── Color scheme dispatcher ────────────────────────────────────────────
 function updateRegionsColorScheme() {
+  // Scheme select is read from DOM; arg passed in is the value but
+  // _buildRegionStyleParams reads the dropdown directly, so we just re-style.
+  if (regionsViewMode === 'city') { renderRegionsMap(); return; }
   if (!regionsLayer || !_regionData) { renderRegionsMap(); return; }
   const { regionCounts, geo } = _regionData;
   const { maxCount, minCount, range, scheme } = _buildRegionStyleParams(regionCounts);
   const featureIdx = new Map();
   geo.features.forEach((f, i) => featureIdx.set(f, i));
+  if (regionsViewMode === 'country') {
+    const { countryCounts } = aggregateRegionsByCountry(geo, regionCounts);
+    const cParams = _buildRegionStyleParams(countryCounts);
+    regionsLayer.setStyle(_countryStyleFn(featureIdx, countryCounts, cParams.minCount, cParams.maxCount, cParams.range, cParams.scheme));
+    _updateRegionsSummary(geo, regionCounts);
+    return;
+  }
   regionsLayer.setStyle(_regionStyleFn(featureIdx, regionCounts, minCount, maxCount, range, scheme));
   _updateRegionsSummary(geo, regionCounts);
 }
 
+// ── Top-level render dispatcher ───────────────────────────────────────
 async function renderRegionsMap() {
   initRegionsMap();
+  // Tear down whichever layer is currently mounted so modes don't stack.
+  if (regionsLayer) { regionsMap.removeLayer(regionsLayer); regionsLayer = null; }
+  if (_cityLayer)   { regionsMap.removeLayer(_cityLayer);   _cityLayer = null; }
+
+  if (regionsViewMode === 'city') {
+    return _renderRegionMode_city();
+  }
   const geo = await loadRegionBoundaries();
   if (!geo) return;
-
   const { regionCounts, regionLocs } = countLocationsByRegion(geo);
   _regionData = { regionCounts, regionLocs, geo };
+  if (regionsViewMode === 'country') return _renderRegionMode_country(geo, regionCounts);
+  return _renderRegionMode_region(geo, regionCounts);
+}
+
+function _renderRegionMode_region(geo, regionCounts) {
   const { maxCount, minCount, range, scheme } = _buildRegionStyleParams(regionCounts);
-
-  if (regionsLayer) regionsMap.removeLayer(regionsLayer);
-
   const featureIdx = new Map();
   geo.features.forEach((f, i) => featureIdx.set(f, i));
-
   regionsLayer = L.geoJSON(geo, {
     style: _regionStyleFn(featureIdx, regionCounts, minCount, maxCount, range, scheme),
     onEachFeature: function(feature, layer) {
@@ -8791,17 +8976,84 @@ async function renderRegionsMap() {
       }
     }
   }).addTo(regionsMap);
-
   _updateRegionsSummary(geo, regionCounts);
-
   setTimeout(() => regionsMap.invalidateSize(), 100);
 }
 
-function showRegionLocations(idx, regionName, country) {
-  const locs = _regionData?.regionLocs?.get(idx) || [];
-  if (locs.length === 0) return;
+function _renderRegionMode_country(geo, regionCounts) {
+  const { countryCounts, countryLocs } = aggregateRegionsByCountry(geo, regionCounts);
+  const cParams = _buildRegionStyleParams(countryCounts);
+  const featureIdx = new Map();
+  geo.features.forEach((f, i) => featureIdx.set(f, i));
+  regionsLayer = L.geoJSON(geo, {
+    style: _countryStyleFn(featureIdx, countryCounts, cParams.minCount, cParams.maxCount, cParams.range, cParams.scheme),
+    onEachFeature: function(feature, layer) {
+      const country = feature.properties && feature.properties.country;
+      if (!country) return;
+      const count = countryCounts.get(country) || 0;
+      if (count > 0) {
+        layer.bindTooltip(
+          `<strong>${esc(country)}</strong><br>${count} location${count > 1 ? 's' : ''}`,
+          { sticky: true, direction: 'top' }
+        );
+        layer.on('click', () => showCountryLocations(country, countryLocs.get(country) || []));
+      }
+    }
+  }).addTo(regionsMap);
+  _regionData.countryCounts = countryCounts;
+  _regionData.countryLocs = countryLocs;
+  _updateRegionsSummary(geo, regionCounts);
+  setTimeout(() => regionsMap.invalidateSize(), 100);
+}
 
-  const content = locs.map(l => {
+async function _renderRegionMode_city() {
+  const data = await loadCities();
+  if (!data) return;
+  const grid = buildCitiesGrid(data);
+  const snaps = snapAllVisitsToCities(data, grid);
+  const scheme = REGION_COLORS[document.getElementById('region-color-scheme').value] || REGION_COLORS.amber;
+
+  let maxVisits = 1, maxPop = 1;
+  snaps.forEach((locs, idx) => {
+    if (locs.length > maxVisits) maxVisits = locs.length;
+    const pop = data.cities[idx][4];
+    if (pop > maxPop) maxPop = pop;
+  });
+
+  _cityLayer = L.layerGroup();
+  snaps.forEach((locs, idx) => {
+    const [lat, lng, name, iso2, pop] = data.cities[idx];
+    const visits = locs.length;
+    const intensity = Math.log(visits + 1) / Math.log(maxVisits + 1);
+    const fill = interpolateColor(scheme.light, scheme.dark, 0.2 + 0.8 * intensity);
+    const marker = L.circleMarker([lat, lng], {
+      radius: cityDotRadius(pop, maxPop),
+      fillColor: fill,
+      color: scheme.mid,
+      weight: 1.2,
+      opacity: 0.9,
+      fillOpacity: 0.55 + 0.35 * intensity,
+    });
+    const popStr = pop >= 1e6 ? (pop/1e6).toFixed(1) + 'M' : pop >= 1e3 ? Math.round(pop/1e3) + 'k' : String(pop);
+    marker.bindTooltip(
+      `<strong>${esc(name)}</strong><br>${esc(iso2)} · pop ${popStr}<br>${visits} visit${visits > 1 ? 's' : ''}`,
+      { sticky: true, direction: 'top' }
+    );
+    marker.on('click', () => showCityLocations(name, iso2, pop, locs));
+    _cityLayer.addLayer(marker);
+  });
+  _cityLayer.addTo(regionsMap);
+
+  const visitedCountries = new Set();
+  snaps.forEach((_, idx) => visitedCountries.add(data.cities[idx][3]));
+  document.getElementById('regions-summary').textContent =
+    `${snaps.size} cities · ${visitedCountries.size} countries · ${stateIndex.beenLocations.length} locations`;
+  setTimeout(() => regionsMap.invalidateSize(), 100);
+}
+
+// ── Click → list popups ───────────────────────────────────────────────
+function _renderLocList(locs) {
+  return locs.map(l => {
     const cat = CATEGORIES[l.category] || CATEGORIES.location;
     const rating = l.myRating ? ` · ★${l.myRating}` : '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;">
@@ -8810,13 +9062,42 @@ function showRegionLocations(idx, regionName, country) {
       <span style="color:var(--text-muted);">${cat.label}${rating}</span>
     </div>`;
   }).join('');
+}
 
+function showRegionLocations(idx, regionName, country) {
+  const locs = _regionData?.regionLocs?.get(idx) || [];
+  if (locs.length === 0) return;
   L.popup({ maxWidth: 320, maxHeight: 300 })
     .setLatLng(regionsMap.getCenter())
     .setContent(`<div class="popup-inner">
       <h3>${esc(regionName)}</h3>
       <div class="popup-cat">${esc(country)} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
-      <div style="margin-top:8px;">${content}</div>
+      <div style="margin-top:8px;">${_renderLocList(locs)}</div>
+    </div>`)
+    .openOn(regionsMap);
+}
+
+function showCountryLocations(country, locs) {
+  if (!locs || locs.length === 0) return;
+  L.popup({ maxWidth: 320, maxHeight: 300 })
+    .setLatLng(regionsMap.getCenter())
+    .setContent(`<div class="popup-inner">
+      <h3>${esc(country)}</h3>
+      <div class="popup-cat">${locs.length} place${locs.length > 1 ? 's' : ''}</div>
+      <div style="margin-top:8px;">${_renderLocList(locs)}</div>
+    </div>`)
+    .openOn(regionsMap);
+}
+
+function showCityLocations(name, iso2, pop, locs) {
+  if (!locs || locs.length === 0) return;
+  const popStr = pop >= 1e6 ? (pop/1e6).toFixed(1) + 'M' : pop >= 1e3 ? Math.round(pop/1e3) + 'k' : String(pop);
+  L.popup({ maxWidth: 320, maxHeight: 300 })
+    .setLatLng([locs[0].lat, locs[0].lng])
+    .setContent(`<div class="popup-inner">
+      <h3>${esc(name)}</h3>
+      <div class="popup-cat">${esc(iso2)} · pop ${popStr} · ${locs.length} visit${locs.length > 1 ? 's' : ''}</div>
+      <div style="margin-top:8px;">${_renderLocList(locs)}</div>
     </div>`)
     .openOn(regionsMap);
 }
@@ -11632,6 +11913,9 @@ function mapWebImportError(msg) {
   if (!msg) return 'Import failed';
   if (msg.includes('invalid_url')) return 'That URL is not valid (must be https:// and not localhost)';
   if (msg.includes('host_not_supported')) return 'This site is not supported yet. We currently parse Time Out city guides.';
+  if (msg.includes('fetch_failed_404')) return 'That page returned 404 — the URL is wrong or has been moved. Try a current list URL from the site.';
+  if (msg.includes('fetch_failed_403') || msg.includes('fetch_failed_401')) return 'The site is blocking us (403/401). It may require login or be geo-restricted.';
+  if (msg.includes('fetch_failed_5')) return 'The site is temporarily down (5xx). Try again in a minute.';
   if (msg.includes('fetch_failed')) return 'Could not fetch that page. The site may be blocking us or the URL is wrong.';
   if (msg.includes('response_too_large')) return 'That page is too large to parse.';
   return 'Import failed: ' + msg;

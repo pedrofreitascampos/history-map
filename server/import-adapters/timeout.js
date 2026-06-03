@@ -79,9 +79,14 @@ function parseNumberedHeadings(html) {
   const headingRe = /<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi;
   let m;
   while ((m = headingRe.exec(html)) !== null) {
-    const inner = stripTags(m[1]);
+    // Decode entities BEFORE the regex check — Time Out wraps numbers in
+    // <span> and uses &nbsp; between number and name, so the raw inner is
+    // "<span>1.</span>&nbsp;Miga". stripTags leaves "1.&nbsp;Miga"; only
+    // after decode does the leading "1. Miga" match /^\d+\.\s+/.
+    // (decodeEntities also collapses whitespace, so &nbsp; → normal space.)
+    const inner = decodeEntities(stripTags(m[1]));
     if (!/^\d+\.\s+/.test(inner)) continue;
-    const name = decodeEntities(inner.replace(/^\d+\.\s+/, '').trim());
+    const name = inner.replace(/^\d+\.\s+/, '').trim();
     if (!name) continue;
     const afterHeading = html.slice(m.index + m[0].length, m.index + m[0].length + 800);
     const addrMatch = afterHeading.match(/<address[^>]*>([\s\S]*?)<\/address>/i);

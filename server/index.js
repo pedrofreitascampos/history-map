@@ -768,7 +768,11 @@ app.post('/api/import/website', auth, async (req, res) => {
     if (!fetchRes.ok) {
       const ms = Date.now() - _t0;
       log('warn', 'import_website_call', { userId: req.user.id, host, status: 'fetch_failed', errorType: `http_${fetchRes.status}`, ms });
-      return res.status(502).json({ error: 'fetch_failed' });
+      // Encode HTTP status into the error string so the existing api() error
+      // contract (single `error` string field) carries it to the client toast.
+      // Time Out reshuffles URLs frequently and a 404 should read as "page
+      // moved", not generic "we couldn't reach the site".
+      return res.status(502).json({ error: `fetch_failed_${fetchRes.status}` });
     }
     const buf = await fetchRes.arrayBuffer();
     if (buf.byteLength > IMPORT_MAX_BYTES) {

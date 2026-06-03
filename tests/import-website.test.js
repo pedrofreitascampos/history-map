@@ -166,14 +166,24 @@ describe('POST /api/import/website — upstream fetch errors', () => {
     expect(JSON.stringify(res.body)).not.toContain('network timeout');
   });
 
-  test('fetch returns 404 returns 502 fetch_failed', async () => {
+  test('fetch returns 404 returns 502 with status-tagged error (lets client toast distinguish moved page)', async () => {
     mockFetch('Not Found', { status: 404, ok: false });
     const res = await request(app)
       .post('/api/import/website')
       .set('Authorization', `Bearer ${token}`)
       .send({ url: 'https://www.timeout.com/lisbon/restaurants/best' });
     expect(res.status).toBe(502);
-    expect(res.body.error).toBe('fetch_failed');
+    expect(res.body.error).toBe('fetch_failed_404');
+  });
+
+  test('fetch returns 503 surfaces in error string (lets client say "site temporarily down")', async () => {
+    mockFetch('Service Unavailable', { status: 503, ok: false });
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://www.timeout.com/lisbon/restaurants/best' });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('fetch_failed_503');
   });
 
   test('response body >5MB returns 413 response_too_large', async () => {
@@ -338,6 +348,44 @@ describe('POST /api/import/website — numbered-headings fallback', () => {
       .send({ url: 'https://www.timeout.com/lisbon/restaurants/best' });
     expect(res.status).toBe(200);
     expect(res.body.venues[0].snippet.length).toBe(200);
+  });
+
+  // 2026-06-03 regression: Time Out wraps the leading number in <span> and
+  // separates it from the name with &nbsp;. The raw inner text becomes
+  // "<span>1.</span>&nbsp;Miga" — stripTags leaves "1.&nbsp;Miga", which
+  // fails /^\d+\.\s+/ because &nbsp; isn't whitespace before entity-decoding.
+  // Captured live from timeout.com/london/restaurants/best-restaurants-in-london.
+  test('current Time Out shape: <h3><span>N.</span>&nbsp;Name</h3> still extracts the name', async () => {
+    const html = `<html><head><title>The 50 Best Restaurants in London 2026 | Time Out</title></head><body>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"><span>1.</span>&nbsp;Miga</h3>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"><span>2.</span>&nbsp;Oma</h3>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"><span>3.</span>&nbsp;Plates</h3>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"></h3>
+</body></html>`;
+    mockFetch(html);
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://www.timeout.com/london/restaurants/best-restaurants-in-london' });
+    expect(res.status).toBe(200);
+    expect(res.body.venues.map(v => v.name)).toEqual(['Miga', 'Oma', 'Plates']);
+    expect(res.body.articleTitle).toMatch(/50 Best Restaurants in London/);
+    expect(res.body.city).toBe('London');
+  });
+
+  test('current Time Out shape: heading with empty inner (placeholder tile) is skipped, not a "name: undefined"', async () => {
+    const html = `<html><head><title>Best</title></head><body>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"></h3>
+<h3 class="_h3_c6c0h_1" data-testid="tile-title_testID"><span>1.</span>&nbsp;Real Place</h3>
+</body></html>`;
+    mockFetch(html);
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://www.timeout.com/london/restaurants/best' });
+    expect(res.status).toBe(200);
+    expect(res.body.venues).toHaveLength(1);
+    expect(res.body.venues[0].name).toBe('Real Place');
   });
 });
 

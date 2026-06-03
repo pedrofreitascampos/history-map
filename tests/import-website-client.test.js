@@ -134,6 +134,20 @@ describe('mapWebImportError', () => {
     expect(run('fetch_failed')).toContain('Could not fetch');
   });
 
+  test('fetch_failed_404 maps to "page moved" message (not generic)', () => {
+    const m = run('fetch_failed_404');
+    expect(m).toMatch(/404|moved/i);
+    expect(m).not.toMatch(/blocking/i);  // 404 ≠ blocked
+  });
+
+  test('fetch_failed_403 maps to "blocking us" message', () => {
+    expect(run('fetch_failed_403')).toMatch(/blocking/i);
+  });
+
+  test('fetch_failed_503 maps to "temporarily down" message', () => {
+    expect(run('fetch_failed_503')).toMatch(/temporarily down|5xx/i);
+  });
+
   test('response_too_large maps to friendly message', () => {
     expect(run('response_too_large')).toContain('too large');
   });
