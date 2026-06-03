@@ -1157,7 +1157,10 @@ app.get('/api/my-backups', auth, async (req, res) => {
       return { name, date: dateMatch ? dateMatch[1] : '', size: stats.size };
     });
     res.json(list);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    log('error', 'my_backups_list_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // ── User's own latest backup ─────────────────────────────
@@ -1171,7 +1174,8 @@ app.get('/api/my-backup', auth, async (req, res) => {
     if (userBackups.length === 0) return res.status(404).json({ error: 'No backups for your account yet' });
     res.download(path.join(BACKUP_DIR, userBackups[0]));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'my_backup_download_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -1353,7 +1357,8 @@ app.get('/api/places/search', auth, async (req, res) => {
       userRatingsTotal: p.userRatingCount || 0,
     })));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'places_search_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -1412,7 +1417,8 @@ app.post('/api/places/autocomplete', auth, async (req, res) => {
       }));
     res.json(suggestions);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'places_autocomplete_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -1442,7 +1448,8 @@ app.post('/api/places/sync', auth, async (req, res) => {
       lng: result.lng,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'places_sync_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -1494,7 +1501,8 @@ app.post('/api/places/bulk-sync', auth, async (req, res) => {
     log('info', 'bulk_sync_done', { count: batch.length, found, notFound, errors, byPlaceId, byText: batch.length - byPlaceId, ms: Date.now() - batchStart, userId: req.user.id });
     res.json(results);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'places_bulk_sync_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 
@@ -1571,7 +1579,8 @@ app.post('/api/places/discover', auth, async (req, res) => {
       }));
     res.json(filtered);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log('error', 'places_discover_failed', { userId: req.user.id, error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 

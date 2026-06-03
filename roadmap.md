@@ -13,7 +13,7 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-**Status as of 2026-06-03:** 7 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅ — full close of HIGH-SEC SSRF row). **Top 3 remaining P0s by impact:** (1) **err.message leak in 7 catch blocks** (the other half of the HIGH-SEC pair); (2) **marker-style in-place setIcon** (300-600ms main-thread stall on toggle); (3) **mobile sidebar covers entire viewport** (auto-collapse on ≤480px) + **save-modal lat/lng hidden** (no path to manual coords).
+**Status as of 2026-06-03:** 8 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅, err.message leak across 7 catch blocks ✅ — full close of both HIGH-SEC rows). **Top 2 remaining P0s by impact:** (1) **marker-style in-place setIcon** (300-600ms main-thread stall on toggle); (2) **mobile sidebar covers entire viewport** (auto-collapse on ≤480px) + **save-modal lat/lng hidden** (no path to manual coords).
 
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
@@ -94,7 +94,7 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 | CRIT-LIVE | ~~**3 select dropdowns silently broken** via `data-arg0="this.value"`.~~ ✅ **Shipped 2026-06-03.** Extended `_readPositionalArgs` via new `_resolveArgSentinel(v, el)` that maps `"this"` → `el`, `"this.value"` → `el.value`, `"this.checked"` → `el.checked`, `"this.files[0]"` → `el.files[0]`, `"this.dataset.X"` → `el.dataset[X]`. Also switched the 3 broken selects + FR24 file picker to `data-change`, and replay scrubber + attach-search to `data-input` (proper event semantics). +9 jest in `tests/import.test.js`. **Unblocks: Marker Style toggle, Marker Size Mode, Trip Selector — all functional from the sidebar dropdown.** |
 | CRIT-UX-BUG | ~~**Hearts not keyboard-settable** — `data-click="handleHeartKey"` duplicate attribute on each heart span silently overrides `setBucketStrength` (HTML spec: last attribute wins).~~ ✅ **Shipped 2026-06-03.** Replaced duplicate `data-click` with `data-keydown="onHeartKey"` (new ACTIONS entry reading val from `el.dataset.val`); click handler `data-click="setBucketStrength" data-arg0="N"` now wins cleanly. Both click-to-set and keyboard nav (↑/↓/Enter/Space) work. +3 jest pins. |
 | HIGH-SEC | ~~**SSRF blocklist missing link-local + IPv6 private ranges** in `POST /api/import/website`.~~ ✅ **Shipped 2026-06-03** alongside the LLM adapter (the LLM path expanded host coverage to any-https, making this finding bite harder). SSRF_BLOCK now includes `169.254.0.0/16`, `metadata.google.internal`, IPv6 link-local `fe80::/10`, IPv6 ULA `fc00::/7` (fc + fd prefixes). New `normalizeHostForSSRF(host)` helper strips `[ ]` from IPv6 hostnames AND decodes IPv4-mapped IPv6 (`::ffff:7f00:1`) back to dotted form (`127.0.0.1`) so the existing IPv4 regexes still fire — Node's WHATWG URL parser was defeating both. Also closed the **MED-1 redirect bypass** found in cybersec review of the LLM ship: `fetch(url, {…, redirect:'error'})` so an attacker can't 301 us into a metadata IP after the hostname check passes. **Still open:** `dns.lookup(host)` + re-apply blocklist for DNS-rebinding / CNAME chain defence — moved to P1. +7 regression jest in `tests/import-website.test.js`. |
-| HIGH-SEC | **`err.message` leaked to clients on 500** in 7 catch blocks across Places (`/api/places/discover` etc), backup, narrate. Exposes Google API error bodies (incl. key hints / URLs / quota info) and filesystem paths. | `server/index.js:719/727 → 1057, 1071, 1252, 1312, 1342, 1394, 1471` | Replace with `res.status(500).json({ error: 'Internal error' })`; log detail via `log('error', …)`. Narrate endpoint already does this at line 705-710 — apply that pattern everywhere. |
+| HIGH-SEC | ~~**`err.message` leaked to clients on 500** in 7 catch blocks across Places + backup endpoints.~~ ✅ **Shipped 2026-06-03.** All 7 callsites (`/api/my-backups`, `/api/my-backup`, `/api/places/search`, `/api/places/autocomplete`, `/api/places/sync`, `/api/places/bulk-sync`, `/api/places/discover`) now mirror the narrate pattern: `log('error', '<endpoint>_failed', { userId, error: err.message })` server-side + `res.status(500).json({ error: 'Internal error' })` to client. Upstream Google API error bodies (incl. key hints / URLs / quota info) and `fs` paths no longer reach the wire. +8 jest in `tests/error-sanitization.test.js` (1 per route × 7 + 1 static pin asserting `res.status(500).json({error: err.message})` never re-appears in `server/index.js`). |
 | CRIT-PERF | ~~**No HTTP compression middleware.** `index.html` ships at 576 KB raw.~~ ✅ **Shipped 2026-06-03.** `compression@^1.8.1` added; `app.use(compression())` mounted right after the CSP-nonce middleware (early enough to wrap every downstream response, late enough to skip the static `res.locals.cspNonce` set). Default threshold (1 KB) leaves tiny JSON error bodies uncompressed; `index.html` (~580 KB raw → ~140 KB gzip) and `/api/locations` bulk payloads get the win. `Vary: Accept-Encoding` is set by the middleware so caches don't cross-serve gzip ↔ identity copies. +6 jest in `tests/compression.test.js` (dependency pin, gzip on `/`, identity on `/`, Vary header, sub-threshold skip, large-JSON path). |
 | HIGH-PERF | **Marker-style toggle does full rebuild** instead of `marker.setIcon()` in place. 1000 markers = 300-600ms main-thread stall. | `public/index.html:4107-4115` (`setMarkerStyle` cache bust) + `_renderState` | Add `updateMarkerIcon(marker, loc)` that calls `marker.setIcon(createMarkerIcon(loc))` per entry in `_renderState.markerById`. |
 | HIGH-LIVE | **Save modal silently fails when lat/lng empty + fields are hidden** — toast "Please fill in lat and lng" appears but fields are hidden by default. User has no path forward. | `public/index.html` add-modal lat/lng row | Auto-run Photon geocode on modal open when name filled + coords empty; if still missing on Save, unhide the lat/lng row + scroll-to + focus. |
@@ -182,7 +182,7 @@ Ranked by impact-vs-effort:
 
 | Sprint | Theme | Items | ~Effort |
 |---|---|---|---|
-| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — 7 of 9 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions interaction ✅ partial, gzip compression ✅, LLM web-import + engine UX ✅, SSRF link-local + redirect bypass ✅). **Remaining:** err.message leak (7 catch blocks), marker-style in-place setIcon, save-modal lat/lng unhide, mobile sidebar auto-collapse | ½ day remaining |
+| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — 8 of 9 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions interaction ✅ partial, gzip compression ✅, LLM web-import + engine UX ✅, SSRF link-local + redirect bypass ✅, err.message leak across 7 catch blocks ✅). **Remaining:** marker-style in-place setIcon, save-modal lat/lng unhide, mobile sidebar auto-collapse | ½ day remaining |
 | **S2** | Hardening + perf round 2 | Per-endpoint rate limits, CSP `photon.komoot.io`, ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label | 3-4 days |
 | **S3** | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse | 1 week |
 | **S4+** | Power features | Pick 2-3: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link | 1-2 weeks each |
@@ -786,3 +786,22 @@ See memory roadmap for full commit-level detail. Headline batches:
     HIGH-SEC SSRF row in the 2026-06-02 audit table.
   - **Session totals after cybersec fold-in: 941 jest + 8 e2e green
     (3 skip).**
+  - **err.message-leak sanitisation (P0 audit ship, HIGH-SEC — closes the
+    second HIGH-SEC row).** All 7 catch blocks that previously responded
+    `res.status(500).json({error: err.message})` now mirror the narrate
+    pattern: `log('error', '<endpoint>_failed', { userId, error: err.message })`
+    server-side + `res.status(500).json({error: 'Internal error'})` to the
+    client. Covers: `GET /api/my-backups`, `GET /api/my-backup`,
+    `POST /api/places/search`, `POST /api/places/autocomplete`,
+    `POST /api/places/sync`, `POST /api/places/bulk-sync`,
+    `POST /api/places/discover`. Upstream Google API bodies (incl. key
+    hints / URL fragments / quota messages) and filesystem paths
+    (`ENOENT` traces, `BACKUP_DIR` absolute paths) no longer reach the
+    wire. +8 jest in `tests/error-sanitization.test.js` — 1 per route
+    × 7 (forced upstream throw via `jest.spyOn(global, 'fetch')` for
+    Places + `jest.spyOn(fs, 'readdirSync')` for backups; asserts
+    `{error: 'Internal error'}` body + secret string absent) + 1
+    static pin against the file regex `res.status(500).json({error:
+    err.message` so a future regression is caught at suite-time.
+  - **Session totals after err.message sanitisation: 949 jest + 8 e2e
+    green (3 skip).**
