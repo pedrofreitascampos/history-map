@@ -305,11 +305,23 @@ describe('Marker style variants — createMarkerIcon vm-sandbox', () => {
 });
 
 describe('Marker style variants — setMarkerStyle behaviour', () => {
-  function makeSetStyleCtx() {
+  // makeSetStyleCtx(populatedRegistry?) — when populated, the in-place fast
+  // path (`updateAllMarkerIcons`) is exercised; otherwise the renderMarkers
+  // fallback runs. Shape mirrors the contract codified in
+  // tests/marker-icon-inplace.test.js.
+  function makeSetStyleCtx(populatedRegistry = false) {
     const lsStore = {};
     const renderCalls = [];
-    const renderStateRef = { markerStyle: 'circle' };
+    const setIconCalls = [];
     const descEl = { textContent: '' };
+    const markerById = new Map();
+    const stateLocations = [];
+    if (populatedRegistry) {
+      const loc = { id: 'L0', status: 'been', category: 'restaurant' };
+      stateLocations.push(loc);
+      markerById.set('L0', { marker: { setIcon: (icon) => { setIconCalls.push(icon); } }, hash: 'h' });
+    }
+    const renderStateRef = { markerById, markerStyle: 'circle', markerSizeMode: 'default', mapStyle: 'cluster' };
     const ctx = vm.createContext({
       VALID_MARKER_STYLES: ['circle', 'squircle', 'teardrop', 'glyph', 'pill'],
       MARKER_STYLE_DESCRIPTIONS: {
@@ -319,7 +331,10 @@ describe('Marker style variants — setMarkerStyle behaviour', () => {
         'glyph':    'Minimal floating emoji with anchor dot',
         'pill':     'Horizontal chip with rating inline',
       },
-      state: { markerStyle: 'circle' },
+      VALID_MARKER_SIZE_MODES: ['default', 'my-rating', 'google-pop', 'visits', 'bucket'],
+      state: { markerStyle: 'circle', markerSizeMode: 'default', mapStyle: 'cluster', locations: stateLocations },
+      stateIndex: { locationById: new Map(stateLocations.map(l => [l.id, l])) },
+      createMarkerIcon: () => ({ __icon: true }),
       localStorage: {
         getItem: (k) => lsStore[k] || null,
         setItem: (k, v) => { lsStore[k] = v; },
@@ -329,8 +344,10 @@ describe('Marker style variants — setMarkerStyle behaviour', () => {
       renderMarkers: () => { renderCalls.push(1); },
       lsStore,
       renderCalls,
+      setIconCalls,
       renderStateRef,
     });
+    vm.runInContext(extractFunction('updateAllMarkerIcons'), ctx);
     vm.runInContext(extractFunction('setMarkerStyle'), ctx);
     return ctx;
   }
@@ -349,15 +366,16 @@ describe('Marker style variants — setMarkerStyle behaviour', () => {
     expect(ctx.lsStore['markerStyle']).toBe('circle');
   });
 
-  test('setMarkerStyle busts _renderState.markerStyle cache (sets to null)', () => {
-    const ctx = makeSetStyleCtx();
-    ctx.renderStateRef.markerStyle = 'squircle'; // simulate stale cache
+  test('populated registry → in-place setIcon path, _renderState.markerStyle updated (no cache-bust to null)', () => {
+    const ctx = makeSetStyleCtx(true);
     vm.runInContext(`setMarkerStyle('glyph')`, ctx);
-    expect(ctx.renderStateRef.markerStyle).toBeNull();
+    expect(ctx.setIconCalls.length).toBe(1);
+    expect(ctx.renderCalls.length).toBe(0);
+    expect(ctx.renderStateRef.markerStyle).toBe('glyph');
   });
 
-  test('setMarkerStyle calls renderMarkers', () => {
-    const ctx = makeSetStyleCtx();
+  test('empty registry → falls back to renderMarkers', () => {
+    const ctx = makeSetStyleCtx(false);
     vm.runInContext(`setMarkerStyle('pill')`, ctx);
     expect(ctx.renderCalls.length).toBeGreaterThanOrEqual(1);
   });

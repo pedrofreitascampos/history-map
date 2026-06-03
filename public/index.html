@@ -4121,12 +4121,30 @@ const MARKER_SIZE_DESCRIPTIONS = {
   'visits': 'Sized by visit count; log-scaled, cap at 50px',
   'bucket': 'Sized by bucket-list strength (1–5 ♥)',
 };
+// In-place icon refresh — re-uses existing L.marker instances, swaps icon DOM
+// only. 300-600ms full-rebuild stall on 1000+ markers → <50ms. Cluster-mode
+// only; heat mode falls back to renderMarkers because its individual markers
+// aren't tracked in `_renderState.markerById`.
+function updateAllMarkerIcons() {
+  if (!_renderState || !_renderState.markerById || _renderState.markerById.size === 0) return false;
+  const byId = (typeof stateIndex !== 'undefined' && stateIndex.locationById) ? stateIndex.locationById : null;
+  for (const [id, entry] of _renderState.markerById) {
+    const loc = byId ? byId.get(id) : state.locations.find(l => l.id === id || l._id === id);
+    if (!loc || !entry || !entry.marker) continue;
+    try { entry.marker.setIcon(createMarkerIcon(loc)); } catch {}
+  }
+  _renderState.markerStyle = state.markerStyle;
+  _renderState.markerSizeMode = state.markerSizeMode;
+  return true;
+}
+
 function setMarkerSizeMode(mode) {
   if (!VALID_MARKER_SIZE_MODES.includes(mode)) mode = 'default';
   state.markerSizeMode = mode;
   try { localStorage.setItem('markerSizeMode', mode); } catch {}
   const desc = document.getElementById('marker-size-desc');
   if (desc) desc.textContent = MARKER_SIZE_DESCRIPTIONS[mode] || '';
+  if (state.mapStyle !== 'heat' && updateAllMarkerIcons()) return;
   renderMarkers();
 }
 
@@ -4144,8 +4162,7 @@ function setMarkerStyle(style) {
   try { localStorage.setItem('markerStyle', style); } catch {}
   const desc = document.getElementById('marker-style-desc');
   if (desc) desc.textContent = MARKER_STYLE_DESCRIPTIONS[style] || '';
-  // Bust the renderMarkers cache so all markers rebuild with the new style.
-  if (typeof _renderState !== 'undefined') _renderState.markerStyle = null;
+  if (state.mapStyle !== 'heat' && updateAllMarkerIcons()) return;
   renderMarkers();
 }
 
