@@ -13,7 +13,7 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-**Status as of 2026-06-03:** 5 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅). **Top 3 remaining P0s by impact:** (1) **server-side Haiku LLM web-import adapter** with engine attribution UX baked in; (2) **SSRF blocklist gaps + err.message leak** (security pair); (3) **marker-style in-place setIcon** (kills 300-600ms main-thread stall on toggle).
+**Status as of 2026-06-03:** 7 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅ — full close of HIGH-SEC SSRF row). **Top 3 remaining P0s by impact:** (1) **err.message leak in 7 catch blocks** (the other half of the HIGH-SEC pair); (2) **marker-style in-place setIcon** (300-600ms main-thread stall on toggle); (3) **mobile sidebar covers entire viewport** (auto-collapse on ≤480px) + **save-modal lat/lng hidden** (no path to manual coords).
 
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
@@ -26,6 +26,50 @@ This Open section only carries items NOT covered by the latest audit (longer-ter
 
 ### Wishlist (P1+, lower priority)
 
+- **Regions tab → "Atlas" tab + Graph view** (user request 2026-06-03). The current
+  Regions tab is misnamed — it already does Country / Region / City, and a graph
+  view doesn't fit "regions". Rename to something more generic (candidates:
+  **Atlas** / **Geography** / **Spatial**). Add a 4th option to the segmented
+  control: **🕸️ Graph** — paints the full chronology as a node-link diagram with
+  one node per visited place (positioned by lat/lng over the dark basemap) and
+  directed edges connecting consecutive visits in time order. Node size = visit
+  count (reuse the City-view `sqrt(pop)` scale shape); edge weight = visit count
+  across the same pair; edge color by transit mode if the corresponding `transits`
+  record exists between the two visits, else neutral. Hover an edge → tooltip
+  with the date+mode of the underlying transit. Variant toggles inside the Graph
+  view: **Time window** (all-time / per-year / per-trip) + **Density** (all
+  edges vs top-N busiest). Builds on the existing `state.locations` + `state.visits`
+  + `state.transits` indexes — pure client-side computation, no new endpoints.
+  Open question: SVG (cleaner edges, easier hover) vs Leaflet `L.polyline` on the
+  same basemap as the other views (consistent feel, free pan/zoom). Lean Leaflet
+  for consistency with Country/Region/City modes.
+- **Direct share-from-Google-Maps → Oikumene** (user request 2026-06-03). Two
+  ingestion surfaces, both bypass the current Takeout/Timeline-export friction:
+  - **Mobile (Android/iOS PWA share-target).** Register Oikumene as a Web Share
+    Target via `manifest.json` (`share_target` member). When the user taps Share
+    in Google Maps → "Oikumene" appears in the sheet → Maps sends `title + text +
+    url` to our PWA. The shared URL is a `maps.app.goo.gl/...` short-link OR a
+    full `google.com/maps/place/<name>/@lat,lng,zoom/data=...` deep-link. Server
+    endpoint `POST /api/import/google-maps-link` accepts `{url}`, expands shortlinks
+    via a HEAD (with the same SSRF guard + 10s timeout we use for web-import),
+    extracts `lat,lng,name,placeId` from the canonical URL, and either: (a) opens
+    the Add modal pre-filled when it's a single place, or (b) treats it as a
+    saved-list link and imports the list. Requires the PWA manifest to be
+    installed — depends on Oikumene becoming installable (Service Worker, see
+    Power feature #7).
+  - **Web browser (bookmarklet).** A one-line `javascript:` bookmarklet the user
+    drags to their bookmarks bar. On any `google.com/maps/...` page, click the
+    bookmarklet → it reads `window.location.href` + the page title → opens
+    `https://history-map.onrender.com/#add?url=<encoded>` in a new tab → the app
+    auto-routes that hash into the Add modal (or list importer). No browser
+    extension required, works on desktop Chrome/Firefox/Safari/Edge today. Hosted
+    install page under Account modal: "Drag this button to your bookmarks bar."
+  - Both surfaces share the server endpoint + URL parser. Implementation tree:
+    (1) URL parser regex/grammar (single place vs list vs short link), (2)
+    shortlink expander with SSRF guard, (3) `#add?url=` hash handler in
+    `switchView` + `init()`, (4) PWA manifest `share_target` + Service Worker
+    (overlaps with Power feature #7), (5) bookmarklet install card in Account
+    modal.
 - **Bootstrap preset collections** (user request 2026-06-03). Add a library of famous, ready-made collections users can opt into rather than building from scratch: **UNESCO World Heritage Sites** (~1200 sites, GeoJSON from whc.unesco.org), **National Parks** (per-country: NPS for US, ICNF for PT, …), **Airports** (OurAirports CSV, ~50k, IATA-coded), **Stadiums / Arenas** (Wikidata SPARQL by `instance of (P31) = stadium/arena`), **Wonders of the World** (curated lists — 7 ancient, 7 new, 7 natural), **Michelin Guide** (scrape — ToS-grey, defer), **Blue Flag beaches** (annual list per country). Sketch: a `/api/collections/presets` endpoint serves a metadata catalog (name, source, count, description, sample); user clicks "Subscribe" and the preset's locations bulk-insert with `presetId` tag (filterable, removable). Each preset = adapter file in `server/preset-collections/` analogous to `import-adapters/`. Versioned (re-fetch yearly for UNESCO updates etc.). Open question: do preset locations live in user's `state.locations` (cluttering wishlist/been views) or as a separate overlay layer toggled per-collection? Probably overlay-first to keep the personal list clean.
 - **Google Data Portability API OAuth flow** — blocked on Google's Restricted-scope verification for personal apps. Monitor for relaxation. Sharable-list scraper NOT to be built (ToS + low value).
 - **Google Photos — Path 2 (photo-org bridge)** — Path 3 (manual EXIF drop) ✅ shipped 2026-05-31 in `c417584`. Path 2 requires repaired photo-org (DB columns + NAS path pivot since Google scope removal). Queued.
@@ -46,10 +90,10 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 | Sev | Finding | File:Line | Fix |
 |---|---|---|---|
 | CRIT-BUG | ~~**Web import (Time Out, etc.) reported broken by user 2026-06-03.**~~ ✅ **Shipped 2026-06-03.** Root cause: Time Out updated list-item markup from `<h3>1. Name</h3>` to `<h3><span>1.</span>&nbsp;Name</h3>`. `stripTags` left `1.&nbsp;Name`; the regex `^\d+\.\s+` ran *before* entity decode, so `&nbsp;` (not `\s`) failed the match → 0 venues. Fix: decode entities BEFORE the regex (`server/import-adapters/timeout.js`). Live re-test against `timeout.com/london/restaurants/best-restaurants-in-london` now extracts 10 of 50 venues (rest lazy-load via JS — addressed by the LLM-adapter row below). **Bonus shipped:** HTTP failure code surfaces in error string (`fetch_failed_404`, `fetch_failed_503`, `fetch_failed_403`) + 4 client toast variants so users get "page moved" vs "site blocking us" vs "temporarily down" instead of generic. +5 jest server (incl. 3 regression for the new shape) + 3 jest client mapper variants. **Verdict on regex adapters: still brittle to site reshuffles, hence the LLM-adapter ship below is the long-term answer.** |
-| HIGH-FEAT | **Replace regex-based web-import adapters with a server-side Haiku LLM parser** (user idea 2026-06-03: "any chance we can install a nano LLM to process this?"). Decision recorded 2026-06-03 after discussion: **option (a) server-side Haiku 4.5 BYOK**, NOT browser-side WebLLM. Reason: browser-side WebLLM (Llama 3.2 1B / Phi 3.5 via WebGPU) imposes a 100-500 MB one-time model download on every user — terrible ROI for a tier-3 occasional feature (~weekly use). Haiku gives 10-100× better extraction quality at ~$0.001-0.003 per parse and reuses existing Anthropic SDK wiring from Narrate. Adapter becomes: fetch HTML → strip scripts/styles → send to Haiku with tool-use forcing `parse_venues` JSON schema → return `{venues:[{name,address,snippet}]}`. Robust to any site layout. The fixed `timeout.js` regex stays as the no-key fallback. | NEW: `server/import-adapters/llm.js` + `server/index.js` adapter selection + import-view UX | **Engine attribution UX (user-requested 2026-06-03 — "from user POV not clear which is running"):** (1) **Pre-fetch hint** under the URL input — when Anthropic key configured: *"🤖 Smart parsing enabled (Claude Haiku — ~$0.002/import). Works on any list URL."* When not: *"📋 Basic mode — only Time Out is supported. Add an Anthropic key in Account → Anthropic for any-site parsing."* (2) **Post-parse chip** in the result modal next to "X venues found": `🤖 Parsed by Claude Haiku` vs `📋 Parsed by Time Out adapter (regex)`. Both surfaces gated on the same `/api/places/status`-style endpoint (`/api/anthropic/status` returning `{enabled: bool, mode: 'smart'|'basic'}`). (3) Server response includes `engine: 'llm'|'regex'` field for the chip. Wire `parseVenuesLLM(html, url)` mirroring `parseTrip()` shape — cached system prompt + forced tool use + per-user `user.anthropicKey` + `ANTHROPIC_API_KEY` env fallback + sanitised errors at boundary. Cost cap: ~3-5k input tokens per article (HTML stripped to text). Tests: ~12 jest covering happy path / no key (501) / sanitised errors / cap / engine field in response / pre-fetch hint copy / post-parse chip rendering. **High-value ship**: turns the brittle 1-site adapter into a "any URL with a list of places" import, and the UX makes the cost/quality story obvious to the user up front. |
+| HIGH-FEAT | ~~**Replace regex-based web-import adapters with a server-side Haiku LLM parser.**~~ ✅ **Shipped 2026-06-03.** `server/import-adapters/llm.js` — Haiku 4.5 with cached system prompt + forced `parse_venues` tool use + 30k-char HTML cap (~10k tokens, ~$0.002/parse). `server/index.js` adapter selection: when `getAnthropicKey(userId)` returns a key the LLM runs for ANY https host that passed the SSRF guard; without a key, falls back to the regex registry (Time Out only) and 400s with `host_not_supported` on other hosts. Errors sanitised at boundary (401 → `llm_key_rejected`, 429 → `llm_rate_limited`, no tool use → `llm_no_output`). `GET /api/anthropic/status` returns `{enabled, mode}` driving the engine-attribution UX. **Pre-fetch hint** mounted under URL input — refreshes on view-switch into Import + on Account-modal Save/Remove (via `_resetWebImportEngineCache`). **Post-parse chip** rendered in the review modal: `🤖 Parsed by Claude Haiku` (violet pill) vs `📋 Parsed by Time Out adapter (regex)` (neutral). Server response carries `engine:'llm'\|'regex'`. +24 jest in `tests/import-website-llm.test.js`: stripHtmlForLLM unit (script/style/iframe/svg/comment strip, entity decode, cap, defensive null), parseVenuesLLM unit (happy/cap/empty-name-defense/snippet-cap/no-key/401/429/no-tool-use), route wiring (any-host with key, timeout.com via LLM not regex, SSRF before engine selection, 401 sanitisation, 429 mapping, engine field always present), `/api/anthropic/status` (enabled+mode+key-leak guard + 401), 4 static markup pins. Cost ~$0.001-0.003/parse after cache warmup. |
 | CRIT-LIVE | ~~**3 select dropdowns silently broken** via `data-arg0="this.value"`.~~ ✅ **Shipped 2026-06-03.** Extended `_readPositionalArgs` via new `_resolveArgSentinel(v, el)` that maps `"this"` → `el`, `"this.value"` → `el.value`, `"this.checked"` → `el.checked`, `"this.files[0]"` → `el.files[0]`, `"this.dataset.X"` → `el.dataset[X]`. Also switched the 3 broken selects + FR24 file picker to `data-change`, and replay scrubber + attach-search to `data-input` (proper event semantics). +9 jest in `tests/import.test.js`. **Unblocks: Marker Style toggle, Marker Size Mode, Trip Selector — all functional from the sidebar dropdown.** |
 | CRIT-UX-BUG | ~~**Hearts not keyboard-settable** — `data-click="handleHeartKey"` duplicate attribute on each heart span silently overrides `setBucketStrength` (HTML spec: last attribute wins).~~ ✅ **Shipped 2026-06-03.** Replaced duplicate `data-click` with `data-keydown="onHeartKey"` (new ACTIONS entry reading val from `el.dataset.val`); click handler `data-click="setBucketStrength" data-arg0="N"` now wins cleanly. Both click-to-set and keyboard nav (↑/↓/Enter/Space) work. +3 jest pins. |
-| HIGH-SEC | **SSRF blocklist missing link-local + IPv6 private ranges** in `POST /api/import/website`. `169.254.169.254` (GCP/Render metadata), `fd00::/8` IPv6 ULA, `::ffff:127.0.0.1` IPv4-mapped loopback all pass the current regex. Authenticated user → server-side fetch to cloud metadata endpoint. | `server/index.js:719-727` | Add: `/^169\.254\./`, `/^fd[0-9a-f]{2}:/i`, `/^::ffff:(127\.|10\.|172\.(1[6-9]\|2\d\|3[01])\.|192\.168\.)/i`. Also: `dns.lookup(host)` then re-apply IP blocklist (defends DNS-rebinding / CNAME chains). |
+| HIGH-SEC | ~~**SSRF blocklist missing link-local + IPv6 private ranges** in `POST /api/import/website`.~~ ✅ **Shipped 2026-06-03** alongside the LLM adapter (the LLM path expanded host coverage to any-https, making this finding bite harder). SSRF_BLOCK now includes `169.254.0.0/16`, `metadata.google.internal`, IPv6 link-local `fe80::/10`, IPv6 ULA `fc00::/7` (fc + fd prefixes). New `normalizeHostForSSRF(host)` helper strips `[ ]` from IPv6 hostnames AND decodes IPv4-mapped IPv6 (`::ffff:7f00:1`) back to dotted form (`127.0.0.1`) so the existing IPv4 regexes still fire — Node's WHATWG URL parser was defeating both. Also closed the **MED-1 redirect bypass** found in cybersec review of the LLM ship: `fetch(url, {…, redirect:'error'})` so an attacker can't 301 us into a metadata IP after the hostname check passes. **Still open:** `dns.lookup(host)` + re-apply blocklist for DNS-rebinding / CNAME chain defence — moved to P1. +7 regression jest in `tests/import-website.test.js`. |
 | HIGH-SEC | **`err.message` leaked to clients on 500** in 7 catch blocks across Places (`/api/places/discover` etc), backup, narrate. Exposes Google API error bodies (incl. key hints / URLs / quota info) and filesystem paths. | `server/index.js:719/727 → 1057, 1071, 1252, 1312, 1342, 1394, 1471` | Replace with `res.status(500).json({ error: 'Internal error' })`; log detail via `log('error', …)`. Narrate endpoint already does this at line 705-710 — apply that pattern everywhere. |
 | CRIT-PERF | ~~**No HTTP compression middleware.** `index.html` ships at 576 KB raw.~~ ✅ **Shipped 2026-06-03.** `compression@^1.8.1` added; `app.use(compression())` mounted right after the CSP-nonce middleware (early enough to wrap every downstream response, late enough to skip the static `res.locals.cspNonce` set). Default threshold (1 KB) leaves tiny JSON error bodies uncompressed; `index.html` (~580 KB raw → ~140 KB gzip) and `/api/locations` bulk payloads get the win. `Vary: Accept-Encoding` is set by the middleware so caches don't cross-serve gzip ↔ identity copies. +6 jest in `tests/compression.test.js` (dependency pin, gzip on `/`, identity on `/`, Vary header, sub-threshold skip, large-JSON path). |
 | HIGH-PERF | **Marker-style toggle does full rebuild** instead of `marker.setIcon()` in place. 1000 markers = 300-600ms main-thread stall. | `public/index.html:4107-4115` (`setMarkerStyle` cache bust) + `_renderState` | Add `updateMarkerIcon(marker, loc)` that calls `marker.setIcon(createMarkerIcon(loc))` per entry in `_renderState.markerById`. |
@@ -59,7 +103,8 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 ### 🟠 P1 — Ship this month (~1 week)
 
 **Security finishing touches**
-- **Per-endpoint rate limits** on expensive routes (narrate / discover / web-import) — 10/min/user. Today protected only by global 200/min. (`server/index.js:134`)
+- **Per-endpoint rate limits** on expensive routes — ~~web-import (LLM cost)~~ ✅ **10/min/user shipped 2026-06-03**; narrate + discover still on global 200/min only.
+- **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` + re-apply blocklist to the resolved IP. The current regex blocklist trusts the WHATWG hostname, so an attacker-controlled DNS name that resolves to a private IP would still pass. Lower priority now that the redirect bypass and direct-IP cases are closed.
 - **`photon.komoot.io` missing from CSP `connectSrc`** despite 4 client-side fetches to it (`server/index.js:95-104` ← add host; verify against full client `fetch` site list).
 - **`ANTHROPIC_API_KEY` missing from `render.yaml`** — add `- key: ANTHROPIC_API_KEY\n  sync: false`.
 - **`@anthropic-ai/sdk: ^0.30.1`** caret on a 0.x → pin exact `0.30.1` + `npm ci`.
@@ -679,3 +724,64 @@ See memory roadmap for full commit-level detail. Headline batches:
     `Vary` header, sub-threshold skip stays uncompressed, large-JSON
     `/api/locations` round-trip).
   - **Session totals after gzip ship: 911 jest + 8 e2e green (3 skip).**
+  - **LLM-powered web-import adapter (P0 audit ship, HIGH-FEAT).** Brittle
+    Time Out regex → any-URL Haiku-powered parser. New
+    `server/import-adapters/llm.js` exports `parseVenuesLLM(html, url, apiKey)`:
+    HTML stripped of `<script>/<style>/<noscript>/<iframe>/<svg>/<!-- -->`,
+    entities decoded, capped at 30k chars (~10k tokens, ~$0.002/parse) → sent
+    to Haiku 4.5 with cached system prompt + forced `parse_venues` tool use →
+    returns `{city, articleTitle, venues:[{name,address,snippet}]}` with
+    defensive cleaning on the way out (drop empty-name rows, cap snippet at
+    200 chars, cap venues at 100). Mirrors `parseTrip()` shape from narrate;
+    BYOK per-user key + `ANTHROPIC_API_KEY` env fallback; errors sanitised at
+    boundary (401 → `llm_error_401`, 429 → `llm_error_429`, no tool use →
+    `llm_no_tool_use`).
+    `POST /api/import/website` rewired: when `getAnthropicKey()` returns a key
+    the LLM runs for ANY https host that passed the SSRF guard; without a
+    key, the regex registry (Time Out only) is the fallback and other hosts
+    return `host_not_supported`. Response carries `engine:'llm'|'regex'`.
+    Route-level error mapping: `llm_error_401` → `llm_key_rejected` (HTTP 401),
+    `llm_error_429` → `llm_rate_limited`, `llm_no_tool_use` → `llm_no_output`,
+    `llm_sdk_missing` → `llm_unavailable`. **Engine attribution UX** —
+    new `GET /api/anthropic/status` returns `{enabled, mode:'smart'|'basic'}`;
+    new `#web-import-engine-hint` placeholder under the URL input refreshes
+    via `refreshWebImportEngineHint()` on every Import view entry + clears the
+    cache on Account-modal Save/Remove (`_resetWebImportEngineCache`). Result
+    modal grows a chip (`data-engine="llm"` violet pill: 🤖 Parsed by Claude
+    Haiku; `data-engine="regex"` neutral pill: 📋 Parsed by Time Out adapter
+    (regex)). Friendly client toasts added for the 5 new error shapes
+    (`mapWebImportError`). +24 jest in `tests/import-website-llm.test.js`
+    (4 stripHtml unit, 7 parseVenuesLLM unit, 2 status endpoint, 6 route
+    wiring incl. SSRF-before-engine, sanitisation, engine field shape,
+    4 static markup pins, 1 host_not_supported semantics). Cybersec
+    considerations: HTML body is attacker-controlled but forced-tool-use
+    constrains output to schema (worst case: fabricated venue rows reviewed
+    in modal before commit); SSRF guard unchanged + runs before adapter
+    selection so LLM cannot bypass it; per-user BYOK so a malicious user
+    can only burn their own quota; all upstream Anthropic errors sanitised
+    to single-string codes.
+  - **Session totals after LLM-import ship: 935 jest + 8 e2e green (3 skip).**
+  - **Cybersec review fixes (same ship, fold-in).** Sonnet cybersec review of
+    the LLM adapter surfaced 0 CRIT / 0 HIGH / 4 MED / 2 LOW / 2 INFO.
+    Fixed in the same commit: **MED-1 SSRF redirect bypass** —
+    `fetch(url, {…, redirect:'error'})` so a 301/302 from an attacker-
+    controlled host can't be used to bounce the server-side fetch into a
+    private/metadata IP after the SSRF_BLOCK hostname check passed.
+    **MED-2 SSRF_BLOCK gaps** — added `169.254.0.0/16`,
+    `metadata.google.internal`, IPv6 link-local `fe80::/10`, IPv6 ULA
+    `fc00::/7`. New `normalizeHostForSSRF(host)` strips `[ ]` from IPv6
+    hostnames AND decodes IPv4-mapped IPv6 (`::ffff:7f00:1` → `127.0.0.1`)
+    so existing IPv4 regexes still fire — Node's WHATWG URL parser was
+    silently defeating both forms. **MED-4 toast leak** —
+    `mapWebImportError` fallthrough no longer echoes raw upstream `msg`
+    into the toast (`return 'Import failed. Please try again.'`).
+    **LOW-1 per-endpoint rate limit** — `app.use('/api/import/website',
+    rateLimit({ windowMs: 60_000, max: 10 }))` caps LLM cost to ~$0.02/min
+    in pathological cases (was unlimited under the global 200/min). MED-3
+    (snippet → notes path is pre-existing, broader scope) deferred to P1.
+    +7 SSRF regression jest + 1 redirect-pin jest in
+    `tests/import-website.test.js`; updated `import-website-client.test.js`
+    fallthrough test to pin the static-message behaviour. Closes the
+    HIGH-SEC SSRF row in the 2026-06-02 audit table.
+  - **Session totals after cybersec fold-in: 941 jest + 8 e2e green
+    (3 skip).**

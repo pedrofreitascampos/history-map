@@ -141,6 +141,54 @@ describe('POST /api/import/website — URL validation', () => {
     expect(res.body.error).toBe('invalid_url');
   });
 
+  // 2026-06-03 cybersec MED-2: link-local + cloud metadata blocked. Without
+  // these, an authenticated user with an Anthropic key could hit Render's
+  // metadata service (any-host LLM path no longer gated to timeout.com).
+  test('AWS/GCP link-local 169.254.169.254 returns 400 invalid_url (SSRF)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://169.254.169.254/latest/meta-data/' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('GCP metadata.google.internal returns 400 invalid_url (SSRF)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://metadata.google.internal/computeMetadata/v1/' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('IPv6 link-local fe80:: returns 400 invalid_url (SSRF)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://[fe80::1]/foo' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('IPv6 ULA fd00:: returns 400 invalid_url (SSRF)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://[fd12:3456::1]/foo' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('IPv4-mapped IPv6 loopback ::ffff:127.0.0.1 returns 400 invalid_url (SSRF)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://[::ffff:127.0.0.1]/foo' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
   test('unsupported host returns 400 host_not_supported', async () => {
     const res = await request(app)
       .post('/api/import/website')
@@ -541,6 +589,15 @@ describe('POST /api/import/website — response shape', () => {
     expect(res.body).toHaveProperty('source', 'timeout');
     expect(res.body).toHaveProperty('venues');
     expect(Array.isArray(res.body.venues)).toBe(true);
+  });
+
+  // 2026-06-03 cybersec MED-1: fetch must use redirect:'error' so a 301/302
+  // from an attacker-controlled host can't bounce the server-side fetch into
+  // a private/metadata IP after the SSRF_BLOCK hostname check has passed.
+  test("fetch is called with redirect:'error' (source-grep pin)", () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+    // Be tolerant of either single or double quotes around 'error'.
+    expect(src).toMatch(/redirect:\s*['"]error['"]/);
   });
 
   test('timeout.com without www. prefix is also matched', async () => {

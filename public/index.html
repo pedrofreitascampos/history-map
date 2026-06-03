@@ -1999,7 +1999,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
       <div class="import-section">
         <h3>🌐 Web Import</h3>
-        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Paste an article URL (currently supports Time Out city guides). We'll extract the venue list and let you pick which to add as bucket places.</p>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Paste an article URL and we'll extract the venue list. Pick which ones to add as bucket places.</p>
+        <div id="web-import-engine-hint" style="font-size:12px;margin-bottom:10px;padding:8px 10px;border-radius:6px;background:var(--bg-tertiary);color:var(--text-secondary);">Checking parser mode…</div>
         <div style="display:flex;gap:8px;">
           <input type="url" id="web-import-url" class="form-input" placeholder="https://www.timeout.com/lisbon/restaurants/best-restaurants" style="flex:1;font-size:13px;" />
           <button class="btn btn-primary" data-click="webImportFetch">Fetch</button>
@@ -4890,7 +4891,7 @@ function switchView(viewId, skipHash) {
     }, 150);
   }
   if (viewId !== 'chrono-view' && replayState.map) destroyReplayMap();
-  if (viewId === 'import-view') renderApproval();
+  if (viewId === 'import-view') { renderApproval(); refreshWebImportEngineHint(); }
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
   if (viewId === 'wishlist-view') renderWishlist();
@@ -9636,15 +9637,17 @@ async function saveAnthropicKey() {
   if (!key || key.startsWith('••')) { showToast('Enter a valid API key.', 'warn'); return; }
   try {
     await api('PUT', '/settings', { anthropicKey: key });
-    showToast('Anthropic API key saved. Trip narration is now active.');
+    _resetWebImportEngineCache();
+    showToast('Anthropic API key saved. Trip narration + smart web import are now active.');
     openAccountModal(); // refresh
   } catch (err) { showToast('Failed: ' + err.message, 'error'); }
 }
 
 function removeAnthropicKey() {
-  showConfirm('Remove your Anthropic API key? Trip narration will be disabled.', async () => {
+  showConfirm('Remove your Anthropic API key? Trip narration + smart web import will be disabled.', async () => {
     try {
       await api('PUT', '/settings', { anthropicKey: null });
+      _resetWebImportEngineCache();
       showToast('Anthropic API key removed.');
       openAccountModal();
     } catch (err) { showToast('Failed: ' + err.message, 'error'); }
@@ -11892,6 +11895,33 @@ async function addDiscoveryToBucket(idxStr) {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* WEB IMPORT                                                             */
 /* ═══════════════════════════════════════════════════════════════════════ */
+// Cached engine status so we don't refetch on every view enter. The Account
+// modal Save handler clears this (see _resetWebImportEngineCache call sites)
+// so toggling the key takes effect immediately.
+let _webImportEngineCache = null;
+
+function _resetWebImportEngineCache() { _webImportEngineCache = null; }
+
+async function refreshWebImportEngineHint() {
+  const hintEl = document.getElementById('web-import-engine-hint');
+  if (!hintEl) return;
+  try {
+    if (!_webImportEngineCache) {
+      _webImportEngineCache = await api('GET', '/anthropic/status');
+    }
+    const { enabled } = _webImportEngineCache;
+    if (enabled) {
+      hintEl.textContent = '🤖 Smart parsing enabled (Claude Haiku — ~$0.002/import). Works on any list URL.';
+      hintEl.style.color = 'var(--text-secondary)';
+    } else {
+      hintEl.textContent = '📋 Basic mode — only Time Out is supported. Add an Anthropic key in Account → Anthropic for any-site parsing.';
+      hintEl.style.color = 'var(--text-secondary)';
+    }
+  } catch {
+    hintEl.textContent = '📋 Basic mode — only Time Out is supported.';
+  }
+}
+
 async function webImportFetch() {
   const url = document.getElementById('web-import-url').value.trim();
   if (!url) { showToast('Paste a URL first', 'warn'); return; }
@@ -11912,13 +11942,22 @@ async function webImportFetch() {
 function mapWebImportError(msg) {
   if (!msg) return 'Import failed';
   if (msg.includes('invalid_url')) return 'That URL is not valid (must be https:// and not localhost)';
-  if (msg.includes('host_not_supported')) return 'This site is not supported yet. We currently parse Time Out city guides.';
+  if (msg.includes('host_not_supported')) return 'This site is not supported yet. Add an Anthropic key in Account → Anthropic to parse any list URL.';
   if (msg.includes('fetch_failed_404')) return 'That page returned 404 — the URL is wrong or has been moved. Try a current list URL from the site.';
   if (msg.includes('fetch_failed_403') || msg.includes('fetch_failed_401')) return 'The site is blocking us (403/401). It may require login or be geo-restricted.';
   if (msg.includes('fetch_failed_5')) return 'The site is temporarily down (5xx). Try again in a minute.';
   if (msg.includes('fetch_failed')) return 'Could not fetch that page. The site may be blocking us or the URL is wrong.';
   if (msg.includes('response_too_large')) return 'That page is too large to parse.';
-  return 'Import failed: ' + msg;
+  if (msg.includes('llm_key_rejected')) return 'Anthropic key rejected. Update your key in Account → Anthropic.';
+  if (msg.includes('llm_rate_limited')) return 'Anthropic is rate-limiting us. Try again in a minute.';
+  if (msg.includes('llm_no_output')) return 'The parser could not extract any venues from this page.';
+  if (msg.includes('llm_unavailable')) return 'Smart parsing is temporarily unavailable on the server.';
+  if (msg.includes('llm_error')) return 'Smart parser hit an error. Try again or paste a different URL.';
+  // Defence in depth: never echo an unknown raw error string into a user-
+  // visible toast. The server's contract is the enumerated codes above; if
+  // an unexpected one slips through the sanitisation chain it should NOT
+  // bleed to the UI.
+  return 'Import failed. Please try again.';
 }
 
 function openWebImportModal() {
@@ -11927,10 +11966,18 @@ function openWebImportModal() {
   const venues = Array.isArray(payload.venues) ? payload.venues : [];
   const metaEl = document.getElementById('web-import-meta');
   const metaParts = [];
+  metaParts.push(`<strong>${venues.length} venues found</strong>`);
+  // Engine attribution chip — tells the user which parser ran so they can
+  // judge the cost/quality story (LLM = $0.002/call any URL; regex = free
+  // but Time Out only).
+  const engine = payload.engine || (payload.source === 'llm' ? 'llm' : 'regex');
+  const engineChip = engine === 'llm'
+    ? '<span data-engine="llm" style="display:inline-block;padding:2px 8px;border-radius:10px;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;">🤖 Parsed by Claude Haiku</span>'
+    : '<span data-engine="regex" style="display:inline-block;padding:2px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;font-weight:600;">📋 Parsed by Time Out adapter (regex)</span>';
+  metaParts.push(engineChip);
   if (payload.articleTitle) metaParts.push(esc(payload.articleTitle));
   if (payload.city) metaParts.push(esc(payload.city));
-  if (payload.source && payload.source !== 'timeout') metaParts.push('source: ' + esc(payload.source));
-  metaEl.textContent = metaParts.join(' · ') || '';
+  metaEl.innerHTML = metaParts.join(' · ');
   const listEl = document.getElementById('web-import-list');
   listEl.innerHTML = venues.map((v, i) => {
     const escapedName = esc(v.name || '');

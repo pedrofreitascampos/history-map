@@ -152,10 +152,14 @@ describe('mapWebImportError', () => {
     expect(run('response_too_large')).toContain('too large');
   });
 
-  test('unknown error prefixes with Import failed', () => {
+  // 2026-06-03 cybersec MED-4: previously the fallthrough was
+  // `'Import failed: ' + msg` which echoed unknown server error strings into
+  // user-visible toasts. Tightened to a static message so an unsanitised
+  // upstream error never leaks via this path.
+  test('unknown error returns static "Import failed. Please try again." (no msg echo)', () => {
     const result = run('some_other_error');
-    expect(result).toMatch(/^Import failed:/);
-    expect(result).toContain('some_other_error');
+    expect(result).toBe('Import failed. Please try again.');
+    expect(result).not.toContain('some_other_error');
   });
 });
 

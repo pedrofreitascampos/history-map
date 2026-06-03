@@ -723,6 +723,7 @@ app.post('/api/trips/narrate', auth, async (req, res) => {
 const WEBSITE_IMPORT_ADAPTERS = [
   { pattern: /^(www\.)?timeout\./i, name: 'timeout', parse: require('./import-adapters/timeout').parseTimeoutArticle },
 ];
+const { parseVenuesLLM } = require('./import-adapters/llm');
 
 const SSRF_BLOCK = [
   /^localhost$/i,
@@ -732,9 +733,56 @@ const SSRF_BLOCK = [
   /^10\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^192\.168\./,
+  // Link-local + cloud metadata endpoints (AWS/GCP/Azure use 169.254.169.254;
+  // GCP also resolves metadata.google.internal). Without these an attacker
+  // with an Anthropic key could hit the Render host's metadata service.
+  /^169\.254\./,
+  /^metadata\.google\.internal$/i,
+  // IPv6 link-local (fe80::/10) + Unique Local Addresses (fc00::/7 → fc/fd).
+  /^fe80:/i,
+  /^fc[0-9a-f]{2}:/i,
+  /^fd[0-9a-f]{2}:/i,
 ];
 
+// Node's WHATWG URL preserves `[...]` around IPv6 hostnames AND converts
+// IPv4-mapped IPv6 (`::ffff:127.0.0.1`) to hex form (`::ffff:7f00:1`). Both
+// would defeat the regex blocklist above. Normalise here so the blocklist
+// sees a bare hostname and any IPv4-mapped address resurfaces in dotted form
+// for the existing IPv4 regexes.
+function normalizeHostForSSRF(rawHost) {
+  if (typeof rawHost !== 'string' || !rawHost) return '';
+  let host = rawHost.replace(/^\[|\]$/g, '');
+  // IPv4-mapped IPv6: `::ffff:XXXX:YYYY` where XXXX,YYYY are 16-bit hex groups.
+  // Decode to a.b.c.d so /^127\./ etc still fire. Tolerate Node's short-form
+  // omission of leading zeros within each group ("a00" instead of "0a00").
+  const m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (m) {
+    const hi = parseInt(m[1], 16);
+    const lo = parseInt(m[2], 16);
+    const a = (hi >> 8) & 0xff, b = hi & 0xff, c = (lo >> 8) & 0xff, d = lo & 0xff;
+    return `${a}.${b}.${c}.${d}`;
+  }
+  return host;
+}
+
 const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+
+// GET /api/anthropic/status — drives the engine-attribution UX on the import
+// view. enabled=true unlocks the "Smart parsing" hint + any-host fetching;
+// enabled=false shows the "Basic mode — only Time Out is supported" hint and
+// keeps the request gated to hosts in WEBSITE_IMPORT_ADAPTERS.
+app.get('/api/anthropic/status', auth, async (req, res) => {
+  const key = await getAnthropicKey(req.user.id);
+  res.json({ enabled: !!key, mode: key ? 'smart' : 'basic' });
+});
+
+// Per-endpoint rate limit — each LLM-path import call hits Anthropic and
+// burns ~$0.002. The global 200/min/user cap is too permissive: 200 LLM
+// calls/min ≈ $24/hr per user, and env-key fallback would amortise the
+// hit across all users. Cap at 10/min/user, generous enough for a real
+// session of paste-paste-paste imports but tight enough that runaway
+// behaviour is bounded. Bypassed in test mode like the other limits.
+app.use('/api/import/website', rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 10 }));
 
 app.post('/api/import/website', auth, async (req, res) => {
   const _t0 = Date.now();
@@ -752,13 +800,21 @@ app.post('/api/import/website', auth, async (req, res) => {
       return res.status(400).json({ error: 'invalid_url' });
     }
     host = parsed.hostname;
-    if (SSRF_BLOCK.some(re => re.test(host))) {
+    const ssrfTarget = normalizeHostForSSRF(host);
+    if (SSRF_BLOCK.some(re => re.test(ssrfTarget))) {
       return res.status(400).json({ error: 'invalid_url' });
     }
-    const adapter = WEBSITE_IMPORT_ADAPTERS.find(a => a.pattern.test(host));
-    if (!adapter) {
+    // Adapter selection: prefer LLM when an Anthropic key is configured
+    // (works on any host that passes the SSRF guard); otherwise fall back
+    // to the per-site regex registry (currently just Time Out). The
+    // host_not_supported error only fires when there's NO LLM key AND
+    // the host isn't in the registry.
+    const apiKey = await getAnthropicKey(req.user.id);
+    const regexAdapter = WEBSITE_IMPORT_ADAPTERS.find(a => a.pattern.test(host));
+    if (!apiKey && !regexAdapter) {
       return res.status(400).json({ error: 'host_not_supported' });
     }
+    const engine = apiKey ? 'llm' : 'regex';
     let fetchRes;
     try {
       fetchRes = await fetch(url, {
@@ -766,16 +822,20 @@ app.post('/api/import/website', auth, async (req, res) => {
           'User-Agent': 'Mozilla/5.0 (compatible; Oikumene/1.0; +https://history-map.onrender.com)',
           'Accept': 'text/html',
         },
+        // SSRF defence: reject redirects so a 301/302 from an attacker-
+        // controlled host cannot be used to bounce us into a private/metadata
+        // IP that already passed our SSRF_BLOCK hostname check.
+        redirect: 'error',
         signal: AbortSignal.timeout(10000),
       });
     } catch {
       const ms = Date.now() - _t0;
-      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'fetch_failed', errorType: 'network', ms });
+      log('warn', 'import_website_call', { userId: req.user.id, host, engine, status: 'fetch_failed', errorType: 'network', ms });
       return res.status(502).json({ error: 'fetch_failed' });
     }
     if (!fetchRes.ok) {
       const ms = Date.now() - _t0;
-      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'fetch_failed', errorType: `http_${fetchRes.status}`, ms });
+      log('warn', 'import_website_call', { userId: req.user.id, host, engine, status: 'fetch_failed', errorType: `http_${fetchRes.status}`, ms });
       // Encode HTTP status into the error string so the existing api() error
       // contract (single `error` string field) carries it to the client toast.
       // Time Out reshuffles URLs frequently and a 404 should read as "page
@@ -785,17 +845,48 @@ app.post('/api/import/website', auth, async (req, res) => {
     const buf = await fetchRes.arrayBuffer();
     if (buf.byteLength > IMPORT_MAX_BYTES) {
       const ms = Date.now() - _t0;
-      log('warn', 'import_website_call', { userId: req.user.id, host, status: 'response_too_large', errorType: 'too_large', ms });
+      log('warn', 'import_website_call', { userId: req.user.id, host, engine, status: 'response_too_large', errorType: 'too_large', ms });
       return res.status(413).json({ error: 'response_too_large' });
     }
     const html = Buffer.from(buf).toString('utf-8');
-    const { city, articleTitle, venues } = adapter.parse(html, url);
+
+    let city, articleTitle, venues, sourceName, usage = null;
+    if (engine === 'llm') {
+      try {
+        const parsed = await parseVenuesLLM(html, url, apiKey);
+        city = parsed.city;
+        articleTitle = parsed.articleTitle;
+        venues = parsed.venues;
+        usage = parsed.usage;
+        sourceName = 'llm';
+      } catch (err) {
+        const ms = Date.now() - _t0;
+        log('warn', 'import_website_call', { userId: req.user.id, host, engine, status: 'llm_error', errorType: err.code || 'llm_error', ms });
+        // Sanitised single-string error contract — never leak upstream body.
+        const msg = err.code === 'llm_error_401' ? 'llm_key_rejected'
+          : err.code === 'llm_error_429' ? 'llm_rate_limited'
+          : err.code === 'llm_no_tool_use' ? 'llm_no_output'
+          : err.code === 'llm_sdk_missing' ? 'llm_unavailable'
+          : 'llm_error';
+        return res.status(err.status || 502).json({ error: msg });
+      }
+    } else {
+      const parsed = regexAdapter.parse(html, url);
+      city = parsed.city;
+      articleTitle = parsed.articleTitle;
+      venues = parsed.venues;
+      sourceName = regexAdapter.name;
+    }
+
     const ms = Date.now() - _t0;
     if (venues.length === 0) {
-      log('warn', 'import_parse_zero', { userId: req.user.id, host, source: adapter.name });
+      log('warn', 'import_parse_zero', { userId: req.user.id, host, engine, source: sourceName });
     }
-    log('info', 'import_website_call', { userId: req.user.id, host, status: 'success', venueCount: venues.length, source: adapter.name, ms });
-    res.json({ city, articleTitle, source: adapter.name, venues });
+    log('info', 'import_website_call', {
+      userId: req.user.id, host, engine, status: 'success', venueCount: venues.length, source: sourceName, ms,
+      ...(usage ? { inputTokens: usage.input_tokens || 0, outputTokens: usage.output_tokens || 0, cacheReadTokens: usage.cache_read_input_tokens || 0 } : {}),
+    });
+    res.json({ city, articleTitle, source: sourceName, engine, venues });
   } catch (err) {
     const ms = Date.now() - _t0;
     log('warn', 'import_website_call', { userId: req.user.id, host, status: 'error', errorType: 'internal', ms });
