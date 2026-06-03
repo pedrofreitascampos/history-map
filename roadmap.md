@@ -13,7 +13,7 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-**Status as of 2026-06-03:** 9 of 10 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅, err.message leak across 7 catch blocks ✅, marker-style in-place setIcon ✅). **Remaining P0:** **mobile sidebar covers entire viewport** (auto-collapse on ≤480px) + **save-modal lat/lng hidden** (no path to manual coords) — both are mobile-UX fixes that can ship as a single batch.
+**Status as of 2026-06-03:** **10 of 10 original P0s shipped.** Audit P0 close-out complete (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅, err.message leak across 7 catch blocks ✅, marker-style in-place setIcon ✅, mobile-UX batch — save-modal lat/lng unhide + auto-geocode + mobile sidebar auto-collapse ✅). Next: drain the P1 backlog (per-endpoint rate limits on narrate+discover, DNS-rebinding SSRF defence, CSP photon.komoot.io, ETag on /api/locations, render-blocking CDN defers, etc.).
 
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
@@ -97,8 +97,8 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 | HIGH-SEC | ~~**`err.message` leaked to clients on 500** in 7 catch blocks across Places + backup endpoints.~~ ✅ **Shipped 2026-06-03.** All 7 callsites (`/api/my-backups`, `/api/my-backup`, `/api/places/search`, `/api/places/autocomplete`, `/api/places/sync`, `/api/places/bulk-sync`, `/api/places/discover`) now mirror the narrate pattern: `log('error', '<endpoint>_failed', { userId, error: err.message })` server-side + `res.status(500).json({ error: 'Internal error' })` to client. Upstream Google API error bodies (incl. key hints / URLs / quota info) and `fs` paths no longer reach the wire. +8 jest in `tests/error-sanitization.test.js` (1 per route × 7 + 1 static pin asserting `res.status(500).json({error: err.message})` never re-appears in `server/index.js`). |
 | CRIT-PERF | ~~**No HTTP compression middleware.** `index.html` ships at 576 KB raw.~~ ✅ **Shipped 2026-06-03.** `compression@^1.8.1` added; `app.use(compression())` mounted right after the CSP-nonce middleware (early enough to wrap every downstream response, late enough to skip the static `res.locals.cspNonce` set). Default threshold (1 KB) leaves tiny JSON error bodies uncompressed; `index.html` (~580 KB raw → ~140 KB gzip) and `/api/locations` bulk payloads get the win. `Vary: Accept-Encoding` is set by the middleware so caches don't cross-serve gzip ↔ identity copies. +6 jest in `tests/compression.test.js` (dependency pin, gzip on `/`, identity on `/`, Vary header, sub-threshold skip, large-JSON path). |
 | HIGH-PERF | ~~**Marker-style toggle does full rebuild** instead of `marker.setIcon()` in place. 1000 markers = 300-600ms main-thread stall.~~ ✅ **Shipped 2026-06-03.** New `updateAllMarkerIcons()` iterates `_renderState.markerById` and calls `marker.setIcon(createMarkerIcon(loc))` in place — reuses L.marker instances, no cluster layer churn, no handler re-binding. Both `setMarkerStyle` and `setMarkerSizeMode` now: in cluster mode + populated registry, take the in-place path (returns true); heat mode and first-paint fall back to `renderMarkers`. Old `_renderState.markerStyle = null` cache-bust gone. +7 jest in `tests/marker-icon-inplace.test.js` (setIcon per marker in cluster, no clearLayers/addLayers, heat fallback, empty-registry fallback, invalid-style coerce, missing-loc skip, static pins) + 4 refreshed tests in `tests/marker-style.test.js` aligned with the new contract. |
-| HIGH-LIVE | **Save modal silently fails when lat/lng empty + fields are hidden** — toast "Please fill in lat and lng" appears but fields are hidden by default. User has no path forward. | `public/index.html` add-modal lat/lng row | Auto-run Photon geocode on modal open when name filled + coords empty; if still missing on Save, unhide the lat/lng row + scroll-to + focus. |
-| HIGH-LIVE | **Mobile sidebar covers entire 375px viewport** — sidebar is 375px wide identical to viewport. Map fully obscured. No auto-collapse. | sidebar CSS | Add `@media (max-width: 480px)` → sidebar `width: 100vw` collapsed by default; show toggle FAB on map. |
+| HIGH-LIVE | ~~**Save modal silently fails when lat/lng empty + fields are hidden.**~~ ✅ **Shipped 2026-06-03.** New `_autoGeocodeAddModalIfNeeded()` fires Photon forward-geocode from `quickAddPlace` after the name is set — fills lat/lng/address in place, never clobbers values the user typed during the fetch. `_unhideLocCoordsRow()` flips the (now id'd) `#loc-coords-row` to visible + `scrollIntoView` + `focus` on the lat input when `saveLocation` hits the coords-missing path. Toast copy split: "Please fill in a name." (when name missing) vs "Could not find coordinates. Please enter latitude and longitude." (when name present but geocode missed). +11 jest in `tests/mobile-ux-batch.test.js` (autoGeocode happy/skipped-when-editing/skipped-when-coords-present/skipped-when-empty/network-fail/no-features/no-address-clobber + unhide flips display & focuses + 3 static pins). |
+| HIGH-LIVE | ~~**Mobile sidebar covers entire 375px viewport.**~~ ✅ **Shipped 2026-06-03.** `init()` now reads `matchMedia('(max-width: 480px)').matches` and collapses the sidebar by default on first load when the user has no saved `hm_sidebar` preference. Explicit user toggle (`hm_sidebar` = `'0'` or `'1'`) still wins thereafter — desktop default stays "open", and once a mobile user opens the sidebar manually it stays open across reloads. The existing `@media (max-width: 480px)` rules (sidebar `width: 100vw`, toggle slides to `calc(100vw - 44px)` when open) already covered the layout; the missing piece was the auto-collapse default. +3 jest in `tests/mobile-ux-batch.test.js` (CSS rule preserved, init reads matchMedia, explicit-pref precedence). |
 
 ### 🟠 P1 — Ship this month (~1 week)
 
@@ -182,7 +182,7 @@ Ranked by impact-vs-effort:
 
 | Sprint | Theme | Items | ~Effort |
 |---|---|---|---|
-| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — 9 of 10 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions interaction ✅ partial, gzip compression ✅, LLM web-import + engine UX ✅, SSRF link-local + redirect bypass ✅, err.message leak ✅, marker-style in-place setIcon ✅). **Remaining:** mobile sidebar auto-collapse + save-modal lat/lng unhide (mobile-UX batch) | ¼ day remaining |
+| **S1 (this week)** | ✅ **Done 2026-06-03 — all 10 P0s shipped.** data-arg0 dispatcher, hearts duplicate attr, web-import bug, regions interaction (partial), gzip compression, LLM web-import + engine UX, SSRF link-local + redirect bypass, err.message leak, marker-style in-place setIcon, mobile-UX batch (auto-geocode + lat/lng unhide + sidebar auto-collapse). | 0 |
 | **S2** | Hardening + perf round 2 | Per-endpoint rate limits, CSP `photon.komoot.io`, ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label | 3-4 days |
 | **S3** | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse | 1 week |
 | **S4+** | Power features | Pick 2-3: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link | 1-2 weeks each |
@@ -827,3 +827,46 @@ See memory roadmap for full commit-level detail. Headline batches:
     replaced by the new contract).
   - **Session totals after marker in-place ship: 956 jest + 8 e2e green
     (3 skip).**
+  - **Mobile-UX batch (last P0 — closes both HIGH-LIVE rows from the
+    2026-06-02 audit).** Two independent fixes that ship together because
+    they're both first-time-on-mobile dead-ends.
+    - **Save-modal lat/lng unhide + Photon auto-geocode.** The lat/lng
+      `form-row` has been `display:none` since the 2026-05-31 declutter
+      but `saveLocation` still rejects empty coords with a toast — leaving
+      a stuck user with no path forward. Two-pronged fix: (a)
+      `quickAddPlace` now fires `_autoGeocodeAddModalIfNeeded()`
+      fire-and-forget after setting the name → Photon forward-geocode →
+      fills lat/lng (and address, if absent) in place. Guards skip the
+      call when editing, when coords already set, or when name empty;
+      values the user typed during the in-flight fetch are never
+      clobbered. (b) `saveLocation` now calls `_unhideLocCoordsRow()` on
+      the coords-missing path → flips `#loc-coords-row` to visible +
+      `scrollIntoView({behavior:'smooth', block:'center'})` + `.focus()`
+      on the lat input. Toast copy split: name-missing vs
+      coords-missing. The lat/lng `<div>` got `id="loc-coords-row"` for
+      the unhide target.
+    - **Mobile sidebar auto-collapse on ≤480px first load.** Existing
+      `@media (max-width:480px)` rules already make the sidebar
+      `width: 100vw` and slide the toggle to `calc(100vw - 44px)` when
+      open — what was missing was the **default collapsed state** so
+      the map is visible on first load. `init()` now reads
+      `matchMedia('(max-width:480px)').matches` and collapses when the
+      user has no saved `hm_sidebar` preference; explicit user toggle
+      (`hm_sidebar='0'|'1'`) still wins thereafter, so once a mobile
+      user opens the sidebar manually it stays open across reloads.
+      Desktop default stays "open".
+    - **+14 jest in `tests/mobile-ux-batch.test.js`** (8 autoGeocode
+      behavioural — happy / skip-when-editing / skip-when-coords-set /
+      skip-when-name-empty / network-fail / no-features / no-address-
+      clobber + unhide flips display & focuses + 3 static pins for the
+      save-modal half; 3 static pins for the mobile-sidebar half — CSS
+      rule preserved, init reads matchMedia, explicit-pref precedence).
+      **+1 updated** `tests/import.test.js` pin for the new
+      `id="loc-coords-row"` markup.
+  - **Session totals after mobile-UX batch: 970 jest + 8 e2e green
+    (3 skip).**
+  - **🏁 Audit P0 close-out complete — 10 of 10 shipped 2026-06-03.**
+    Next session: drain P1 (narrate+discover per-endpoint rate limits,
+    DNS-rebinding SSRF defence, CSP photon.komoot.io, ETag on
+    /api/locations, render-blocking CDN defers, surgical
+    rebuildIndexes, marker-hash field-by-field compare).

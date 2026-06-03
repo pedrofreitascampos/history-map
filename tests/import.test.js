@@ -2755,8 +2755,10 @@ describe('Edit modal declutter — Light + cut Lat/Lng + cut Visits list (2026-0
   test('Lat/Lng row is in the DOM but hidden (save handler still reads them)', () => {
     expect(indexHtml).toMatch(/id="loc-lat"/);
     expect(indexHtml).toMatch(/id="loc-lng"/);
-    // The form-row wrapping them carries display:none style.
-    expect(indexHtml).toMatch(/<div class="form-row" style="display:none;">[\s\S]{0,500}id="loc-lat"/);
+    // The form-row wrapping them carries display:none style. 2026-06-03
+    // mobile-UX batch added id="loc-coords-row" so saveLocation can unhide
+    // the row when coords are missing — markup updated accordingly.
+    expect(indexHtml).toMatch(/<div class="form-row" id="loc-coords-row" style="display:none;">[\s\S]{0,500}id="loc-lat"/);
   });
 
   test('Visits collapsible: summary + expandable list with per-visit remove + custom date', () => {

@@ -2136,9 +2136,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
 
       <!-- Lat/Lng inputs still drive the save handler but the UI is hidden
-           per the 2026-05-31 declutter. Set by search-pick, edit-open, and
-           map-click flows; never hand-edited from this surface. -->
-      <div class="form-row" style="display:none;">
+           by default per the 2026-05-31 declutter. Set by search-pick,
+           edit-open, map-click, and the 2026-06-03 quick-add Photon
+           auto-geocode. saveLocation() unhides this row on the
+           coords-missing failure path so the user has a manual path
+           forward. -->
+      <div class="form-row" id="loc-coords-row" style="display:none;">
         <div class="form-group">
           <label>Latitude</label>
           <input type="number" class="form-input" id="loc-lat" step="any" placeholder="0.0" inputmode="decimal" min="-90" max="90">
@@ -5077,8 +5080,58 @@ function quickAddPlace() {
   const input = document.getElementById('quick-add-input');
   const name = (input?.value || '').trim();
   openAddModal();
-  if (name) document.getElementById('loc-name').value = name;
+  if (name) {
+    document.getElementById('loc-name').value = name;
+    // Fire-and-forget Photon forward-geocode so Save isn't a dead-end on a
+    // hidden lat/lng row. saveLocation() still unhides+focuses the row if
+    // this fails or returns nothing usable.
+    _autoGeocodeAddModalIfNeeded();
+  }
   if (input) input.value = '';
+}
+
+// Forward-geocode the Add modal's `name` via Photon and fill lat/lng/address
+// in place. No-op if editing, if coords already set, or if name empty.
+// Does not clobber values the user typed during the in-flight fetch.
+async function _autoGeocodeAddModalIfNeeded() {
+  if (state.editingId) return;
+  const latEl = document.getElementById('loc-lat');
+  const lngEl = document.getElementById('loc-lng');
+  const nameEl = document.getElementById('loc-name');
+  if (!latEl || !lngEl || !nameEl) return;
+  if (latEl.value && lngEl.value) return;
+  const name = (nameEl.value || '').trim();
+  if (!name) return;
+  try {
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(name)}&limit=1`;
+    const r = await fetch(url);
+    if (!r.ok) return;
+    const json = await r.json();
+    const feat = (json.features || [])[0];
+    if (!feat) return;
+    const coords = feat.geometry?.coordinates || [];
+    if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return;
+    if (!latEl.value) latEl.value = coords[1];
+    if (!lngEl.value) lngEl.value = coords[0];
+    const props = feat.properties || {};
+    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
+    const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
+    const addressEl = document.getElementById('loc-address');
+    if (addressEl && !addressEl.value && parts.length) addressEl.value = parts.join(', ');
+  } catch {}
+}
+
+// Unhide + focus the lat/lng row so a user whose name didn't geocode has a
+// manual path to enter coordinates. Used by saveLocation's failure path.
+function _unhideLocCoordsRow() {
+  const row = document.getElementById('loc-coords-row');
+  if (!row) return;
+  row.style.display = '';
+  const latEl = document.getElementById('loc-lat');
+  if (latEl) {
+    try { latEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+    latEl.focus();
+  }
 }
 
 // ── GPS my-location ──────────────────────────────────────
@@ -5548,7 +5601,15 @@ async function saveLocation() {
   const lat = parseFloat(document.getElementById('loc-lat').value);
   const lng = parseFloat(document.getElementById('loc-lng').value);
   if (!name || isNaN(lat) || isNaN(lng)) {
-    showToast('Please fill in name, latitude and longitude.', 'warn');
+    if (!name) {
+      showToast('Please fill in a name.', 'warn');
+    } else {
+      // Coords missing — unhide the row so the user can enter them manually.
+      // (The row is hidden by default after the 2026-05-31 declutter; the
+      // quickAddPlace flow tries Photon auto-geocode but it can miss.)
+      _unhideLocCoordsRow();
+      showToast('Could not find coordinates. Please enter latitude and longitude.', 'warn');
+    }
     return;
   }
 
@@ -11220,8 +11281,13 @@ async function startApp(username) {
   if (!map) initMap();
   else { renderMarkers(); setTimeout(() => map.invalidateSize(), 100); }
 
-  // Restore sidebar state
-  if (localStorage.getItem('hm_sidebar') === '1') {
+  // Restore sidebar state. On mobile (≤480px viewport) the sidebar covers
+  // the entire screen, so default to collapsed when the user has no saved
+  // preference — otherwise the map is invisible on first load. Once the
+  // user toggles, their explicit choice (0 or 1) wins from then on.
+  const _sbPref = localStorage.getItem('hm_sidebar');
+  const _sbMobileDefault = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 480px)').matches;
+  if (_sbPref === '1' || (_sbPref === null && _sbMobileDefault)) {
     document.getElementById('sidebar').classList.add('collapsed');
     document.getElementById('sidebar-toggle').textContent = '▶';
   }
