@@ -13,7 +13,7 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-**Status as of 2026-06-03:** **10 of 10 original P0s shipped.** Audit P0 close-out complete (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅, err.message leak across 7 catch blocks ✅, marker-style in-place setIcon ✅, mobile-UX batch — save-modal lat/lng unhide + auto-geocode + mobile sidebar auto-collapse ✅). Next: drain the P1 backlog (per-endpoint rate limits on narrate+discover, DNS-rebinding SSRF defence, CSP photon.komoot.io, ETag on /api/locations, render-blocking CDN defers, etc.).
+**Status as of 2026-06-04:** **10 of 10 original P0s shipped + 5 of 7 S2 P1 "Security finishing touches" closed in one batch.** Audit P0 close-out complete (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅, LLM web-import adapter + engine attribution UX ✅, SSRF blocklist + redirect bypass ✅, err.message leak across 7 catch blocks ✅, marker-style in-place setIcon ✅, mobile-UX batch ✅). S2 P1 hardening batch 2026-06-04 (+16 jest, 986+3skip green, 8/8 e2e green): narrate+discover rate limits ✅, CSP photon.komoot.io ✅, render.yaml ANTHROPIC_API_KEY ✅, exact-pin @anthropic-ai/sdk ✅, notes server-side sanitisation ✅. Next: ETag on /api/locations, initMap-first + CDN defers, DNS-rebinding SSRF.
 
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
@@ -82,13 +82,13 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 
 ### 🟠 P1 — Ship this month (~1 week)
 
-**Security finishing touches**
-- **Per-endpoint rate limits** on expensive routes — ~~web-import (LLM cost)~~ ✅ **10/min/user shipped 2026-06-03**; narrate + discover still on global 200/min only.
+**Security finishing touches** — **5 of 7 closed in S2 hardening batch 2026-06-04 (+16 jest, full suite 986+3skip green, 8/8 e2e green).**
+- ~~**Per-endpoint rate limits** on expensive routes — web-import (LLM cost) ✅ **10/min/user shipped 2026-06-03**; narrate + discover still on global 200/min only.~~ ✅ **Closed 2026-06-04** — narrate + narrate-status capped at 10/min/user (LLM cost shape matches web-import); discover capped at 30/min/user (Places Text Search Pro ~$0.032/call → 200/min global = ~$384/hr worst-case → 30/min ≈ $58/hr bound).
 - **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` + re-apply blocklist to the resolved IP. The current regex blocklist trusts the WHATWG hostname, so an attacker-controlled DNS name that resolves to a private IP would still pass. Lower priority now that the redirect bypass and direct-IP cases are closed.
-- **Web-import snippet → notes server-side sanitisation** (cybersec MED-3 deferred 2026-06-03). The `snippet` field from a parsed venue flows into `notes` on the POST to `/api/locations` without escaping. Safe today because every render path uses `esc()` / `textContent`, but defence-in-depth says strip on write so a future render-path regression can't turn it into stored XSS. Strip in `sanitizeLocationUpdate` for `notes`.
-- **`photon.komoot.io` missing from CSP `connectSrc`** despite 4 client-side fetches to it (`server/index.js:95-104` ← add host; verify against full client `fetch` site list).
-- **`ANTHROPIC_API_KEY` missing from `render.yaml`** — add `- key: ANTHROPIC_API_KEY\n  sync: false`.
-- **`@anthropic-ai/sdk: ^0.30.1`** caret on a 0.x → pin exact `0.30.1` + `npm ci`.
+- ~~**Web-import snippet → notes server-side sanitisation** (cybersec MED-3 deferred 2026-06-03).~~ ✅ **Closed 2026-06-04** — `sanitizeLocationUpdate` now strips `<script>`/`<iframe>` blocks (case-insensitive, multi-line) + `javascript:`/`vbscript:` URI schemes + caps at 10 000 chars. 9 jest pins covering lowercase/uppercase script, iframe, unclosed-tag, javascript:, vbscript:, length cap, type drop, and legitimate prose unchanged.
+- ~~**`photon.komoot.io` missing from CSP `connectSrc`** despite 4 client-side fetches to it~~ ✅ **Closed 2026-06-04** — added next to `nominatim.openstreetmap.org` in the `connectSrc` array. Actual fetch site count = 6 (public/index.html: 4502 / 4757 / 5106 / 9577 / 9792 / 11928 — forward search, reverse, edit-modal enrich, Photon discover). Pinned via Helmet header inspection test.
+- ~~**`ANTHROPIC_API_KEY` missing from `render.yaml`** — add `- key: ANTHROPIC_API_KEY\n  sync: false`.~~ ✅ **Closed 2026-06-04.**
+- ~~**`@anthropic-ai/sdk: ^0.30.1`** caret on a 0.x → pin exact `0.30.1` + `npm ci`.~~ ✅ **Closed 2026-06-04** — `package.json` + `package-lock.json` both flipped to exact `0.30.1`. `npm install` regenerated cleanly (no concrete version churn — the lockfile was already serving 0.30.1; this prevents a future 0.30.2 from auto-loading).
 - **`more.onclick` direct assignment** in 5 callsites (`public/index.html:3925, 4029, 4888, 6723, 10585`) — migrate to `data-click` dispatcher; inconsistent with the project's CSP-compatible pattern.
 
 **Perf round 2**
@@ -166,7 +166,7 @@ Ranked by impact-vs-effort:
 | Sprint | Theme | Items | ~Effort |
 |---|---|---|---|
 | **S1 (this week)** | ✅ **Done 2026-06-03 — all 10 P0s shipped.** data-arg0 dispatcher, hearts duplicate attr, web-import bug, regions interaction (partial), gzip compression, LLM web-import + engine UX, SSRF link-local + redirect bypass, err.message leak, marker-style in-place setIcon, mobile-UX batch (auto-geocode + lat/lng unhide + sidebar auto-collapse). | 0 |
-| **S2** | Hardening + perf round 2 | Per-endpoint rate limits, CSP `photon.komoot.io`, ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label | 3-4 days |
+| **S2** | Hardening + perf round 2 | ~~Per-endpoint rate limits, CSP `photon.komoot.io`~~ ✅ + 3 more (SDK pin / render.yaml / notes sanitisation) shipped 2026-06-04. Remaining: ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label, DNS-rebinding SSRF | 3-4 days |
 | **S3** | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse | 1 week |
 | **S4+** | Power features | Pick 2-3: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link | 1-2 weeks each |
 

@@ -104,6 +104,7 @@ app.use(helmet({
         "'self'",
         "https://api.rainviewer.com",  // dynamic overlay: weather radar metadata
         "https://nominatim.openstreetmap.org",
+        "https://photon.komoot.io",
         "https://maps.googleapis.com",
         "https://router.project-osrm.org",
         "https://accounts.google.com",
@@ -538,6 +539,25 @@ function sanitizeLocationUpdate(updates) {
         .slice(0, 100);
     }
   }
+  // notes — free-text rendered via esc() everywhere today, but the web-import
+  // snippet flow lands attacker-controllable text here (server/import-adapters/
+  // llm.js → public/index.html:12133 concat into notes). Defense-in-depth: cap
+  // length and strip <script>/<iframe> blocks + javascript:/vbscript: URI
+  // schemes server-side so a future render-path regression can't weaponise
+  // stored notes. Cybersec MED-3 closeout.
+  if (updates.notes !== undefined) {
+    if (typeof updates.notes !== 'string') {
+      delete updates.notes;
+    } else {
+      let n = updates.notes;
+      n = n.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+      n = n.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
+      n = n.replace(/<\/?(?:script|iframe)\b[^>]*>/gi, '');
+      n = n.replace(/javascript:/gi, '').replace(/vbscript:/gi, '');
+      if (n.length > 10000) n = n.slice(0, 10000);
+      updates.notes = n;
+    }
+  }
   return updates;
 }
 
@@ -626,6 +646,11 @@ app.delete('/api/trips/:id', auth, async (req, res) => {
 });
 
 // ── Narrate-a-trip (Haiku-powered NL parsing) ─────────────
+// Per-endpoint rate limit — LLM cost ≈ $0.001/call after prompt-cache warmup;
+// 200/min global is permissive, cap at 10/min/user to bound runaway behaviour.
+// status check is rate-limited too (auth-only, low cost) to keep the surface
+// uniform with the web-import limiter scope.
+app.use(['/api/trips/narrate', '/api/trips/narrate-status'], rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 10 }));
 app.get('/api/trips/narrate-status', auth, async (req, res) => {
   const key = await getAnthropicKey(req.user.id);
   res.json({ enabled: !!key });
@@ -1520,6 +1545,11 @@ const CATEGORY_TO_PLACE_TYPE = {
   shopping: 'shopping_mall',
   cafe: 'cafe',
 };
+
+// Per-endpoint rate limit for discover — Google Places Text Search Pro is
+// ~$0.032/call; 200/min global = ~$384/hr worst case per user. Cap at
+// 30/min/user — generous for genuine browsing, tight enough to bound cost.
+app.use('/api/places/discover', rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 30 }));
 
 app.post('/api/places/discover', auth, async (req, res) => {
   const placesKey = await getPlacesKey(req.user.id);
