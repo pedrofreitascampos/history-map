@@ -19,30 +19,10 @@ This Open section only carries items NOT covered by the latest audit (longer-ter
 
 ### Carry-over from prior backlog
 
-- **`#bucketlist` Google Tasks → Oikumene bucket — Phase 2.** Phase 1 (17 geographic items + 9 family places) imported 2026-06-01 via Photon→Nominatim geocode pipeline; staged JSON at `~/Desktop/bucketlist-import-2026-06-01/`. Source list ID: `VzM0QTAyMnpIbVcySG5kYQ`. **Still open:** ~32 non-geographic items (Yoga, Skydive, Learn to meditate, Build PC, Cricket, etc.) — separate disposition into Google Tasks `#sprint` (🤖 Hobbies or 🎓 Personal development), NOT Oikumene.
-- **Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner (`projects/ai/travel_planner`). No design spike yet.
 - **Bootstrap from sources without an export API** — Playwright/headless-browser scraper pattern. Adapter slot in `WEBSITE_IMPORT_ADAPTERS` is open for per-target use. Targets to be picked case-by-case (beliapp.co is blocked, see Dropped below).
-- **Dynamic overlays — Tier 2+.** RainViewer ✅ shipped 2026-06-02 in `20e00d7` (registry pattern + first overlay). Remaining: **USGS earthquakes** (free GeoJSON, low-cost ship next), **FlightRadar live** (needs ADS-B Exchange or FR24 key, viewport-bounded refresh), **ISS ground track**, **wind/jet-stream** (Earth Nullschool style), **marine AIS**. Architecture in place — each new overlay is ~30 lines (label + icon + attach/detach), no toggle-handler changes.
 
 ### Wishlist (P1+, lower priority)
 
-- **Regions tab → "Atlas" tab + Graph view** (user request 2026-06-03). The current
-  Regions tab is misnamed — it already does Country / Region / City, and a graph
-  view doesn't fit "regions". Rename to something more generic (candidates:
-  **Atlas** / **Geography** / **Spatial**). Add a 4th option to the segmented
-  control: **🕸️ Graph** — paints the full chronology as a node-link diagram with
-  one node per visited place (positioned by lat/lng over the dark basemap) and
-  directed edges connecting consecutive visits in time order. Node size = visit
-  count (reuse the City-view `sqrt(pop)` scale shape); edge weight = visit count
-  across the same pair; edge color by transit mode if the corresponding `transits`
-  record exists between the two visits, else neutral. Hover an edge → tooltip
-  with the date+mode of the underlying transit. Variant toggles inside the Graph
-  view: **Time window** (all-time / per-year / per-trip) + **Density** (all
-  edges vs top-N busiest). Builds on the existing `state.locations` + `state.visits`
-  + `state.transits` indexes — pure client-side computation, no new endpoints.
-  Open question: SVG (cleaner edges, easier hover) vs Leaflet `L.polyline` on the
-  same basemap as the other views (consistent feel, free pan/zoom). Lean Leaflet
-  for consistency with Country/Region/City modes.
 - **Direct share-from-Google-Maps → Oikumene** (user request 2026-06-03). Two
   ingestion surfaces, both bypass the current Takeout/Timeline-export friction:
   - **Mobile (Android/iOS PWA share-target).** Register Oikumene as a Web Share
@@ -177,6 +157,9 @@ Ranked by impact-vs-effort:
 13. **📥 Direct Google Maps Saved Places import** (Takeout CSV adapter) — primary first-run seeding source for most users.
 14. **🎯 Isochrones / travel-time rings** — concentric "X min by car/walk/transit" from a pinned location. Accommodation + activity planning.
 15. **🚫 "Already been" detection on Timeline import** — fuzzy-match vs existing `been` items by placeId or proximity; flag as "update date?" instead of duplicating.
+16. **🕸️ Graph view on a renamed "Atlas" tab** (user request 2026-06-03). The current Regions tab is misnamed — it already does Country / Region / City, and a graph view doesn't fit "regions". Rename to **Atlas** / **Geography** / **Spatial**. Add a 4th segmented-control option: **🕸️ Graph** — node-link diagram with one node per visited place (positioned by lat/lng over the dark basemap) and directed edges connecting consecutive chronological visits. Node size = visit count (reuse City-view `sqrt(pop)` shape); edge weight = visit count per pair; edge color by transit mode when a matching `transits` record exists, else neutral. Hover edge → tooltip with date+mode. Variant toggles: **Time window** (all-time / per-year / per-trip) + **Density** (all edges vs top-N busiest). Pure client-side over existing `state.locations` + `state.visits` + `state.transits` indexes — no new endpoints. Lean Leaflet `L.polyline` over SVG for consistency with the other Atlas modes.
+17. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner (`projects/ai/travel_planner`). **Oikumene → Bifrost**: "Send to travel plan" action on a location or selection → creates POIs in a Bifrost tour. **Bifrost → Oikumene**: import a Bifrost tour back as a trip with its POIs as locations. Bifrost-side counterparts (sync, location field, "add to tour from marker") tracked in Bifrost's roadmap, not here. No design spike yet.
+18. **🌐 Dynamic overlays — Tier 2+.** RainViewer ✅ shipped 2026-06-02 in `20e00d7` (registry pattern + first overlay). Remaining: **USGS earthquakes** (free GeoJSON, lowest-cost ship next), **FlightRadar live** (needs ADS-B Exchange or FR24 key, viewport-bounded refresh), **ISS ground track**, **wind/jet-stream** (Earth Nullschool style), **marine AIS**. Architecture in place — each new overlay is ~30 lines (label + icon + attach/detach) via the `DYNAMIC_OVERLAYS` registry, no toggle-handler changes.
 
 ### Sequenced ship plan
 
