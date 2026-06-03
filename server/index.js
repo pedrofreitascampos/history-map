@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
+const compression = require('compression');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
@@ -65,6 +66,13 @@ app.use((req, res, next) => {
   res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
   next();
 });
+
+// gzip/deflate over the wire. Render doesn't auto-gzip Node responses, and
+// index.html alone is ~580 KB raw vs ~140 KB gzipped (~4× win); /api/locations
+// JSON compresses similarly. Default threshold (1 KB) skips tiny responses
+// where compression overhead exceeds the saving. Clients without
+// Accept-Encoding (or with identity) are served uncompressed automatically.
+app.use(compression());
 
 app.use(helmet({
   contentSecurityPolicy: {

@@ -13,7 +13,7 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
-**Status as of 2026-06-03:** 4 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial). **Top 3 remaining P0s by impact:** (1) **gzip compression middleware** (~30 min, ~5× payload reduction); (2) **server-side Haiku LLM web-import adapter** with engine attribution UX baked in; (3) **SSRF blocklist gaps + err.message leak** (security pair).
+**Status as of 2026-06-03:** 5 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial, gzip compression ✅). **Top 3 remaining P0s by impact:** (1) **server-side Haiku LLM web-import adapter** with engine attribution UX baked in; (2) **SSRF blocklist gaps + err.message leak** (security pair); (3) **marker-style in-place setIcon** (kills 300-600ms main-thread stall on toggle).
 
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
@@ -51,7 +51,7 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 | CRIT-UX-BUG | ~~**Hearts not keyboard-settable** — `data-click="handleHeartKey"` duplicate attribute on each heart span silently overrides `setBucketStrength` (HTML spec: last attribute wins).~~ ✅ **Shipped 2026-06-03.** Replaced duplicate `data-click` with `data-keydown="onHeartKey"` (new ACTIONS entry reading val from `el.dataset.val`); click handler `data-click="setBucketStrength" data-arg0="N"` now wins cleanly. Both click-to-set and keyboard nav (↑/↓/Enter/Space) work. +3 jest pins. |
 | HIGH-SEC | **SSRF blocklist missing link-local + IPv6 private ranges** in `POST /api/import/website`. `169.254.169.254` (GCP/Render metadata), `fd00::/8` IPv6 ULA, `::ffff:127.0.0.1` IPv4-mapped loopback all pass the current regex. Authenticated user → server-side fetch to cloud metadata endpoint. | `server/index.js:719-727` | Add: `/^169\.254\./`, `/^fd[0-9a-f]{2}:/i`, `/^::ffff:(127\.|10\.|172\.(1[6-9]\|2\d\|3[01])\.|192\.168\.)/i`. Also: `dns.lookup(host)` then re-apply IP blocklist (defends DNS-rebinding / CNAME chains). |
 | HIGH-SEC | **`err.message` leaked to clients on 500** in 7 catch blocks across Places (`/api/places/discover` etc), backup, narrate. Exposes Google API error bodies (incl. key hints / URLs / quota info) and filesystem paths. | `server/index.js:719/727 → 1057, 1071, 1252, 1312, 1342, 1394, 1471` | Replace with `res.status(500).json({ error: 'Internal error' })`; log detail via `log('error', …)`. Narrate endpoint already does this at line 705-710 — apply that pattern everywhere. |
-| CRIT-PERF | **No HTTP compression middleware.** `index.html` ships at 576 KB raw. `compression` not in `package.json`/`server/index.js`. Render doesn't auto-gzip Node responses. Gzip → ~140 KB (4× cheaper) for free. | `server/index.js` (absent), `package.json` | `npm install compression`; `app.use(require('compression')())` before static middleware. |
+| CRIT-PERF | ~~**No HTTP compression middleware.** `index.html` ships at 576 KB raw.~~ ✅ **Shipped 2026-06-03.** `compression@^1.8.1` added; `app.use(compression())` mounted right after the CSP-nonce middleware (early enough to wrap every downstream response, late enough to skip the static `res.locals.cspNonce` set). Default threshold (1 KB) leaves tiny JSON error bodies uncompressed; `index.html` (~580 KB raw → ~140 KB gzip) and `/api/locations` bulk payloads get the win. `Vary: Accept-Encoding` is set by the middleware so caches don't cross-serve gzip ↔ identity copies. +6 jest in `tests/compression.test.js` (dependency pin, gzip on `/`, identity on `/`, Vary header, sub-threshold skip, large-JSON path). |
 | HIGH-PERF | **Marker-style toggle does full rebuild** instead of `marker.setIcon()` in place. 1000 markers = 300-600ms main-thread stall. | `public/index.html:4107-4115` (`setMarkerStyle` cache bust) + `_renderState` | Add `updateMarkerIcon(marker, loc)` that calls `marker.setIcon(createMarkerIcon(loc))` per entry in `_renderState.markerById`. |
 | HIGH-LIVE | **Save modal silently fails when lat/lng empty + fields are hidden** — toast "Please fill in lat and lng" appears but fields are hidden by default. User has no path forward. | `public/index.html` add-modal lat/lng row | Auto-run Photon geocode on modal open when name filled + coords empty; if still missing on Save, unhide the lat/lng row + scroll-to + focus. |
 | HIGH-LIVE | **Mobile sidebar covers entire 375px viewport** — sidebar is 375px wide identical to viewport. Map fully obscured. No auto-collapse. | sidebar CSS | Add `@media (max-width: 480px)` → sidebar `width: 100vw` collapsed by default; show toggle FAB on map. |
@@ -664,3 +664,18 @@ See memory roadmap for full commit-level detail. Headline batches:
     upfront which engine will run and after which engine did run.
   - **Session totals after 2026-06-03 batch: 905 jest + 8 e2e green
     (3 skip).**
+  - **gzip compression middleware (P0 audit ship).** `compression@^1.8.1`
+    added and mounted right after the CSP-nonce middleware in
+    `server/index.js`. Render doesn't auto-gzip Node responses, so
+    `index.html` was shipping at ~580 KB raw on every cold load; with the
+    default zlib level + `threshold: 1024` it compresses to ~140 KB
+    (~4× reduction) and `/api/locations` JSON gets a similar win on
+    accounts with hundreds of locations. `Vary: Accept-Encoding` is
+    auto-set so shared caches keep gzip and identity copies separate.
+    No app code touched beyond the middleware mount; CSP nonce continues
+    to template correctly because compression wraps `res.end`/`res.write`
+    AFTER `serveIndex` already substituted the placeholder. +6 jest in
+    `tests/compression.test.js` (dep pin, gzip on `/`, identity on `/`,
+    `Vary` header, sub-threshold skip stays uncompressed, large-JSON
+    `/api/locations` round-trip).
+  - **Session totals after gzip ship: 911 jest + 8 e2e green (3 skip).**
