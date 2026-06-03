@@ -450,8 +450,14 @@ app.get('/api/audit', auth, requireAdmin, async (req, res) => {
 });
 
 // ── Locations CRUD ───────────────────────────────────────
+// Cache-Control: no-cache instructs the browser to revalidate on every refresh
+// — it stores the response in disk cache + sends If-None-Match on the next GET.
+// Express's automatic weak ETag (body-hash) handles the comparison and returns
+// 304 with no body when fresh. For the typical 5 k-location user this turns a
+// repeated ~140 KB gzip payload into a header-only round-trip. S2 perf 2026-06-04.
 app.get('/api/locations', auth, async (req, res) => {
   const locs = await db.locations.find({ userId: req.user.id });
+  res.set('Cache-Control', 'no-cache');
   res.json(locs);
 });
 
