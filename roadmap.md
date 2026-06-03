@@ -105,6 +105,7 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 **Security finishing touches**
 - **Per-endpoint rate limits** on expensive routes — ~~web-import (LLM cost)~~ ✅ **10/min/user shipped 2026-06-03**; narrate + discover still on global 200/min only.
 - **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` + re-apply blocklist to the resolved IP. The current regex blocklist trusts the WHATWG hostname, so an attacker-controlled DNS name that resolves to a private IP would still pass. Lower priority now that the redirect bypass and direct-IP cases are closed.
+- **Web-import snippet → notes server-side sanitisation** (cybersec MED-3 deferred 2026-06-03). The `snippet` field from a parsed venue flows into `notes` on the POST to `/api/locations` without escaping. Safe today because every render path uses `esc()` / `textContent`, but defence-in-depth says strip on write so a future render-path regression can't turn it into stored XSS. Strip in `sanitizeLocationUpdate` for `notes`.
 - **`photon.komoot.io` missing from CSP `connectSrc`** despite 4 client-side fetches to it (`server/index.js:95-104` ← add host; verify against full client `fetch` site list).
 - **`ANTHROPIC_API_KEY` missing from `render.yaml`** — add `- key: ANTHROPIC_API_KEY\n  sync: false`.
 - **`@anthropic-ai/sdk: ^0.30.1`** caret on a 0.x → pin exact `0.30.1` + `npm ci`.
@@ -181,7 +182,7 @@ Ranked by impact-vs-effort:
 
 | Sprint | Theme | Items | ~Effort |
 |---|---|---|---|
-| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — partial: 3 of 8 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅). Remaining: SSRF link-local, err.message leak, compression, marker-style in-place setIcon, save-modal lat/lng, mobile sidebar | 1 day remaining |
+| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — 7 of 9 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions interaction ✅ partial, gzip compression ✅, LLM web-import + engine UX ✅, SSRF link-local + redirect bypass ✅). **Remaining:** err.message leak (7 catch blocks), marker-style in-place setIcon, save-modal lat/lng unhide, mobile sidebar auto-collapse | ½ day remaining |
 | **S2** | Hardening + perf round 2 | Per-endpoint rate limits, CSP `photon.komoot.io`, ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label | 3-4 days |
 | **S3** | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse | 1 week |
 | **S4+** | Power features | Pick 2-3: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link | 1-2 weeks each |
