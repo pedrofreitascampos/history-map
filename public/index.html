@@ -6900,6 +6900,11 @@ const replayState = {
   realisticRoutes: false,
   pathLines: { old: null, mid: null, recent: null },
   lastBoundaries: { oldEnd: -1, midEnd: -1, total: -1 },
+  // Track the trip the replay is currently focused on. `undefined` means
+  // "no zoom decision made yet" (so the first frame's tripId triggers a
+  // change check even when it's null); a tripId or null after the first
+  // frame means the replay has settled into that trip's envelope.
+  currentTripId: undefined,
 };
 const REPLAY_BUCKET_OPACITY = [0.2, 0.5, 0.9];
 const REPLAY_LINE_COLOR = '#ffc144';
@@ -6941,6 +6946,7 @@ function rebuildReplayFrames() {
   replayState.frames = computeReplayFrames(state.locations, state.trips, state.transits, filters);
   replayState.currentIdx = -1;
   replayState.renderedUpTo = -1;
+  replayState.currentTripId = undefined;
   replayState.pathLines = { old: null, mid: null, recent: null };
   replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
   const scrubber = document.getElementById('replay-scrubber');
@@ -6982,6 +6988,7 @@ async function playReplay() {
   if (replayState.currentIdx >= replayState.frames.length - 1) {
     replayState.currentIdx = -1;
     replayState.renderedUpTo = -1;
+    replayState.currentTripId = undefined;
     replayState.pathLines = { old: null, mid: null, recent: null };
     replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
     if (replayState.markersLayer) replayState.markersLayer.clearLayers();
@@ -7177,6 +7184,50 @@ function animateReplayTransit(frame, done) {
   }, stepMs);
 }
 
+// Pure: collect all [lat,lng] points belonging to a given tripId across the
+// frame sequence. Visits contribute one point; transits contribute both
+// endpoints. Invalid coords are skipped. Returns [] when no frames match —
+// callers should treat that as "don't zoom".
+function computeTripEnvelope(frames, tripId) {
+  if (!Array.isArray(frames) || tripId == null) return [];
+  const pts = [];
+  for (const f of frames) {
+    if (!f || f.tripId !== tripId) continue;
+    if (f.kind === 'visit') {
+      if (Number.isFinite(f.lat) && Number.isFinite(f.lng)) pts.push([f.lat, f.lng]);
+    } else if (f.kind === 'transit') {
+      if (Number.isFinite(f.fromLat) && Number.isFinite(f.fromLng)) pts.push([f.fromLat, f.fromLng]);
+      if (Number.isFinite(f.toLat) && Number.isFinite(f.toLng)) pts.push([f.toLat, f.toLng]);
+    }
+  }
+  return pts;
+}
+
+// When the replay crosses into a new trip, fly/fit the map to that trip's
+// envelope (union bounding box of all its visits + transit endpoints). A null
+// tripId (orphan visit not in any trip) means "stay where we are" — we don't
+// re-zoom to global extent just because a visit isn't tagged. animate=true
+// uses flyToBounds for a smooth pan during playback; animate=false uses
+// fitBounds for an instant snap on scrubber seek.
+function _maybeZoomToTripEnvelope(idx, opts) {
+  if (idx < 0 || idx >= replayState.frames.length) return;
+  if (!replayState.map) return;
+  const frame = replayState.frames[idx];
+  const nextTripId = frame ? (frame.tripId || null) : null;
+  if (nextTripId === replayState.currentTripId) return;
+  replayState.currentTripId = nextTripId;
+  if (!nextTripId) return; // entering "no trip" — leave the view alone
+  const pts = computeTripEnvelope(replayState.frames, nextTripId);
+  if (pts.length === 0) return;
+  const bounds = L.latLngBounds(pts);
+  const fitOpts = { padding: [40, 40], maxZoom: 9 };
+  if (opts && opts.animate && typeof replayState.map.flyToBounds === 'function') {
+    replayState.map.flyToBounds(bounds, { ...fitOpts, duration: 0.6 });
+  } else {
+    replayState.map.fitBounds(bounds, fitOpts);
+  }
+}
+
 // Advance the rendered state without firing the transit animation —
 // shared by replayTick (which adds the animation afterwards for transit
 // frames) and seekReplay (which skips animation entirely).
@@ -7192,6 +7243,7 @@ function advanceToFrame(idx) {
     // the trip's shape without running the animation.
     buildReplayTransitLine(frame).forEach(line => line.addTo(replayState.polylineLayer));
   }
+  _maybeZoomToTripEnvelope(idx, { animate: true });
   renderReplayPath();
   const scrubber = document.getElementById('replay-scrubber');
   if (scrubber) scrubber.value = idx;
@@ -7218,14 +7270,19 @@ function seekReplay(rawIdx) {
   if (upTo >= replayState.renderedUpTo) {
     for (let i = replayState.renderedUpTo + 1; i <= upTo; i++) addStaticForFrame(replayState.frames[i]);
   } else {
+    // Scrubbing backwards wipes rendered state, so the trip-zoom memo must
+    // also reset — otherwise jumping back into an earlier trip won't trigger
+    // a fresh envelope fit.
     replayState.markersLayer.clearLayers();
     replayState.polylineLayer.clearLayers();
     replayState.pathLines = { old: null, mid: null, recent: null };
     replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
+    replayState.currentTripId = undefined;
     for (let i = 0; i <= upTo; i++) addStaticForFrame(replayState.frames[i]);
   }
   replayState.renderedUpTo = upTo;
   replayState.currentIdx = upTo;
+  _maybeZoomToTripEnvelope(upTo, { animate: false });
   renderReplayPath();
   updateReplayPositionLabel();
 }
