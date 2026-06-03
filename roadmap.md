@@ -13,6 +13,8 @@ at `~/.claude/projects/C--Users-pedro-projects-software-history-map/memory/proje
 
 **Canonical "what's next" lives in [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain) below.** It groups everything by 🔴 Now (P0, 1-2 days) → 🟠 Next (P1, 1-2 weeks) → 🟡 Later (P2 polish) → ✨ Power features. Start there.
 
+**Status as of 2026-06-03:** 4 of 9 original P0s shipped (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅, regions-view interaction ✅ partial). **Top 3 remaining P0s by impact:** (1) **gzip compression middleware** (~30 min, ~5× payload reduction); (2) **server-side Haiku LLM web-import adapter** with engine attribution UX baked in; (3) **SSRF blocklist gaps + err.message leak** (security pair).
+
 This Open section only carries items NOT covered by the latest audit (longer-term roadmap that pre-dates it):
 
 ### Carry-over from prior backlog
@@ -24,6 +26,7 @@ This Open section only carries items NOT covered by the latest audit (longer-ter
 
 ### Wishlist (P1+, lower priority)
 
+- **Bootstrap preset collections** (user request 2026-06-03). Add a library of famous, ready-made collections users can opt into rather than building from scratch: **UNESCO World Heritage Sites** (~1200 sites, GeoJSON from whc.unesco.org), **National Parks** (per-country: NPS for US, ICNF for PT, …), **Airports** (OurAirports CSV, ~50k, IATA-coded), **Stadiums / Arenas** (Wikidata SPARQL by `instance of (P31) = stadium/arena`), **Wonders of the World** (curated lists — 7 ancient, 7 new, 7 natural), **Michelin Guide** (scrape — ToS-grey, defer), **Blue Flag beaches** (annual list per country). Sketch: a `/api/collections/presets` endpoint serves a metadata catalog (name, source, count, description, sample); user clicks "Subscribe" and the preset's locations bulk-insert with `presetId` tag (filterable, removable). Each preset = adapter file in `server/preset-collections/` analogous to `import-adapters/`. Versioned (re-fetch yearly for UNESCO updates etc.). Open question: do preset locations live in user's `state.locations` (cluttering wishlist/been views) or as a separate overlay layer toggled per-collection? Probably overlay-first to keep the personal list clean.
 - **Google Data Portability API OAuth flow** — blocked on Google's Restricted-scope verification for personal apps. Monitor for relaxation. Sharable-list scraper NOT to be built (ToS + low value).
 - **Google Photos — Path 2 (photo-org bridge)** — Path 3 (manual EXIF drop) ✅ shipped 2026-05-31 in `c417584`. Path 2 requires repaired photo-org (DB columns + NAS path pivot since Google scope removal). Queued.
 - **`style-src` strict CSP** (deferred) — Leaflet injects nonceless inline styles; per CSP-3, mixing `'unsafe-inline'` + nonce makes browsers ignore `'unsafe-inline'`. Accepted defense-in-depth gap until strict-dynamic-for-CSS story or migration off Leaflet inline styles. Lower severity than script injection.
@@ -42,8 +45,8 @@ Pedrow-commissioned full audit mirroring the Fortuna run. 4 parallel specialist 
 
 | Sev | Finding | File:Line | Fix |
 |---|---|---|---|
-| CRIT-BUG | **Web import (Time Out, etc.) reported broken by user 2026-06-03.** User: "web import is not working e.g. timeout". Need to repro: does the Time Out adapter still match current site markup (JSON-LD ItemList → numbered h2/h3 fallback)? Are the venue rows extracted but failing geocode? Is the SSRF guard rejecting? Or is `fetch()` actually timing out (10s cap, 5MB cap)? Open `/api/import/website` with a known Time Out URL + check server logs + adapter return shape. | `server/import-adapters/timeout.js` + `server/index.js:719-727` | Investigate first; fix the matching layer that's failing. Likely candidates: Time Out updated their HTML structure (selectors stale), or article URL patterns we don't recognize. Companion fix in next row. |
-| HIGH-FEAT | **Replace regex-based web-import adapters with a nano-LLM parser** (user idea 2026-06-03: "any chance we can install a nano LLM to process this?"). Three options: **(a) Server-side via existing Anthropic SDK** — already wired for Narrate, BYOK Claude Haiku 4.5 (~$0.001-0.003/parse, cached system prompt). Adapter becomes: `fetch HTML → strip scripts/styles → send to Haiku with tool-use forcing `parse_venues` JSON schema → return `{venues:[{name,address,snippet}]}`. Robust to any site layout. **(b) Browser-side via WebLLM** (Llama 3.2 1B or Phi 3.5 via WebGPU) — zero server cost, full privacy, but 100-500 MB model download on first use. **(c) Hybrid** — small SLM (Phi 3 mini / Gemma 2 2B) self-hosted on Render or via Groq's free tier (~$0). Recommended: **(a)** for v1 (lowest friction, uses existing Anthropic wiring + key). Adapter registry slot stays; the `timeout.js` regex becomes the fallback when no Anthropic key is configured. | NEW: `server/import-adapters/llm.js` + `server/index.js` adapter selection | Wire `parseVenuesLLM(html, url)` mirroring `parseTrip()` shape — cached system prompt + forced tool use + per-user `user.anthropicKey` + `ANTHROPIC_API_KEY` env fallback + sanitised errors at boundary. Cost cap: ~3-5k input tokens per article (HTML stripped to text). Tests: ~12 jest covering happy path / no key (501) / sanitised errors / cap. **High-value ship**: turns the brittle 1-site adapter into a "any URL with a list of places" import. |
+| CRIT-BUG | ~~**Web import (Time Out, etc.) reported broken by user 2026-06-03.**~~ ✅ **Shipped 2026-06-03.** Root cause: Time Out updated list-item markup from `<h3>1. Name</h3>` to `<h3><span>1.</span>&nbsp;Name</h3>`. `stripTags` left `1.&nbsp;Name`; the regex `^\d+\.\s+` ran *before* entity decode, so `&nbsp;` (not `\s`) failed the match → 0 venues. Fix: decode entities BEFORE the regex (`server/import-adapters/timeout.js`). Live re-test against `timeout.com/london/restaurants/best-restaurants-in-london` now extracts 10 of 50 venues (rest lazy-load via JS — addressed by the LLM-adapter row below). **Bonus shipped:** HTTP failure code surfaces in error string (`fetch_failed_404`, `fetch_failed_503`, `fetch_failed_403`) + 4 client toast variants so users get "page moved" vs "site blocking us" vs "temporarily down" instead of generic. +5 jest server (incl. 3 regression for the new shape) + 3 jest client mapper variants. **Verdict on regex adapters: still brittle to site reshuffles, hence the LLM-adapter ship below is the long-term answer.** |
+| HIGH-FEAT | **Replace regex-based web-import adapters with a server-side Haiku LLM parser** (user idea 2026-06-03: "any chance we can install a nano LLM to process this?"). Decision recorded 2026-06-03 after discussion: **option (a) server-side Haiku 4.5 BYOK**, NOT browser-side WebLLM. Reason: browser-side WebLLM (Llama 3.2 1B / Phi 3.5 via WebGPU) imposes a 100-500 MB one-time model download on every user — terrible ROI for a tier-3 occasional feature (~weekly use). Haiku gives 10-100× better extraction quality at ~$0.001-0.003 per parse and reuses existing Anthropic SDK wiring from Narrate. Adapter becomes: fetch HTML → strip scripts/styles → send to Haiku with tool-use forcing `parse_venues` JSON schema → return `{venues:[{name,address,snippet}]}`. Robust to any site layout. The fixed `timeout.js` regex stays as the no-key fallback. | NEW: `server/import-adapters/llm.js` + `server/index.js` adapter selection + import-view UX | **Engine attribution UX (user-requested 2026-06-03 — "from user POV not clear which is running"):** (1) **Pre-fetch hint** under the URL input — when Anthropic key configured: *"🤖 Smart parsing enabled (Claude Haiku — ~$0.002/import). Works on any list URL."* When not: *"📋 Basic mode — only Time Out is supported. Add an Anthropic key in Account → Anthropic for any-site parsing."* (2) **Post-parse chip** in the result modal next to "X venues found": `🤖 Parsed by Claude Haiku` vs `📋 Parsed by Time Out adapter (regex)`. Both surfaces gated on the same `/api/places/status`-style endpoint (`/api/anthropic/status` returning `{enabled: bool, mode: 'smart'|'basic'}`). (3) Server response includes `engine: 'llm'|'regex'` field for the chip. Wire `parseVenuesLLM(html, url)` mirroring `parseTrip()` shape — cached system prompt + forced tool use + per-user `user.anthropicKey` + `ANTHROPIC_API_KEY` env fallback + sanitised errors at boundary. Cost cap: ~3-5k input tokens per article (HTML stripped to text). Tests: ~12 jest covering happy path / no key (501) / sanitised errors / cap / engine field in response / pre-fetch hint copy / post-parse chip rendering. **High-value ship**: turns the brittle 1-site adapter into a "any URL with a list of places" import, and the UX makes the cost/quality story obvious to the user up front. |
 | CRIT-LIVE | ~~**3 select dropdowns silently broken** via `data-arg0="this.value"`.~~ ✅ **Shipped 2026-06-03.** Extended `_readPositionalArgs` via new `_resolveArgSentinel(v, el)` that maps `"this"` → `el`, `"this.value"` → `el.value`, `"this.checked"` → `el.checked`, `"this.files[0]"` → `el.files[0]`, `"this.dataset.X"` → `el.dataset[X]`. Also switched the 3 broken selects + FR24 file picker to `data-change`, and replay scrubber + attach-search to `data-input` (proper event semantics). +9 jest in `tests/import.test.js`. **Unblocks: Marker Style toggle, Marker Size Mode, Trip Selector — all functional from the sidebar dropdown.** |
 | CRIT-UX-BUG | ~~**Hearts not keyboard-settable** — `data-click="handleHeartKey"` duplicate attribute on each heart span silently overrides `setBucketStrength` (HTML spec: last attribute wins).~~ ✅ **Shipped 2026-06-03.** Replaced duplicate `data-click` with `data-keydown="onHeartKey"` (new ACTIONS entry reading val from `el.dataset.val`); click handler `data-click="setBucketStrength" data-arg0="N"` now wins cleanly. Both click-to-set and keyboard nav (↑/↓/Enter/Space) work. +3 jest pins. |
 | HIGH-SEC | **SSRF blocklist missing link-local + IPv6 private ranges** in `POST /api/import/website`. `169.254.169.254` (GCP/Render metadata), `fd00::/8` IPv6 ULA, `::ffff:127.0.0.1` IPv4-mapped loopback all pass the current regex. Authenticated user → server-side fetch to cloud metadata endpoint. | `server/index.js:719-727` | Add: `/^169\.254\./`, `/^fd[0-9a-f]{2}:/i`, `/^::ffff:(127\.|10\.|172\.(1[6-9]\|2\d\|3[01])\.|192\.168\.)/i`. Also: `dns.lookup(host)` then re-apply IP blocklist (defends DNS-rebinding / CNAME chains). |
@@ -101,7 +104,7 @@ Lower-priority findings worth tracking but not blocking:
 - **Wishlist actions row always visible** — show on hover/focus only (Things 3 / Linear).
 - **Wishlist no `+ Add` in header** when list has items.
 - **Trips view 50/50 split hardcoded**; no drag-to-reorder stops; no full-screen map for planning.
-- **Regions view zero interaction** beyond color scheme; clicking a country does nothing.
+- ~~**Regions view zero interaction** beyond color scheme; clicking a country does nothing.~~ ✅ **Partly addressed 2026-06-03** by the Country/Region/City switcher ship (see §"Shipped 2026-06-03" below). Country + Region clicks open a popup listing all visited places in that area; City clicks open the same shape per snapped city. Still open: filter map view by region click, drill-down zoom.
 - **Transit legend inline hex colors** not linked to `--success`/`--warning`/`--danger` semantic vars.
 - **Two `🏛️` categories** (Monument + Museum) — emoji collision.
 - **`#map-search-results` persists** with stale text after sidebar input loses focus.
@@ -133,7 +136,7 @@ Ranked by impact-vs-effort:
 
 | Sprint | Theme | Items | ~Effort |
 |---|---|---|---|
-| **S1 (this week)** | Fix the 2 silent breakages + 2 HIGHs + cache the bundle | 8 P0 items above (data-arg0 dispatcher, hearts duplicate attr, SSRF link-local, err.message leak, compression, marker-style in-place setIcon, save-modal lat/lng, mobile sidebar) | 1-2 days |
+| **S1 (this week)** | ~~Fix the 2 silent breakages + 2 HIGHs + cache the bundle~~ — partial: 3 of 8 shipped 2026-06-03 (data-arg0 dispatcher ✅, hearts duplicate attr ✅, web-import bug ✅). Remaining: SSRF link-local, err.message leak, compression, marker-style in-place setIcon, save-modal lat/lng, mobile sidebar | 1 day remaining |
 | **S2** | Hardening + perf round 2 | Per-endpoint rate limits, CSP `photon.komoot.io`, ETag on /api/locations, initMap-first, lazy non-map CDNs, surgical rebuildIndexes, RainViewer persist fix, Photon-provider error label | 3-4 days |
 | **S3** | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse | 1 week |
 | **S4+** | Power features | Pick 2-3: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link | 1-2 weeks each |
@@ -595,4 +598,69 @@ See memory roadmap for full commit-level detail. Headline batches:
     agents). See [Audit 2026-06-02](#audit-2026-06-02-full-multi-domain)
     section above for the full table.
   - **Session totals after 2026-06-02 batch: ~870 jest + 8 e2e green
+    (3 skip).**
+
+- **2026-06-03 — Regions Country/Region/City switcher + web-import bug fix +
+  status-tagged HTTP errors (905 jest + 8 e2e green).**
+  - **Regions tab — 3-view switcher.** New segmented control in Regions
+    header: 🏳️ Country | 🗺️ Region (default) | 🏙️ City. Switcher uses
+    existing `.filter-group-btn` pattern; color-scheme select migrated
+    `data-click` → `data-change` (the prior wiring was silently broken
+    since `change` is the only event fired for `<select>`).
+    - **Country view**: aggregates admin1 features by `properties.country`
+      via new `aggregateRegionsByCountry(geo, regionCounts)`. Paints whole
+      countries at `weight: 0` so adjacent same-country regions blend into
+      a single shape; basemap (`dark_nolabels`) provides faint outlines.
+      Click country → popup lists all visited places in that country.
+    - **City view**: bundled new asset `public/cities.json` (4.2 MB,
+      107,200 cities pop ≥ 1000 from GeoNames `cities1000` via the
+      `all-the-cities` npm package, filtered to real city feature-codes —
+      excluded PPLX/PPLL/PPLH/PPLW/PPLQ/PPLCH/PPLR/STLMT to avoid snapping
+      to neighborhoods like Tiergarten / The Rocks / Financial District).
+      Build script at `scripts/build-cities-json.js` is reproducible.
+      Compact tuple format `[lat, lng, name, iso2, pop]` sorted by pop
+      desc. Snap algorithm: 1°×1° grid index for O(~20) candidates per
+      visit; **tiered selection** — most populous within 25 km wins
+      (megacity beats neighborhood), else nearest within 50 km, else drop.
+      This means Statue of Liberty snaps to "New York City" (pop 8.1 M)
+      not "Financial District" (60 k); Eiffel + Louvre both → "Paris"
+      (2.1 M), Sydney Opera → "Sydney" (4.6 M), Brandenburg Gate →
+      "Berlin" (3.4 M), Golden Gate → "San Francisco" (864 k). Markers
+      are `L.circleMarker` sized `sqrt(pop)` clamped to [4, 40] px, color
+      intensity by visit count via the existing color-scheme dropdown.
+      Click city → popup lists visits snapped to that city.
+    - +17 jest in `tests/regions-views.test.js` (markup pins, country
+      aggregation correctness, haversine sanity, tiered-snap with both
+      tier-1 and tier-2 paths, grid boundary scan, radius scale).
+      Live-verified in Playwright with 24-location seed across 6
+      countries; screenshots of all 3 modes captured.
+  - **Web import bug fix.** User reported "web import is not working e.g.
+    timeout". Root cause: Time Out updated list-item markup from
+    `<h3>1. Name</h3>` to `<h3><span>1.</span>&nbsp;Name</h3>`. The
+    regex `/^\d+\.\s+/` ran *before* entity decoding, so `&nbsp;`
+    (literally `&nbsp;` at that point) didn't match `\s` → 0 venues
+    extracted. Fix in `server/import-adapters/timeout.js` — decode
+    entities BEFORE the regex check. Live re-test against
+    `timeout.com/london/restaurants/best-restaurants-in-london` now
+    extracts 10 venues (the page has 50 total but the rest lazy-load
+    via JS — addressed by the LLM-adapter HIGH-FEAT item above).
+  - **Status-tagged HTTP errors for /api/import/website.** Encoded
+    upstream HTTP status into the `error` string (`fetch_failed_404`,
+    `fetch_failed_503`, `fetch_failed_403`) so the existing single-string
+    error contract carries the cause through to the client toast. Added
+    3 client-side toast variants: "page moved (404)" vs "site blocking
+    us (403/401)" vs "temporarily down (5xx)" vs the generic catch-all.
+    Time Out reshuffles URLs frequently and the prior "Could not fetch"
+    was unhelpful when the real issue was just a 404.
+  - **Roadmap entry added** for "Bootstrap preset collections" (user
+    idea — UNESCO sites, National Parks, Airports, Stadiums, Wonders,
+    etc. as ready-made opt-in collections — see Wishlist section).
+  - **Decision recorded:** server-side Haiku adapter (option a) over
+    browser-side WebLLM (option b). Reason: 100-500 MB model download
+    tax on every user is the wrong shape for a tier-3 occasional
+    feature. Haiku at ~$0.002/parse + BYOK reuses existing Anthropic
+    wiring from Narrate. HIGH-FEAT row above now specifies the engine
+    attribution UX (pre-fetch hint + post-parse chip) so users know
+    upfront which engine will run and after which engine did run.
+  - **Session totals after 2026-06-03 batch: 905 jest + 8 e2e green
     (3 skip).**
