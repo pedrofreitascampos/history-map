@@ -62,6 +62,7 @@ const code = [
   extractFunction('countryCodeToFlag'),
   extractFunction('markerHash'),
   extractFunction('computeReplayFrames'),
+  extractFunction('assignReplayClusters'),
   extractFunction('pickMarkerEmoji'),
   extractFunction('parseCSVLine'),
   // parseGoogleSavedPlaces, parseGoogleTimelineOld, etc.

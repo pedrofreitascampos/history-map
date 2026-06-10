@@ -989,6 +989,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
 .replay-panel { display: flex; flex-direction: column; margin: 0 20px 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-secondary); }
 #replay-map { height: 420px; background: var(--bg-primary); }
+/* Fullscreen mode: panel covers the viewport so the replay map gets all the
+   real estate. Map fills the height minus the controls row + route-toggle row
+   (~110 px combined). Esc or the toggle button restores the inline layout. */
+.replay-panel.fullscreen { position: fixed; inset: 0; margin: 0; border-radius: 0; border: 0; z-index: 9000; background: var(--bg-primary); }
+.replay-panel.fullscreen #replay-map { height: calc(100vh - 110px); }
+.replay-fullscreen-btn { width: 32px; height: 32px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.replay-fullscreen-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .replay-controls { display: flex; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
 .replay-play-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--bg-primary); border: 0; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .replay-play-btn:hover { transform: scale(1.05); }
@@ -1809,6 +1816,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <button class="replay-speed-btn" data-speed="5" data-click="setReplaySpeed" data-arg0="5">5×</button>
           <button class="replay-speed-btn" data-speed="10" data-click="setReplaySpeed" data-arg0="10">10×</button>
         </div>
+        <button class="replay-fullscreen-btn" id="replay-fullscreen-btn" data-click="toggleReplayFullscreen" title="Fullscreen (Esc to exit)" aria-label="Toggle fullscreen">⤢</button>
       </div>
       <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
@@ -6506,46 +6514,42 @@ function computeReplayFrames(locations, trips, transits, filters) {
     });
   }
 
-  // 3) Heuristic: between consecutive visits in the same trip with no logged
-  // transit on the same day, synthesize one so the replay has motion to show.
-  // Indexed by tripId for cheap lookup; dedupe so two same-trip same-day visits
-  // don't double-emit (the explicit transit, if any, will already be in the set).
-  if (trips.length > 0) {
-    const visitsByTrip = new Map();
-    for (const f of visitFrames) {
-      if (!f.tripId) continue;
-      if (!visitsByTrip.has(f.tripId)) visitsByTrip.set(f.tripId, []);
-      visitsByTrip.get(f.tripId).push(f);
-    }
-    // Dedupe key is tripId + endpoint pair (date excluded — explicit transits
-    // can be logged on any day between the two visits and still be the same leg).
-    const endpointKey = (tripId, fromLat, fromLng, toLat, toLng) =>
-      `${tripId}|${Math.round(fromLat*10)},${Math.round(fromLng*10)}->${Math.round(toLat*10)},${Math.round(toLng*10)}`;
-    const explicitKeys = new Set(transitFrames.map(t =>
-      endpointKey(t.tripId, t.fromLat, t.fromLng, t.toLat, t.toLng)
-    ));
-    for (const [tripId, vs] of visitsByTrip) {
-      vs.sort((a, b) => a.date.localeCompare(b.date));
-      for (let i = 0; i < vs.length - 1; i++) {
-        const v1 = vs[i], v2 = vs[i + 1];
-        if (v1.id === v2.id && v1.lat === v2.lat && v1.lng === v2.lng) continue;
-        const distKm = haversineKm(v1.lat, v1.lng, v2.lat, v2.lng);
-        if (distKm < 1) continue;
-        const mode = inferTransitMode(distKm);
-        if (explicitKeys.has(endpointKey(tripId, v1.lat, v1.lng, v2.lat, v2.lng))) continue;
-        transitFrames.push({
-          kind: 'transit',
-          id: `syn-${tripId}-${i}`,
-          mode,
-          fromLat: v1.lat, fromLng: v1.lng,
-          toLat: v2.lat, toLng: v2.lng,
-          fromName: v1.name, toName: v2.name,
-          date: v2.date,
-          tripId,
-          synthetic: true,
-        });
-      }
-    }
+  // 3) Heuristic synthesis: between consecutive visits chronologically (NOT
+  // gated by tripId — most historical visits aren't trip-tagged but the user
+  // still wants motion between them). Mode by distance (inferTransitMode bands:
+  // car <30 km, train <500 km, flight ≥500 km). Skip pairs more than 14 days
+  // apart — those are different journeys, not a continuous leg. Endpoint dedup
+  // against any already-logged transit covering the same leg.
+  const sortedVisits = [...visitFrames].sort((a, b) => a.date.localeCompare(b.date));
+  const endpointKey = (fromLat, fromLng, toLat, toLng) =>
+    `${Math.round(fromLat*10)},${Math.round(fromLng*10)}->${Math.round(toLat*10)},${Math.round(toLng*10)}`;
+  const explicitKeys = new Set(transitFrames.map(t =>
+    endpointKey(t.fromLat, t.fromLng, t.toLat, t.toLng)
+  ));
+  const MAX_SYNTH_GAP_DAYS = 14;
+  const _daysBetween = (a, b) => {
+    const ta = new Date(a).getTime(), tb = new Date(b).getTime();
+    if (!Number.isFinite(ta) || !Number.isFinite(tb)) return Infinity;
+    return Math.abs(tb - ta) / 86400000;
+  };
+  for (let i = 0; i < sortedVisits.length - 1; i++) {
+    const v1 = sortedVisits[i], v2 = sortedVisits[i + 1];
+    if (v1.id === v2.id && v1.lat === v2.lat && v1.lng === v2.lng) continue;
+    const distKm = haversineKm(v1.lat, v1.lng, v2.lat, v2.lng);
+    if (distKm < 1) continue;
+    if (_daysBetween(v1.date, v2.date) > MAX_SYNTH_GAP_DAYS) continue;
+    if (explicitKeys.has(endpointKey(v1.lat, v1.lng, v2.lat, v2.lng))) continue;
+    transitFrames.push({
+      kind: 'transit',
+      id: `syn-${i}`,
+      mode: inferTransitMode(distKm),
+      fromLat: v1.lat, fromLng: v1.lng,
+      toLat: v2.lat, toLng: v2.lng,
+      fromName: v1.name, toName: v2.name,
+      date: v2.date,
+      tripId: v1.tripId || v2.tripId || null,
+      synthetic: true,
+    });
   }
 
   // 4) Merge + sort. Tie-break: visits land before transits on the same date,
@@ -6556,7 +6560,56 @@ function computeReplayFrames(locations, trips, transits, filters) {
     if (c !== 0) return c;
     return (a.kind === 'visit' ? 0 : 1) - (b.kind === 'visit' ? 0 : 1);
   });
+
+  // 5) Cluster assignment — geography-based grouping for the replay auto-zoom.
+  // Walk the frames once and tag each with a clusterIdx. A new cluster starts
+  // when a visit is more than 500 km from the previous visit anchor; flights
+  // (and any transit >500 km) also get their OWN cluster — that way the
+  // long-haul frame's envelope spans both endpoints and the moving icon stays
+  // visible across the whole arc, and the destination's first visit then
+  // starts another new cluster (envelope = local destination). Works without
+  // any trip tagging on the underlying data.
+  assignReplayClusters(all);
   return all;
+}
+
+// Pure: assign frame.clusterIdx in-place so the replay-zoom hook can detect
+// boundaries cheaply. longHaulKm is the threshold above which both visit-pair
+// jumps and transits become cluster boundaries (default 500 km — chosen so
+// inter-city ground trips stay in one cluster but flights split).
+function assignReplayClusters(frames, longHaulKm) {
+  if (!Array.isArray(frames)) return;
+  const threshold = Number.isFinite(longHaulKm) ? longHaulKm : 500;
+  let cluster = 0;
+  let lastAnchorLat = null, lastAnchorLng = null;
+  for (const f of frames) {
+    if (!f) continue;
+    if (f.kind === 'visit') {
+      if (Number.isFinite(f.lat) && Number.isFinite(f.lng)) {
+        if (lastAnchorLat != null && haversineKm(lastAnchorLat, lastAnchorLng, f.lat, f.lng) > threshold) {
+          cluster++;
+        }
+        f.clusterIdx = cluster;
+        lastAnchorLat = f.lat; lastAnchorLng = f.lng;
+      } else {
+        f.clusterIdx = cluster;
+      }
+    } else if (f.kind === 'transit') {
+      const km = (Number.isFinite(f.fromLat) && Number.isFinite(f.toLat))
+        ? haversineKm(f.fromLat, f.fromLng, f.toLat, f.toLng) : 0;
+      if (f.mode === 'flight' || km > threshold) {
+        // Long-haul gets its own cluster. We do NOT update lastAnchorLat/Lng
+        // to the to-endpoint — the next visit's distance check is against the
+        // pre-flight anchor, so it'll exceed the threshold and start a fresh
+        // destination cluster.
+        cluster++;
+        f.clusterIdx = cluster;
+      } else {
+        // Short-haul (car/train within a city) extends the current cluster.
+        f.clusterIdx = cluster;
+      }
+    }
+  }
 }
 
 // Polyline points for a transit frame. Flight = great-circle arc (multiple
@@ -6904,7 +6957,7 @@ const replayState = {
   // "no zoom decision made yet" (so the first frame's tripId triggers a
   // change check even when it's null); a tripId or null after the first
   // frame means the replay has settled into that trip's envelope.
-  currentTripId: undefined,
+  currentClusterIdx: undefined,
 };
 const REPLAY_BUCKET_OPACITY = [0.2, 0.5, 0.9];
 const REPLAY_LINE_COLOR = '#ffc144';
@@ -6946,7 +6999,7 @@ function rebuildReplayFrames() {
   replayState.frames = computeReplayFrames(state.locations, state.trips, state.transits, filters);
   replayState.currentIdx = -1;
   replayState.renderedUpTo = -1;
-  replayState.currentTripId = undefined;
+  replayState.currentClusterIdx = undefined;
   replayState.pathLines = { old: null, mid: null, recent: null };
   replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
   const scrubber = document.getElementById('replay-scrubber');
@@ -6983,12 +7036,43 @@ function toggleReplayPlay() {
   else playReplay();
 }
 
+// Fullscreen toggle for the replay panel. Adds `.fullscreen` to the panel so
+// CSS pins it to the viewport, then invalidates the Leaflet size so tiles
+// repaint at the new dimensions. Escape exits via a one-shot listener wired
+// inline (single source of truth — no global Escape dispatcher to maintain).
+function toggleReplayFullscreen() {
+  const panel = document.getElementById('replay-panel');
+  if (!panel) return;
+  const isFs = panel.classList.toggle('fullscreen');
+  const btn = document.getElementById('replay-fullscreen-btn');
+  if (btn) {
+    btn.textContent = isFs ? '⤡' : '⤢';
+    btn.title = isFs ? 'Exit fullscreen (Esc)' : 'Fullscreen (Esc to exit)';
+  }
+  // Map needs to recompute its container size so the tile grid refits.
+  if (replayState.map) setTimeout(() => replayState.map.invalidateSize(), 50);
+  // Re-fit to the active cluster so the new viewport size gets used right away.
+  if (isFs && Number.isFinite(replayState.currentClusterIdx)) {
+    setTimeout(() => _maybeZoomToClusterEnvelope(replayState.currentIdx, { animate: false }), 100);
+  }
+  if (isFs) {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      document.removeEventListener('keydown', onKey);
+      // Only exit if still in fullscreen — user may have toggled off via the
+      // button in the meantime, in which case this listener is stale.
+      if (panel.classList.contains('fullscreen')) toggleReplayFullscreen();
+    };
+    document.addEventListener('keydown', onKey);
+  }
+}
+
 async function playReplay() {
   if (replayState.frames.length === 0) return;
   if (replayState.currentIdx >= replayState.frames.length - 1) {
     replayState.currentIdx = -1;
     replayState.renderedUpTo = -1;
-    replayState.currentTripId = undefined;
+    replayState.currentClusterIdx = undefined;
     replayState.pathLines = { old: null, mid: null, recent: null };
     replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
     if (replayState.markersLayer) replayState.markersLayer.clearLayers();
@@ -7184,15 +7268,14 @@ function animateReplayTransit(frame, done) {
   }, stepMs);
 }
 
-// Pure: collect all [lat,lng] points belonging to a given tripId across the
-// frame sequence. Visits contribute one point; transits contribute both
-// endpoints. Invalid coords are skipped. Returns [] when no frames match —
-// callers should treat that as "don't zoom".
-function computeTripEnvelope(frames, tripId) {
-  if (!Array.isArray(frames) || tripId == null) return [];
+// Pure: collect all [lat,lng] points belonging to a clusterIdx. Visits
+// contribute one point; transits contribute both endpoints. Invalid coords
+// skipped. Returns [] for null/no-match — caller treats as "don't zoom".
+function computeClusterEnvelope(frames, clusterIdx) {
+  if (!Array.isArray(frames) || clusterIdx == null) return [];
   const pts = [];
   for (const f of frames) {
-    if (!f || f.tripId !== tripId) continue;
+    if (!f || f.clusterIdx !== clusterIdx) continue;
     if (f.kind === 'visit') {
       if (Number.isFinite(f.lat) && Number.isFinite(f.lng)) pts.push([f.lat, f.lng]);
     } else if (f.kind === 'transit') {
@@ -7203,24 +7286,25 @@ function computeTripEnvelope(frames, tripId) {
   return pts;
 }
 
-// When the replay crosses into a new trip, fly/fit the map to that trip's
-// envelope (union bounding box of all its visits + transit endpoints). A null
-// tripId (orphan visit not in any trip) means "stay where we are" — we don't
-// re-zoom to global extent just because a visit isn't tagged. animate=true
-// uses flyToBounds for a smooth pan during playback; animate=false uses
-// fitBounds for an instant snap on scrubber seek.
-function _maybeZoomToTripEnvelope(idx, opts) {
+// When the replay crosses into a new geographic cluster, fly/fit the map to
+// that cluster's envelope. Clusters are assigned by assignReplayClusters: a
+// new visit >500 km from the prior visit anchor starts a new cluster, and any
+// flight / >500 km transit gets its own cluster (envelope = its two endpoints
+// so the moving icon stays in frame across the arc). animate=true uses
+// flyToBounds for a smooth pan during playback; animate=false uses fitBounds
+// for an instant snap on scrubber seek.
+function _maybeZoomToClusterEnvelope(idx, opts) {
   if (idx < 0 || idx >= replayState.frames.length) return;
   if (!replayState.map) return;
   const frame = replayState.frames[idx];
-  const nextTripId = frame ? (frame.tripId || null) : null;
-  if (nextTripId === replayState.currentTripId) return;
-  replayState.currentTripId = nextTripId;
-  if (!nextTripId) return; // entering "no trip" — leave the view alone
-  const pts = computeTripEnvelope(replayState.frames, nextTripId);
+  const nextCluster = frame ? frame.clusterIdx : null;
+  if (nextCluster == null) return;
+  if (nextCluster === replayState.currentClusterIdx) return;
+  replayState.currentClusterIdx = nextCluster;
+  const pts = computeClusterEnvelope(replayState.frames, nextCluster);
   if (pts.length === 0) return;
   const bounds = L.latLngBounds(pts);
-  const fitOpts = { padding: [40, 40], maxZoom: 9 };
+  const fitOpts = { padding: [40, 40], maxZoom: 11 };
   if (opts && opts.animate && typeof replayState.map.flyToBounds === 'function') {
     replayState.map.flyToBounds(bounds, { ...fitOpts, duration: 0.6 });
   } else {
@@ -7243,7 +7327,7 @@ function advanceToFrame(idx) {
     // the trip's shape without running the animation.
     buildReplayTransitLine(frame).forEach(line => line.addTo(replayState.polylineLayer));
   }
-  _maybeZoomToTripEnvelope(idx, { animate: true });
+  _maybeZoomToClusterEnvelope(idx, { animate: true });
   renderReplayPath();
   const scrubber = document.getElementById('replay-scrubber');
   if (scrubber) scrubber.value = idx;
@@ -7277,12 +7361,12 @@ function seekReplay(rawIdx) {
     replayState.polylineLayer.clearLayers();
     replayState.pathLines = { old: null, mid: null, recent: null };
     replayState.lastBoundaries = { oldEnd: -1, midEnd: -1, total: -1 };
-    replayState.currentTripId = undefined;
+    replayState.currentClusterIdx = undefined;
     for (let i = 0; i <= upTo; i++) addStaticForFrame(replayState.frames[i]);
   }
   replayState.renderedUpTo = upTo;
   replayState.currentIdx = upTo;
-  _maybeZoomToTripEnvelope(upTo, { animate: false });
+  _maybeZoomToClusterEnvelope(upTo, { animate: false });
   renderReplayPath();
   updateReplayPositionLabel();
 }
