@@ -11,10 +11,11 @@ Convention (companion `docs/architecture.md`):
 
 ## Status
 
-**2026-06-11:** 1083 jest (3 skip) + 8 e2e green. **S2.5 audit-fix batch shipped** — all 2 CRITs + 4 HIGHs fixed + 6 cheap items + full data-click→data-change/input sweep across 11 selects + 3 sliders + 2 text inputs. Next: S2 perf round 2 or UX P1 collapse. Recent ships:
+**2026-06-11:** 1112 jest (3 skip) + 8 e2e green. **S2 perf round 2 + security sweep shipped** — topojson CDN removed, markerHash template literal, buildTagFilters fingerprint, getFilteredLocations memo, renderReplayPath transitLayer append-only, prefetchReplayRoutes cap+abort, _runAction async catch, playReplay panelOpen guard, toggleReplayFullscreen listener fix + server: private Cache-Control, email_verified SSO check, SSRF `::` block, settings validation, error middleware. Next: nav collapse (UX P1) or remaining perf (rebuildIndexes, RainViewer). Recent ships:
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Perf round 2 + security** | **2026-06-11** | **+29 (1112)** | **topojson CDN removed · markerHash template literal · buildTagFilters fingerprint skip · getFilteredLocations memo · renderReplayPath transitLayer append-only · prefetchReplayRoutes 100-cap+abort · _runAction .catch · playReplay panelOpen guard · fullscreen listener fix · private Cache-Control · email_verified SSO · SSRF :: · settings validation · error middleware** |
 | **Audit-fix (S2.5)** | **2026-06-11** | **+27 (1083)** | **flex-shrink:0 replay · Load-more ACTIONS reg · live-search display fix · 16 data-click→data-change/input · replay date v1 · self-merge guard · Escape→cancel.click · photon default · wishlist hash · narrate tooltip · airports flight-only · toast.success CSS** |
 | Live fixes | 2026-06-11 | +21 (1056) | Photon stale-results clear · Narrate "needs API key" UX · `<form>` autofill on auth + key inputs · pagination `data-click` · overlay-persist regression pin |
 | Replay redesign | 2026-06-04 eve | +12 net | Geography-based cluster zoom · car/train between all consecutive visits · fullscreen toggle |
@@ -29,37 +30,23 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ### Security / hardening
 
 - **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` after the WHATWG hostname check, then re-apply the SSRF blocklist to the resolved IP. The current regex blocklist trusts the hostname string, so an attacker-controlled DNS name that resolves to a private IP slips through. Lower priority now that redirect bypass + direct-IP cases are closed. ~half-day.
-- **(Audit 2026-06-11) Google SSO links accounts without `email_verified` check** (`index.js:346`) — `if (!payload.email_verified) return 403` before lookup/link. Bounded today by `ALLOWED_EMAILS` fail-closed in prod, but a one-line gap.
-- **(Audit 2026-06-11) SSRF blocklist misses IPv6 unspecified `::`** (`index.js:759-776`) — routes to loopback on Linux like the already-blocked `0.0.0.0`. Add `/^::$/` (and all-zero forms).
-- **(Audit 2026-06-11) `notes` sanitizer is single-pass / bypassable** (`index.js:559`) — `<scr<script>ipt>` re-forms after one replace. Defense-in-depth only (renders via `esc()`), but loop-until-stable. 
-- **(Audit 2026-06-11) `PUT /api/settings` stores key fields with no type/length check** (`index.js:1167-1175`) — add `typeof==='string' && len<256`; self-inflicted 500 only, but the only un-validated input on the server.
+- **(Audit 2026-06-11) `notes` sanitizer is single-pass / bypassable** (`index.js:559`) — `<scr<script>ipt>` re-forms after one replace. Defense-in-depth only (renders via `esc()`), but loop-until-stable.
 - **(Audit 2026-06-11) Deleted (merged-away) user keeps a valid 30-day cookie** writing orphaned docs — `auth` never checks the user still exists. Cheap `db.users.findOne` on mutating routes, or a `deletedUserIds` set. (`index.js:251-265, 410`)
 - **(Audit 2026-06-11) Backup authz by username *prefix*** (`startsWith(username+'_')`) — `ana` matches `ana_maria_*.json`; sanitization can collide distinct usernames. Move to per-`userId` subdirs. (`index.js:1183, 1203, 1216, 1658-1663`)
 
-### Perf round 2 (5 of 8 left)
+### Perf round 2 (2 of 8 left)
 
 - **`rebuildIndexes()` O(n) called 28 times/session** including on every modal close. Surgical update on insert/update/delete instead of full rebuild. Touches many call sites — biggest refactor of the bunch.
-- **`buildTagFilters()` clears+rebuilds whole DOM on every tag click** — toggle `.active` class instead. (`public/index.html` ~3925, 4015-4045)
-- **`getFilteredLocations()` memo** keyed on `state.filters` + `stateIndex.generation` — skip re-filter when unchanged.
-- **`markerHash()` allocates new array + string join per loc per diff pass** — field-by-field compare on registry entry instead.
 - **RainViewer frame-list cache** — 5 min TTL; toggling off+on doesn't re-fetch.
-- **(Audit 2026-06-11) `renderReplayPath` rebuilds the entire polyline layer every frame** (`clearLayers` + re-add all transit lines `0..idx`) → O(n²) over a now-unbounded all-time replay; plus each transit line is triple-drawn per tick (`advanceToFrame` + `renderReplayPath` + `animateReplayTransit`). Append-only on forward advance; only backward-seek needs the full wipe. (`index.html:7399-7421, 7259`)
-- **(Audit 2026-06-11) `prefetchReplayRoutes` has no total cap against public OSRM** — all-time synthesis can fire hundreds of requests (concurrency 4 but uncapped count, no abort on panel close) → demo-server ban risk. Cap to ~50-100 frames ahead + check `panelOpen` in the worker. (`index.html:7127-7156`)
 
 ### Technical / correctness
 
-- **(Audit 2026-06-11) Bare async route handlers + no Express error middleware** — inconsistent try/catch; a rejected nedb promise hangs the request / can crash the process on Node ≥15. Add an `asyncHandler` wrapper + terminal error middleware. (`index.js:458-462` and others)
-- **(Audit 2026-06-11) `_runAction` drops returned promises** (`index.html:2817`) — every async global invoked via `data-*` that rejects becomes an unhandled rejection (no toast, no log, half-mutated state). Add `.catch` in the dispatcher as the systemic backstop.
 - **(Audit 2026-06-11) `moveTripLoc` rewrites `tripOrder` for the whole trip but persists only the swapped pair, no rollback, dropped promise** — reordering can revert on reload. Persist all changed orders + try/catch + toast. (`index.html:8271-8284`)
 - **(Audit 2026-06-11) Regions point-in-polygon drops coastal/island places** — NYC vanishes entirely; Belém/Jerónimos land in "Setúbal" (simplified admin-1 geometry, no nearest-region fallback). Add nearest-centroid snap within ~50km. Also the summary line doesn't refresh on Country granularity. (`index.html:8894-8961, 9251`)
-- **(Audit 2026-06-11) `playReplay` re-asserts `isPlaying=true` after a multi-second OSRM await without re-checking panel state** → playback can run in a closed panel. Bail if `!panelOpen` after the await. (`index.html:7102-7110`)
-- **(Audit 2026-06-11) Fullscreen Escape listeners accumulate + `.fullscreen` class leaks across close/reopen** — store the handler on `replayState`, remove on exit + `destroyReplayMap`, and `classList.remove('fullscreen')` on destroy. (`index.html:7079-7088, 7168`)
-- **(Audit 2026-06-11) `topojson-client` CDN script has zero call sites** — dead weight + an SRI hash to maintain. Delete the tag + the perf-test expectation line. (`index.html:21`)
 
 ### Live functionality
 
 - **Quick-add → Add modal Photon shortcut** — auto-run Photon search on modal open when name filled but coords empty. Partial overlap with the 2026-06-03 `_autoGeocodeAddModalIfNeeded` ship — verify gap before picking; may already be closed.
-- **(Audit 2026-06-11) `/api/locations` cache header lacks `private`** — `no-cache` permits storage; user location data persists in browser disk cache after logout on a shared machine. `private, no-cache` (or `no-store` if residue matters more than the 304 win). (`index.js:458-462`)
 
 ### UX P1 (from 2026-06-02 audit)
 
