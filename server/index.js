@@ -248,7 +248,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   // Cookie first (browsers), Authorization header second (CLI / tests).
   const cookieToken = req.cookies?.[COOKIE_NAME];
   const headerMatch = req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
@@ -257,6 +257,10 @@ function auth(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     if (isRevoked(decoded.jti)) return res.status(401).json({ error: 'Token revoked' });
+    // Prevent deleted users from writing orphaned documents. NeDB is in-memory
+    // so this lookup is fast (microseconds) and not a meaningful throughput cost.
+    const userExists = await db.users.findOne({ _id: decoded.id });
+    if (!userExists) return res.status(401).json({ error: 'Account not found' });
     req.user = decoded;
     next();
   } catch {

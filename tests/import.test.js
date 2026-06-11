@@ -3610,3 +3610,41 @@ describe('GPS my-location (2026-05-31)', () => {
     expect(c).not.toMatch(/\bonclick=/);
   });
 });
+
+// ─── Edit modal dirty guard ───────────────────────────────
+describe('Edit modal dirty guard', () => {
+  test('_editSnapshot variable and _editFormSnapshot function are defined', () => {
+    expect(indexHtml).toMatch(/let _editSnapshot\s*=/);
+    expect(indexHtml).toMatch(/function _editFormSnapshot\(\)/);
+  });
+
+  test('closeModal checks _editSnapshot before closing and calls showConfirm on dirty state', () => {
+    const fn = extractFunction('closeModal');
+    expect(fn).toMatch(/_editSnapshot\s*!==\s*null/);
+    expect(fn).toMatch(/showConfirm\(/);
+    expect(fn).toMatch(/Discard unsaved changes/);
+    expect(fn).toMatch(/_editSnapshot\s*=\s*null/);
+  });
+
+  test('saveLocation clears _editSnapshot before calling closeModal (no false positive)', () => {
+    const fn = extractFunction('saveLocation');
+    // _editSnapshot = null must appear before closeModal() call
+    const nullIdx = fn.indexOf('_editSnapshot = null');
+    const closeIdx = fn.indexOf('closeModal()');
+    expect(nullIdx).toBeGreaterThan(-1);
+    expect(closeIdx).toBeGreaterThan(-1);
+    expect(nullIdx).toBeLessThan(closeIdx);
+  });
+
+  test('openEditModal sets _editSnapshot after building form state', () => {
+    const fn = extractFunction('openEditModal');
+    expect(fn).toMatch(/_editSnapshot\s*=\s*_editFormSnapshot\(\)/);
+  });
+
+  test('_editFormSnapshot captures modal inputs + key state slices (ratings, tags, visits)', () => {
+    const fn = extractFunction('_editFormSnapshot');
+    expect(fn).toMatch(/modalRating/);
+    expect(fn).toMatch(/modalTags/);
+    expect(fn).toMatch(/modalVisits/);
+  });
+});

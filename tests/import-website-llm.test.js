@@ -327,8 +327,8 @@ describe('Static markup pins (regression guards)', () => {
 
   test('engine chip strings are present (regression: dont regress UX language)', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf-8');
-    expect(html).toMatch(/Parsed by Claude Haiku/);
-    expect(html).toMatch(/Parsed by Time Out adapter \(regex\)/);
+    expect(html).toMatch(/AI-parsed/); // llm chip (was: "Parsed by Claude Haiku" — renamed for jargon cleanup)
+    expect(html).toMatch(/Built-in parser/); // regex chip (was: "Parsed by Time Out adapter (regex)")
   });
 
   test('switchView wires the import-view hint refresh', () => {

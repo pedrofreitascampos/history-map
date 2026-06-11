@@ -835,6 +835,32 @@ describe('Authorization (invalid token)', () => {
   });
 });
 
+// ─── Deleted-user auth check ──────────────────────────────
+describe('Auth: deleted user', () => {
+  test('valid JWT for a deleted account returns 401 Account not found', async () => {
+    // Register a throwaway user, capture their token, then wipe the DB record.
+    const reg = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'ghostuser', password: 'ghostpass123' });
+    expect(reg.status).toBe(200);
+    const ghostToken = reg.body.token;
+
+    // Confirm access works before deletion.
+    const before = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${ghostToken}`);
+    expect(before.status).toBe(200);
+
+    // Delete the user directly from the DB (simulates account deletion / merge).
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(ghostToken, 'test-secret');
+    await db.users.remove({ _id: decoded.id }, {});
+
+    // Same valid JWT — auth should now reject with "Account not found".
+    const after = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${ghostToken}`);
+    expect(after.status).toBe(401);
+    expect(after.body.error).toBe('Account not found');
+  });
+});
+
 // ─── CRUD not found ──────────────────────────────────────
 describe('CRUD not found', () => {
   test('PUT /api/locations/nonexistent-id-xyz → 404', async () => {

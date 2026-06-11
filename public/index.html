@@ -2461,8 +2461,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <select id="account-search-provider" class="form-input" data-change="onSearchProviderChange"
             style="font-size:12px;padding:6px 8px;width:100%;">
             <option value="google">Google Places</option>
-            <option value="photon">Photon (free)</option>
-            <option value="nominatim">OSM Nominatim (free)</option>
+            <option value="photon">OpenStreetMap · Fast (free)</option>
+            <option value="nominatim">OpenStreetMap · Detailed (free)</option>
           </select>
           <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
             All three providers can also enrich locations from the edit modal (🌍 / 🗺️ / 🔄 buttons) and the bulk-edit toolbar.
@@ -3588,6 +3588,7 @@ document.addEventListener('keydown', e => {
   for (const id of modals) {
     const m = document.getElementById(id);
     if (m && m.classList.contains('open')) {
+      if (id === 'edit-modal') { closeModal(); return; } // routes through dirty check
       m.classList.remove('open');
       restoreFocus();
       return;
@@ -4260,7 +4261,7 @@ let _rainviewerFramesFetchedAt = 0;
 
 async function _fetchRainviewerFrames() {
   const now = Date.now();
-  if (_rainviewerFramesCache && (now - _rainviewerFramesFetchedAt < 10 * 60 * 1000)) {
+  if (_rainviewerFramesCache && (now - _rainviewerFramesFetchedAt < 5 * 60 * 1000)) {
     return _rainviewerFramesCache;
   }
   const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -5136,9 +5137,36 @@ function openEditModal(id) {
   const _m = document.getElementById('edit-modal');
   _m.classList.add('open');
   focusModal(_m);
+  // Snapshot after all fields are populated so we can detect unsaved changes
+  _editSnapshot = _editFormSnapshot();
 }
 
-function closeModal() {
+// Snapshot of edit-modal form state when the modal opens. Used to detect
+// unsaved changes and warn before discarding.
+let _editSnapshot = null;
+
+function _editFormSnapshot() {
+  const modal = document.getElementById('edit-modal');
+  if (!modal) return '';
+  const inputs = [...modal.querySelectorAll('input:not([type="file"]), textarea, select')];
+  const fieldVals = inputs.map(el => (el.id || el.className) + '=' + el.value).join('|');
+  const stateVals = [
+    state.modalRating, state.modalCategory, state.modalStatus,
+    state.modalPrice, state.modalBucketStrength,
+    [...(state.modalTags || [])].sort().join(','),
+    [...(state.modalCollections || [])].sort().join(','),
+    [...(state.modalPeople || [])].join(','),
+    (state.modalVisits || []).map(v => v.date).sort().join(','),
+  ].join('|');
+  return fieldVals + '||' + stateVals;
+}
+
+async function closeModal() {
+  if (_editSnapshot !== null && _editFormSnapshot() !== _editSnapshot) {
+    const ok = await showConfirm('Discard unsaved changes?', null, 'Discard');
+    if (!ok) return;
+  }
+  _editSnapshot = null;
   document.getElementById('edit-modal').classList.remove('open');
   restoreFocus();
 }
@@ -5721,6 +5749,7 @@ async function saveLocation() {
       const saved = mapId(await api('POST', '/locations', data));
       state.locations.push(saved);
     }
+    _editSnapshot = null; // clear before close so dirty guard doesn't fire
     closeModal();
     rebuildIndexes();
     renderMarkers();
@@ -9521,7 +9550,7 @@ async function openAccountModal() {
               autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
             <button type="submit" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Save</button>
           </form>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/parse via Haiku.</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/import.</div>
         </div>
       </div>`;
     }
@@ -12291,7 +12320,7 @@ async function refreshWebImportEngineHint() {
     }
     const { enabled } = _webImportEngineCache;
     if (enabled) {
-      hintEl.textContent = '🤖 Smart parsing enabled (Claude Haiku — ~$0.002/import). Works on any list URL.';
+      hintEl.textContent = '🤖 Smart parsing enabled — works on any list URL (~$0.002/import).';
       hintEl.style.color = 'var(--text-secondary)';
     } else {
       hintEl.textContent = '📋 Basic mode — only Time Out is supported. Add an Anthropic key in Account → Anthropic for any-site parsing.';
@@ -12352,8 +12381,8 @@ function openWebImportModal() {
   // but Time Out only).
   const engine = payload.engine || (payload.source === 'llm' ? 'llm' : 'regex');
   const engineChip = engine === 'llm'
-    ? '<span data-engine="llm" style="display:inline-block;padding:2px 8px;border-radius:10px;background:#7c3aed;color:#fff;font-size:12px;font-weight:600;">🤖 Parsed by Claude Haiku</span>'
-    : '<span data-engine="regex" style="display:inline-block;padding:2px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;font-weight:600;">📋 Parsed by Time Out adapter (regex)</span>';
+    ? '<span data-engine="llm" style="display:inline-block;padding:2px 8px;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;font-weight:600;">🤖 AI-parsed</span>'
+    : '<span data-engine="regex" style="display:inline-block;padding:2px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;font-weight:600;">📋 Built-in parser</span>';
   metaParts.push(engineChip);
   if (payload.articleTitle) metaParts.push(esc(payload.articleTitle));
   if (payload.city) metaParts.push(esc(payload.city));
