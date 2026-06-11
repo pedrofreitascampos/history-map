@@ -9111,6 +9111,13 @@ function getBBoxes(geo) {
   return _bboxCache;
 }
 
+let _centroidCache = null;
+function getRegionCentroids(geo, bboxes) {
+  if (_centroidCache) return _centroidCache;
+  _centroidCache = bboxes.map(b => b ? [(b[1] + b[3]) / 2, (b[0] + b[2]) / 2] : null); // [lat, lng]
+  return _centroidCache;
+}
+
 let _regionAssignCache = null;
 let _regionAssignCacheGen = -1;
 
@@ -9122,8 +9129,10 @@ function countLocationsByRegion(geo) {
   const regionCounts = new Map();
   const regionLocs = new Map();
   const bboxes = getBBoxes(geo);
+  const unmatched = [];
 
   beenLocs.forEach(loc => {
+    let matched = false;
     for (let i = 0; i < geo.features.length; i++) {
       const bbox = bboxes[i];
       if (bbox && (loc.lng < bbox[0] || loc.lng > bbox[2] || loc.lat < bbox[1] || loc.lat > bbox[3])) continue;
@@ -9131,10 +9140,33 @@ function countLocationsByRegion(geo) {
         regionCounts.set(i, (regionCounts.get(i) || 0) + 1);
         if (!regionLocs.has(i)) regionLocs.set(i, []);
         regionLocs.get(i).push(loc);
+        matched = true;
         break;
       }
     }
+    if (!matched) unmatched.push(loc);
   });
+
+  // Nearest-centroid snap for coastal/island locations missed by point-in-polygon (cap: 50 km)
+  if (unmatched.length) {
+    const centroids = getRegionCentroids(geo, bboxes);
+    const SNAP_KM = 50;
+    unmatched.forEach(loc => {
+      let bestDist = SNAP_KM, bestIdx = -1;
+      for (let i = 0; i < centroids.length; i++) {
+        const c = centroids[i];
+        if (!c) continue;
+        const d = _haversineKmCity(loc.lat, loc.lng, c[0], c[1]);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      if (bestIdx !== -1) {
+        regionCounts.set(bestIdx, (regionCounts.get(bestIdx) || 0) + 1);
+        if (!regionLocs.has(bestIdx)) regionLocs.set(bestIdx, []);
+        regionLocs.get(bestIdx).push(loc);
+      }
+    });
+  }
+
   _regionAssignCache = { regionCounts, regionLocs, geoRef: geo };
   _regionAssignCacheGen = stateIndex.generation;
   return { regionCounts, regionLocs };

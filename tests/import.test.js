@@ -3749,3 +3749,73 @@ describe('Surgical index helpers', () => {
     expect(delTFn).not.toMatch(/\brebuildIndexes\(\)/);
   });
 });
+
+// ─── Region coastal/island centroid snap ──────────────────────────────────
+describe('Region coastal/island centroid snap', () => {
+  // Minimal geo: two 1°×1° squares.
+  // Feature 0 (Inland): lat 38-39, lng -9 to -8
+  // Feature 1 (Coast):  lat 40-41, lng -8 to -7
+  const GEO = {
+    features: [
+      { properties: { name: 'Inland', country: 'PT' },
+        geometry: { type: 'Polygon', coordinates: [[ [-9,38],[-8,38],[-8,39],[-9,39],[-9,38] ]] } },
+      { properties: { name: 'Coast',  country: 'PT' },
+        geometry: { type: 'Polygon', coordinates: [[ [-8,40],[-7,40],[-7,41],[-8,41],[-8,40] ]] } },
+    ],
+  };
+  const GEO_JSON = JSON.stringify(GEO);
+
+  const regionCtx = vm.createContext({ Map, Set, Array, Object, Math, console });
+  vm.runInContext(`
+    let _bboxCache = null;
+    let _centroidCache = null;
+    let _regionAssignCache = null;
+    let _regionAssignCacheGen = -1;
+    const stateIndex = { beenLocations: [], generation: 0 };
+    ${extractFunction('pointInPolygon')}
+    ${extractFunction('pointInFeature')}
+    ${extractFunction('getBBoxes')}
+    ${extractFunction('getRegionCentroids')}
+    ${extractFunction('_haversineKmCity')}
+    ${extractFunction('countLocationsByRegion')}
+  `, regionCtx);
+  const run = (code) => vm.runInContext(code, regionCtx);
+
+  beforeEach(() => {
+    run('_bboxCache = null; _centroidCache = null; _regionAssignCache = null; _regionAssignCacheGen = -1;');
+    run('stateIndex.generation++;');
+  });
+
+  test('location inside polygon → assigned via pointInFeature (no snap needed)', () => {
+    run(`stateIndex.beenLocations = [{lat: 38.5, lng: -8.5, status: 'been', id: 'a'}];`);
+    run(`var _r = countLocationsByRegion(${GEO_JSON})`);
+    expect(run(`_r.regionCounts.get(0)`)).toBe(1);
+    expect(run(`_r.regionCounts.get(1)`)).toBeUndefined();
+  });
+
+  test('coastal location outside polygon bbox but within 50km of centroid → snapped to that region', () => {
+    // lng=-7.4 is outside Feature 1 bbox (maxLng=-7) by 0.4°; centroid is ~8 km away
+    run(`stateIndex.beenLocations = [{lat: 40.5, lng: -7.4, status: 'been', id: 'b'}];`);
+    run(`var _r = countLocationsByRegion(${GEO_JSON})`);
+    expect(run(`_r.regionCounts.get(1)`)).toBe(1);
+    expect(run(`_r.regionCounts.get(0)`)).toBeUndefined();
+  });
+
+  test('location >50km from every region centroid → not assigned to any region', () => {
+    // Somewhere in Denmark — far from both test features
+    run(`stateIndex.beenLocations = [{lat: 55, lng: 10, status: 'been', id: 'c'}];`);
+    run(`var _r = countLocationsByRegion(${GEO_JSON})`);
+    expect(run(`_r.regionCounts.size`)).toBe(0);
+  });
+
+  test('getRegionCentroids returns bbox midpoints as [lat, lng] pairs', () => {
+    run(`var bboxes = getBBoxes(${GEO_JSON})`);
+    run(`var centroids = getRegionCentroids(${GEO_JSON}, bboxes)`);
+    // Feature 0: minX=-9, minY=38, maxX=-8, maxY=39 → centroid lat=38.5, lng=-8.5
+    expect(run(`centroids[0][0]`)).toBeCloseTo(38.5);
+    expect(run(`centroids[0][1]`)).toBeCloseTo(-8.5);
+    // Feature 1: minX=-8, minY=40, maxX=-7, maxY=41 → centroid lat=40.5, lng=-7.5
+    expect(run(`centroids[1][0]`)).toBeCloseTo(40.5);
+    expect(run(`centroids[1][1]`)).toBeCloseTo(-7.5);
+  });
+});
