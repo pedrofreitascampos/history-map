@@ -11,7 +11,7 @@ Convention (companion `docs/architecture.md`):
 
 ## Status
 
-**2026-06-11:** 1056 jest (3 skip) + 8 e2e green. **All 10 audit P0s shipped + 13 S2 P1s closed across 4 batches.** Recent ships:
+**2026-06-11:** 1056 jest (3 skip) + 8 e2e green. **All 10 audit P0s shipped + 13 S2 P1s closed across 4 batches.** ⚠️ **A fresh 4-domain audit (2026-06-11) found 2 CRIT + 2 HIGH functional bugs the green suite misses — 3 are regressions from this week's batches. See [🔴 Audit 2026-06-11 must-fix](#-audit-2026-06-11--must-fix-batch-next-up) — do this next.** Recent ships:
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
@@ -21,6 +21,29 @@ Convention (companion `docs/architecture.md`):
 | Hardening | 2026-06-04 am | +16 (986) | narrate+discover per-endpoint rate limits · CSP `photon.komoot.io` · `render.yaml` `ANTHROPIC_API_KEY` · SDK exact-pin · notes sanitisation |
 | P0 close-out | 2026-06-03 | +210 (970) | Final 10-of-10 from the 2026-06-02 audit (see archive table) |
 
+## 🔴 Audit 2026-06-11 — must-fix batch (NEXT UP)
+
+Full 4-domain audit (security / code+perf / UX/UI / live), all Fable 5 subagents + live browser run + self-verification against source. **Headline: zero security CRITs, but the live pass caught 2 CRIT + 2 HIGH functional bugs the green test suite sails through — and 3 are regressions from the 2026-06-04/06-11 batches.** Sequence this as one "audit-fix" batch (~half-day), each item with a *behavioural* regression test (not a string-pin — that's exactly why these slipped).
+
+| # | Sev | Bug | Root cause | File:line |
+|---|---|---|---|---|
+| 1 | CRIT | **Inline replay map renders ~1px tall** — replay usable only in fullscreen | `.replay-panel` is a flex child of `#chrono-view` with no `flex-shrink:0`; the long timeline squeezes it to min-content 0. Fullscreen works (viewport-sized) which is why the redesign demos looked fine. Fix: `flex-shrink:0`. | `index.html:990` |
+| 2 | CRIT | **Chronology + Wishlist "Load more" dead** — everything past page 1 unreachable | `_appendChronoPage`/`_appendWishlistPage` are nested **inside** their render fns; `data-click` resolves `window[name]` → undefined → `console.warn unknown action`. Regression from 2026-06-11 pagination migration. Hoist both to module scope (move `_chronoEntries`/`_chronoRendered`/`_wishlist*` cursors up) or register in `ACTIONS`. | `index.html:6732, 6900` |
+| 3 | HIGH | **Live search dead after switching provider** | 2026-06-11 stale-results fix sets `#map-search-results` `display:none`; `_runLiveSearch` only writes `innerHTML`, never resets display. Simplest fix: `onSearchProviderChange` clears `innerHTML` only (drop the `display:none`); or `_runLiveSearch` sets `display:'block'` when it has results. | `index.html:9542` vs `4760` |
+| 4 | HIGH | **Bulk Edit filters don't apply on change; select-all then mutates the *unfiltered* set** (silent data-loss) | `#bulk-filter-*` selects + name input use `data-click` instead of `data-change`/`data-input`. Part of a wider sweep — see UX item below. | `index.html:1931-1944` |
+| 5 | HIGH | **Replay plays "arrive, then travel"** — synthetic transit sorts after its arrival visit; knock-on: destination visits inherit the *flight's* cluster so the zoom envelope can stay intercontinental | Synthetic transit stamped `date:v2.date` + merge tie-break puts visits before transits. Fix: splice synthetics positionally between v1→v2, or tie-break synthetic-arrival transits before same-date visits. Regression from the replay redesign. | `index.html:6570, 6579-6583, 6601-6634` |
+| 6 | HIGH | **`merge-accounts` into itself deletes the account** — no `from!==to` guard; no-op updates run, then `remove()` orphans all data | Add `if (fromUser._id === toUser._id) return 400`. | `index.js:383-410` |
+
+**Cross-cutting fix (covers #4 + a wider class):** `data-click` is bound on non-click controls across the app — transit search + bulk search inputs (typing does nothing), 11 filter `<select>`s + 3 rating sliders (keyboard/arrow changes never apply, only mouse-clicks do). Mechanical sweep: text inputs → `data-input`, selects/sliders → `data-change`. Correct siblings (`#marker-size-mode data-change`, `#wishlist-search data-input`) prove the pattern. (`index.html:2122, 1944, 1698/1707/1716, 1808-1856, 1931-1941`)
+
+**Also fix in the same batch (cheap, verified):**
+- **Escape on confirm/prompt dialogs calls `remove()` without resolving the promise** → every `await showConfirm()` leaks + `restoreFocus` skipped. Route Escape through `.confirm-cancel.click()`. (`index.html:3566`)
+- **Fresh accounts default to Google provider with no key** → first sidebar search dead-ends. Default `getSearchProvider()` to `photon`. (`index.html:9483`)
+- **`wishlist-view` missing from `VIEW_HASHES`** → Wishlist leaves the prior tab's hash; reload/share lands wrong. One line. (`index.html:4914`)
+- **`_refreshNarrateButtonState` captures tooltip AFTER overwriting it** → enabled button can show "needs API key" tooltip forever; move the capture line above the `btn.title=` assignment. Also: refresh runs only on switch-to-trips-view, not on `openTripManager` from the Map sidebar → Narrate shows enabled-looking when key absent. (`index.html:9526-9529`)
+- **`computeTransitStats` "🛬 Top airports" lists restaurants** — aggregates all transit endpoints; filter `mode==='flight'`. (`index.html:8036-8048`)
+- **Toast `success` level has no CSS rule** (13 callsites) → renders as info; severity is color-only. Add `.toast.success` + level icons (✓/⚠/✕). `showToast` double-escapes names (callers pre-`esc()` into a `textContent` sink → `Tom &amp; Jerry`). (`index.html:1227, 3602-3609, 3606`)
+
 ## 🟠 Open — pick from here
 
 Active backlog. Grouped by theme; small-effort items first within each section.
@@ -28,6 +51,12 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ### Security / hardening
 
 - **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` after the WHATWG hostname check, then re-apply the SSRF blocklist to the resolved IP. The current regex blocklist trusts the hostname string, so an attacker-controlled DNS name that resolves to a private IP slips through. Lower priority now that redirect bypass + direct-IP cases are closed. ~half-day.
+- **(Audit 2026-06-11) Google SSO links accounts without `email_verified` check** (`index.js:346`) — `if (!payload.email_verified) return 403` before lookup/link. Bounded today by `ALLOWED_EMAILS` fail-closed in prod, but a one-line gap.
+- **(Audit 2026-06-11) SSRF blocklist misses IPv6 unspecified `::`** (`index.js:759-776`) — routes to loopback on Linux like the already-blocked `0.0.0.0`. Add `/^::$/` (and all-zero forms).
+- **(Audit 2026-06-11) `notes` sanitizer is single-pass / bypassable** (`index.js:559`) — `<scr<script>ipt>` re-forms after one replace. Defense-in-depth only (renders via `esc()`), but loop-until-stable. 
+- **(Audit 2026-06-11) `PUT /api/settings` stores key fields with no type/length check** (`index.js:1167-1175`) — add `typeof==='string' && len<256`; self-inflicted 500 only, but the only un-validated input on the server.
+- **(Audit 2026-06-11) Deleted (merged-away) user keeps a valid 30-day cookie** writing orphaned docs — `auth` never checks the user still exists. Cheap `db.users.findOne` on mutating routes, or a `deletedUserIds` set. (`index.js:251-265, 410`)
+- **(Audit 2026-06-11) Backup authz by username *prefix*** (`startsWith(username+'_')`) — `ana` matches `ana_maria_*.json`; sanitization can collide distinct usernames. Move to per-`userId` subdirs. (`index.js:1183, 1203, 1216, 1658-1663`)
 
 ### Perf round 2 (5 of 8 left)
 
@@ -36,10 +65,23 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 - **`getFilteredLocations()` memo** keyed on `state.filters` + `stateIndex.generation` — skip re-filter when unchanged.
 - **`markerHash()` allocates new array + string join per loc per diff pass** — field-by-field compare on registry entry instead.
 - **RainViewer frame-list cache** — 5 min TTL; toggling off+on doesn't re-fetch.
+- **(Audit 2026-06-11) `renderReplayPath` rebuilds the entire polyline layer every frame** (`clearLayers` + re-add all transit lines `0..idx`) → O(n²) over a now-unbounded all-time replay; plus each transit line is triple-drawn per tick (`advanceToFrame` + `renderReplayPath` + `animateReplayTransit`). Append-only on forward advance; only backward-seek needs the full wipe. (`index.html:7399-7421, 7259`)
+- **(Audit 2026-06-11) `prefetchReplayRoutes` has no total cap against public OSRM** — all-time synthesis can fire hundreds of requests (concurrency 4 but uncapped count, no abort on panel close) → demo-server ban risk. Cap to ~50-100 frames ahead + check `panelOpen` in the worker. (`index.html:7127-7156`)
+
+### Technical / correctness
+
+- **(Audit 2026-06-11) Bare async route handlers + no Express error middleware** — inconsistent try/catch; a rejected nedb promise hangs the request / can crash the process on Node ≥15. Add an `asyncHandler` wrapper + terminal error middleware. (`index.js:458-462` and others)
+- **(Audit 2026-06-11) `_runAction` drops returned promises** (`index.html:2817`) — every async global invoked via `data-*` that rejects becomes an unhandled rejection (no toast, no log, half-mutated state). Add `.catch` in the dispatcher as the systemic backstop.
+- **(Audit 2026-06-11) `moveTripLoc` rewrites `tripOrder` for the whole trip but persists only the swapped pair, no rollback, dropped promise** — reordering can revert on reload. Persist all changed orders + try/catch + toast. (`index.html:8271-8284`)
+- **(Audit 2026-06-11) Regions point-in-polygon drops coastal/island places** — NYC vanishes entirely; Belém/Jerónimos land in "Setúbal" (simplified admin-1 geometry, no nearest-region fallback). Add nearest-centroid snap within ~50km. Also the summary line doesn't refresh on Country granularity. (`index.html:8894-8961, 9251`)
+- **(Audit 2026-06-11) `playReplay` re-asserts `isPlaying=true` after a multi-second OSRM await without re-checking panel state** → playback can run in a closed panel. Bail if `!panelOpen` after the await. (`index.html:7102-7110`)
+- **(Audit 2026-06-11) Fullscreen Escape listeners accumulate + `.fullscreen` class leaks across close/reopen** — store the handler on `replayState`, remove on exit + `destroyReplayMap`, and `classList.remove('fullscreen')` on destroy. (`index.html:7079-7088, 7168`)
+- **(Audit 2026-06-11) `topojson-client` CDN script has zero call sites** — dead weight + an SRI hash to maintain. Delete the tag + the perf-test expectation line. (`index.html:21`)
 
 ### Live functionality
 
 - **Quick-add → Add modal Photon shortcut** — auto-run Photon search on modal open when name filled but coords empty. Partial overlap with the 2026-06-03 `_autoGeocodeAddModalIfNeeded` ship — verify gap before picking; may already be closed.
+- **(Audit 2026-06-11) `/api/locations` cache header lacks `private`** — `no-cache` permits storage; user location data persists in browser disk cache after logout on a shared machine. `private, no-cache` (or `no-store` if residue matters more than the 304 win). (`index.js:458-462`)
 
 ### UX P1 (from 2026-06-02 audit)
 
@@ -47,6 +89,22 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 - **Numeric stats in mono font** — `.stat-value` uses Playfair Display (editorial serif). Switch to `DM Mono` / `JetBrains Mono`. One CSS change. (`public/index.html:6021`)
 - **Sidebar twin inputs ("Add place" / "Search place") confusable** — replace with single search-or-create input OR a floating "+ Add" FAB in bottom-right of map.
 - **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
+- **(Audit 2026-06-11) Narrate / Web-Import / Discover modals bypass the modal system** — open via `style.display='flex'` so they miss the Escape list, focus trap, backdrop handler, `focusModal`/`restoreFocus`, and use unstyled `<h3>` headers (body font). Migrate to `.open` + add to the Escape allowlist + `h3`→`h2`. (`index.html:9957, 12296, 12080`)
+- **(Audit 2026-06-11) Edit modal discards a 3-section form on stray backdrop/Escape** — no dirty-state guard; tags/visits/people/notes/photos lost silently. Route close through `showConfirm('Discard changes?')` when dirty. (`index.html:3580-3588`)
+- **(Audit 2026-06-11) Three names for one concept** — Wishlist / Bucket List / Want-to-Go, and ⭐ doubles as the rating glyph. Standardize on "Wishlist" in copy; reserve ⭐ for ratings, ♥ for wishlist strength. (`index.html:1586, 2189, 1656, 6853`)
+- **(Audit 2026-06-11) Provider & AI jargon leaks** — "Photon", "Nominatim", "OSM", "regex", "Haiku" in user-facing UI. Lead with the meaningful axis ("Google — best, needs paid key" / "OpenStreetMap — free"); chips "🤖 AI-parsed" / "📋 Built-in parser". Keep tech names in tooltips. (`index.html:2454-2472, 12209-12271`)
+- **(Audit 2026-06-11) Web-import geocoding floods ~15 stacked toasts** (one per venue, modal already closed) — single self-updating progress toast + summary at end. (`index.html:12338`)
+- **(Audit 2026-06-11) Discover results have no "added" state** — `+ Bucket` stays enabled → silent duplicates. Disable + swap to "✓ Added" on success. (`index.html:12122, 12163`)
+- **(Audit 2026-06-11) Approval badge points at Import but the queue renders below several screens of import sections** — scroll the queue into view (or render it above `.import-sections`) when count > 0. (`index.html:1604, 2073`)
+- **(Audit 2026-06-11) Add/Edit Transit modal is unstyled** — inputs lack `.form-input`, no `#transit-modal` CSS, `.form-row` grid misused → browser-default chrome. Apply the standard `.form-group` pattern. (`index.html:2532-2568`)
+- **(Audit 2026-06-11) Parchment (light) theme inherits hardcoded white-overlay surfaces** — nav tabs/hover/modal-close/transit-chip use `rgba(255,255,255,…)` → invisible in light mode; engine chip hardcodes `#7c3aed`. Add `--overlay-weak/-strong` tokens per theme. (`index.html:112, 125, 625, 12270`)
+
+**A11y / mobile (audit 2026-06-11)**
+- **No keyboard path to set/fix coordinates** — every marker is pointer-only `draggable`, lat/lng row hidden except on save-fail. Add an "✎ Edit coordinates" disclosure in the edit modal's Identity section. (`index.html:3883, 2162`)
+- **Replay fullscreen height assumes desktop chrome** (`calc(100vh - 110px)`) — mobile wraps controls to 2-3 rows → map overdraws, scrubber pushed off-viewport. Make `.fullscreen` a flex column with `#replay-map { flex:1; height:auto }`. (`index.html:995, 1016`)
+- **Sub-12px reading type** — `.popup-tag` 9px, achievement desc/progress 10px, import-table th 10px, account key/provider hints 10px. Raise to 11-12px. (`index.html:457, 905, 1102, 2457`)
+- **Replay scrubber announces bare indices** — add `aria-valuetext` = the position label inside `updateReplayPositionLabel`. (`index.html:1821, 7446`)
+- **Bulk-edit mobile fix is a fragile `nth-child(3)` selector** — class-target `.bulk-actions-row`. (`index.html:1169`)
 
 ### Longer-term wishlist (P1+, scoped)
 
@@ -107,12 +165,20 @@ Ranked by impact-vs-effort. Pick 2-3 per sprint.
 17. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner (`projects/ai/travel_planner`). Oikumene → Bifrost: "Send to travel plan" creates POIs in a Bifrost tour. Bifrost → Oikumene: import a Bifrost tour as a trip with its POIs as locations. Bifrost-side counterparts tracked in Bifrost's roadmap.
 18. **🌐 Dynamic overlays — Tier 2+.** RainViewer ✅ shipped 2026-06-02 in `20e00d7` (registry pattern). Remaining: **USGS earthquakes** (free GeoJSON, lowest-cost ship next), **FlightRadar live** (needs ADS-B Exchange or FR24 key, viewport-bounded), **ISS ground track**, **wind/jet-stream** (Earth Nullschool style), **marine AIS**. Architecture in place — each new overlay is ~30 lines via the `DYNAMIC_OVERLAYS` registry.
 
+**New ideas from the 2026-06-11 audit synthesis:**
+19. **🎥 Replay export to GIF/MP4** — the cluster-zoom replay is the app's most shareable moment; a "Record" button (canvas capture) → shareable clip. Pairs with #1 Year-in-Review.
+20. **📍 "Fix region" nearest-polygon fallback** — turns the Regions point-in-polygon bug (coastal/island drop) into a feature: snap water-gap points to the nearest admin-1 centroid within ~50km, surfaced as an editable suggestion.
+21. **💰 Trip cost tracker** — transits already carry distance; add an optional cost field per stop/transit → per-trip + per-year spend roll-up. Feeds the #11 currency overlay.
+22. **🗓️ "On this day" resurfacing** — visits hold dates; a home/Stats card "3 years ago you were in Kyoto". Zero new data, high re-engagement.
+23. **🔀 Conflict-free import preview diff** — before any import commits, show adds / updates / likely-dupes as a reviewable list (UI front-end for the #8 smart-dedup item; would also have caught messy Timeline re-imports).
+
 ## Sequenced ship plan
 
 | Sprint | Theme | Status |
 |---|---|---|
 | S1 | Audit 2026-06-02 P0 close-out | ✅ All 10 shipped 2026-06-03. |
 | S2 | Hardening + perf round 2 | 🚧 13 of ~20 closed across 4 batches (2026-06-04 × 3 + 2026-06-11). Remaining: surgical `rebuildIndexes`, `getFilteredLocations` memo, `markerHash` alloc, `buildTagFilters` DOM toggle, RainViewer frame-cache, DNS-rebinding SSRF, quick-add Photon shortcut. ~1-2 days. |
+| **S2.5** | **Audit-fix batch (2026-06-11)** | 🔴 **NEXT.** 2 CRIT + 2 HIGH functional bugs (3 are regressions) + the `data-click`→`data-change` sweep + ~6 cheap UX/correctness items. Each needs a *behavioural* regression test, not a string-pin. ~half-day. See [must-fix table](#-audit-2026-06-11--must-fix-batch-next-up). |
 | S3 | UX redesign batch | Collapse nav to 5+overflow, mono font on stats, FAB add-place, Stadia tiles + theme swap, KPI ribbon for Stats, sidebar command-panel collapse. ~1 week. |
 | S4+ | Power features | Pick 2-3 per sprint: Year-in-Review, Neighborhoods cluster, Plan-a-Day, Stadia tiles + theme map, Share-trip link. 1-2 weeks each. |
 
