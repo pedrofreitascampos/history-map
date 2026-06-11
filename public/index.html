@@ -996,6 +996,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .replay-panel.fullscreen #replay-map { height: calc(100vh - 110px); }
 .replay-fullscreen-btn { width: 32px; height: 32px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .replay-fullscreen-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+/* Narrate button "needs API key" state — keeps the button clickable (clicking
+   shows a toast + opens Account settings via the existing openNarrateModal
+   gate) but signals up-front that it won't work yet. */
+.narrate-btn-disabled { opacity: 0.55; }
+.narrate-btn-disabled:hover { opacity: 0.75; }
 .replay-controls { display: flex; align-items: center; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
 .replay-play-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--bg-primary); border: 0; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .replay-play-btn:hover { transform: scale(1.05); }
@@ -1529,17 +1534,23 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="login-tab active" data-click="switchLoginTab" data-arg0="login">Sign In</button>
         <button class="login-tab" data-click="switchLoginTab" data-arg0="register">Register</button>
       </div>
-      <div class="form-group">
-        <label for="auth-username">Username</label>
-        <input type="text" class="form-input" id="auth-username" placeholder="username"
-          data-keydown="enterToFocus" data-target="auth-password">
-      </div>
-      <div class="form-group">
-        <label for="auth-password">Password</label>
-        <input type="password" class="form-input" id="auth-password" placeholder="••••••••"
-          data-keydown="enterKey" data-arg0="doAuth">
-      </div>
-      <button class="btn btn-primary" data-click="doAuth">Sign In</button>
+      <!-- Real <form> with autocomplete attrs so password managers offer to
+           save and autofill credentials. data-submit goes through the same
+           dispatcher as data-click; the submit handler always preventDefault. -->
+      <form id="auth-form" data-submit="doAuth" autocomplete="on">
+        <div class="form-group">
+          <label for="auth-username">Username</label>
+          <input type="text" class="form-input" id="auth-username" name="username"
+            placeholder="username" autocomplete="username"
+            data-keydown="enterToFocus" data-target="auth-password">
+        </div>
+        <div class="form-group">
+          <label for="auth-password">Password</label>
+          <input type="password" class="form-input" id="auth-password" name="password"
+            placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary">Sign In</button>
+      </form>
       <div class="login-error" id="auth-error"></div>
       <div id="google-signin-divider" style="display:none;margin-top:16px;position:relative;text-align:center;">
         <hr style="border:none;border-top:1px solid var(--border);margin:0;">
@@ -2343,7 +2354,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-footer">
       <div style="display:flex;gap:8px;">
         <button class="btn btn-secondary" data-click="openAddTripFromManager">+ Add Trip</button>
-        <button class="btn btn-secondary" data-click="openNarrateModal">✨ Narrate</button>
+        <button class="btn btn-secondary narrate-btn" data-click="openNarrateModal">✨ Narrate</button>
       </div>
       <button class="btn btn-secondary" data-click="closeTripManager">Done</button>
     </div>
@@ -2678,9 +2689,11 @@ const ACTIONS = {
     if (typeof fn === 'function') withLoading(el, fn);
   },
   // Enter-key keydown helper: shifts focus to a sibling field on Enter.
-  // data-target names the element to focus.
+  // data-target names the element to focus. preventDefault so the Enter
+  // doesn't also bubble into a wrapping <form>'s submit handler.
   enterToFocus: (el, e) => {
     if (e.key !== 'Enter') return;
+    e.preventDefault();
     const t = document.getElementById(el.dataset.target);
     if (t) t.focus();
   },
@@ -2813,6 +2826,10 @@ function _delegate(eventName, dataKey) {
   document.addEventListener(eventName, (e) => {
     const el = e.target.closest(`[data-${dataKey}]`);
     if (!el) return;
+    // For `submit`, always preventDefault — otherwise the form does a full
+    // page navigation. data-submit forms route through the same action
+    // dispatcher as data-click and intentionally never POST natively.
+    if (eventName === 'submit') e.preventDefault();
     _runAction(el.dataset[dataKey], el, e);
   }, true);
 }
@@ -4937,6 +4954,10 @@ function switchView(viewId, skipHash) {
     // (default static markup hardcodes the trips-exist-but-none-selected copy).
     if (!document.getElementById('trip-selector').value) _renderTripDetailEmpty();
     setTimeout(() => { initTripMap(); tripMap.invalidateSize(); }, 150);
+    // Reflect Anthropic key status on the Narrate buttons so the user can see
+    // up-front whether it will actually fire (avoids the "click → toast →
+    // bounce to Account" path).
+    _refreshNarrateButtonState();
   }
   if (viewId === 'transits-view') renderTransitsView();
 }
@@ -6722,7 +6743,7 @@ function renderChronology() {
       more.className = 'btn btn-secondary';
       more.style.cssText = 'display:block;margin:16px auto;padding:8px 24px;';
       more.textContent = `Load more (${_chronoEntries.length - _chronoRendered} remaining)`;
-      more.onclick = _appendChronoPage;
+      more.setAttribute('data-click', '_appendChronoPage');
       container.appendChild(more);
     }
   }
@@ -6890,7 +6911,7 @@ function renderWishlist() {
       more.className = 'btn btn-secondary';
       more.style.cssText = 'display:block;margin:16px auto;padding:8px 24px;';
       more.textContent = `Load more (${_wishlistItems.length - _wishlistRendered} remaining)`;
-      more.onclick = _appendWishlistPage;
+      more.setAttribute('data-click', '_appendWishlistPage');
       container.appendChild(more);
     }
   }
@@ -7486,7 +7507,7 @@ function _renderTripDetailEmpty() {
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;align-items:center;">
         <button class="btn btn-primary" data-click="promptNewTrip" style="font-size:13px;padding:8px 18px;min-width:260px;">+ Create a trip manually</button>
         <button class="btn btn-secondary" data-click="importTripFromTimeline" style="font-size:13px;padding:8px 18px;min-width:260px;" title="Parse a Google Timeline export into a NEW trip — all visits become stops in one bundle.">📂 Import a Google Timeline</button>
-        <button class="btn btn-secondary" data-click="openNarrateModal" style="font-size:13px;padding:8px 18px;min-width:260px;" title="Describe a trip in natural language — Claude parses it into geocoded stops.">✨ Narrate a trip (AI)</button>
+        <button class="btn btn-secondary narrate-btn" data-click="openNarrateModal" style="font-size:13px;padding:8px 18px;min-width:260px;" title="Describe a trip in natural language — Claude parses it into geocoded stops.">✨ Narrate a trip (AI)</button>
       </div>
     </div>`;
   } else {
@@ -9365,11 +9386,11 @@ async function openAccountModal() {
       </div>
       <details style="margin-top:6px;">
         <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <input type="password" class="form-input" id="places-key-input" placeholder="New key..." style="flex:1;font-size:12px;padding:6px 8px;">
-          <button class="btn btn-secondary" data-click="savePlacesKey" style="font-size:12px;padding:4px 10px;">Save</button>
-          <button class="btn btn-danger" data-click="removePlacesKey" style="font-size:12px;padding:4px 10px;">Remove</button>
-        </div>
+        <form data-submit="savePlacesKey" autocomplete="off" style="display:flex;gap:6px;margin-top:6px;">
+          <input type="password" class="form-input" id="places-key-input" placeholder="New key..." autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;">
+          <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;">Save</button>
+          <button type="button" class="btn btn-danger" data-click="removePlacesKey" style="font-size:12px;padding:4px 10px;">Remove</button>
+        </form>
       </details>`;
     } else {
       // Load current key status from settings
@@ -9378,12 +9399,12 @@ async function openAccountModal() {
       placesDiv.innerHTML = `<div style="font-size:12px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
         <span style="color:var(--text-muted);">●</span> Not connected — search uses OpenStreetMap.
         <div style="margin-top:8px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Google Places API Key</label>
-          <div style="display:flex;gap:6px;">
+          <label for="places-key-input" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Google Places API Key</label>
+          <form data-submit="savePlacesKey" autocomplete="off" style="display:flex;gap:6px;">
             <input type="password" class="form-input" id="places-key-input" placeholder="AIza..." value="${keyPreview ? '••••••••' : ''}"
-              style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
-            <button class="btn btn-primary" data-click="savePlacesKey" style="font-size:12px;padding:4px 10px;">Save</button>
-          </div>
+              autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
+            <button type="submit" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Save</button>
+          </form>
           <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">5,000 free searches + 5,000 free syncs per month. Key stored on server, never exposed to browser.</div>
         </div>
       </div>`;
@@ -9399,11 +9420,11 @@ async function openAccountModal() {
         <span style="color:var(--success);">●</span> Connected — natural-language trip parsing enabled
         <details style="margin-left:auto;">
           <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change key</summary>
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <input type="password" class="form-input" id="anthropic-key-input" placeholder="New key..." style="flex:1;font-size:12px;padding:6px 8px;">
-            <button class="btn btn-secondary" data-click="saveAnthropicKey" style="font-size:12px;padding:4px 10px;">Save</button>
-            <button class="btn btn-danger" data-click="removeAnthropicKey" style="font-size:12px;padding:4px 10px;">Remove</button>
-          </div>
+          <form data-submit="saveAnthropicKey" autocomplete="off" style="display:flex;gap:6px;margin-top:6px;">
+            <input type="password" class="form-input" id="anthropic-key-input" placeholder="New key..." autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;">
+            <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;">Save</button>
+            <button type="button" class="btn btn-danger" data-click="removeAnthropicKey" style="font-size:12px;padding:4px 10px;">Remove</button>
+          </form>
         </details>
       </div>`;
     } else {
@@ -9412,12 +9433,12 @@ async function openAccountModal() {
       anthropicDiv.innerHTML = `<div style="font-size:12px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);">
         <span style="color:var(--text-muted);">●</span> Not connected — natural-language trip parsing disabled.
         <div style="margin-top:8px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Anthropic API Key</label>
-          <div style="display:flex;gap:6px;">
+          <label for="anthropic-key-input" style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Anthropic API Key</label>
+          <form data-submit="saveAnthropicKey" autocomplete="off" style="display:flex;gap:6px;">
             <input type="password" class="form-input" id="anthropic-key-input" placeholder="sk-ant-..." value="${keyPreview ? '••••••••' : ''}"
-              style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
-            <button class="btn btn-primary" data-click="saveAnthropicKey" style="font-size:12px;padding:4px 10px;">Save</button>
-          </div>
+              autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
+            <button type="submit" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Save</button>
+          </form>
           <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/parse via Haiku.</div>
         </div>
       </div>`;
@@ -9482,12 +9503,43 @@ async function _refreshGoogleChromeVisibility() {
     el.style.display = show ? (id === 'import-sync-label' ? 'flex' : '') : 'none';
   });
 }
+
+// Cache the narrate-enabled status across the session so the view-switch +
+// account-modal-close hooks aren't each firing a network round-trip. Invalidated
+// when the user saves or removes an Anthropic key.
+let _narrateEnabledCache = null;
+function _resetNarrateEnabledCache() { _narrateEnabledCache = null; }
+async function _refreshNarrateButtonState() {
+  let enabled = _narrateEnabledCache;
+  if (enabled === null) {
+    try { enabled = (await api('GET', '/trips/narrate-status')).enabled; }
+    catch { enabled = false; }
+    _narrateEnabledCache = enabled;
+  }
+  document.querySelectorAll('.narrate-btn').forEach(btn => {
+    // Original label captured from the markup; the suffix is reapplied each
+    // call so toggling back to enabled drops it cleanly.
+    if (!btn.dataset.narrateLabel) btn.dataset.narrateLabel = btn.textContent.trim();
+    const base = btn.dataset.narrateLabel;
+    btn.classList.toggle('narrate-btn-disabled', !enabled);
+    btn.textContent = enabled ? base : base + ' — needs API key';
+    btn.title = enabled
+      ? (btn.dataset.narrateTitle || '')
+      : 'Anthropic API key not configured — click to add one in Account settings.';
+    if (!btn.dataset.narrateTitle && btn.title) btn.dataset.narrateTitle = btn.title;
+  });
+}
 function onSearchProviderChange() {
   const el = document.getElementById('account-search-provider');
   if (!el) return;
   setSearchProvider(el.value);
   showToast('Search provider: ' + el.options[el.selectedIndex].text.split('—')[0].trim());
   _refreshGoogleChromeVisibility();
+  // Wipe stale live-search results from the previous provider. Otherwise the
+  // "Google Places not configured" hint from a Google→Photon switch lingers
+  // in the sidebar until the user types again.
+  const resultsEl = document.getElementById('map-search-results');
+  if (resultsEl) { resultsEl.innerHTML = ''; resultsEl.style.display = 'none'; }
 }
 
 // Background sync for freshly imported locations (non-blocking)
@@ -9862,6 +9914,8 @@ async function saveAnthropicKey() {
   try {
     await api('PUT', '/settings', { anthropicKey: key });
     _resetWebImportEngineCache();
+    _resetNarrateEnabledCache();
+    _refreshNarrateButtonState();
     showToast('Anthropic API key saved. Trip narration + smart web import are now active.');
     openAccountModal(); // refresh
   } catch (err) { showToast('Failed: ' + err.message, 'error'); }
@@ -9872,6 +9926,8 @@ function removeAnthropicKey() {
     try {
       await api('PUT', '/settings', { anthropicKey: null });
       _resetWebImportEngineCache();
+      _resetNarrateEnabledCache();
+      _refreshNarrateButtonState();
       showToast('Anthropic API key removed.');
       openAccountModal();
     } catch (err) { showToast('Failed: ' + err.message, 'error'); }
