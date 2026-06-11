@@ -149,7 +149,7 @@ describe('S2 perf cold-load batch', () => {
 
     const optionalCdn = [
       'cdn.jsdelivr.net/npm/chart.js',
-      'cdn.jsdelivr.net/npm/topojson-client',
+      // topojson-client removed — had zero call sites (S2 perf round 2)
       'cdn.jsdelivr.net/npm/jszip',
       'cdn.jsdelivr.net/npm/exifr',
     ];

@@ -625,7 +625,7 @@ describe('Frontend invariants (code checks)', () => {
     // Regression: tag names in onclick attributes allow XSS
     const tagBuildFn = indexHtml.substring(
       indexHtml.indexOf('function buildTagFilters()'),
-      indexHtml.indexOf('function buildTagFilters()') + 1000
+      indexHtml.indexOf('function buildTagFilters()') + 1500
     );
     expect(tagBuildFn).toContain('document.createElement');
     expect(tagBuildFn).toContain('.textContent');
@@ -658,7 +658,9 @@ describe('Frontend invariants (code checks)', () => {
   });
 
   test('tag filter has rebuild cache', () => {
-    expect(indexHtml).toContain('_tagFilterGen');
+    // Renamed to fingerprint-based (S2 perf round 2): avoids full DOM rebuild when
+    // tag counts are unchanged — only syncs .active class on the fast path.
+    expect(indexHtml).toContain('_tagFilterFingerprint');
   });
 
   test('bulk edit is a separate tab with list-based selection', () => {

@@ -343,6 +343,7 @@ app.post('/api/auth/google', async (req, res) => {
     const { credential } = req.body;
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
+    if (!payload.email_verified) return res.status(403).json({ error: 'Email not verified' });
     const email = payload.email;
     const googleId = payload.sub;
 
@@ -458,7 +459,7 @@ app.get('/api/audit', auth, requireAdmin, async (req, res) => {
 // repeated ~140 KB gzip payload into a header-only round-trip. S2 perf 2026-06-04.
 app.get('/api/locations', auth, async (req, res) => {
   const locs = await db.locations.find({ userId: req.user.id });
-  res.set('Cache-Control', 'no-cache');
+  res.set('Cache-Control', 'private, no-cache');
   res.json(locs);
 });
 
@@ -762,6 +763,7 @@ const SSRF_BLOCK = [
   /^127\./,
   /^0\.0\.0\.0$/,
   /^::1$/,
+  /^::$/,  // IPv6 unspecified — routes to loopback on Linux
   /^10\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^192\.168\./,
@@ -1167,6 +1169,11 @@ app.get('/api/settings', auth, async (req, res) => {
 
 app.put('/api/settings', auth, async (req, res) => {
   const { googlePlacesKey, anthropicKey } = req.body;
+  for (const [k, v] of [['googlePlacesKey', googlePlacesKey], ['anthropicKey', anthropicKey]]) {
+    if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > 256)) {
+      return res.status(400).json({ error: `${k}: must be null or a string ≤ 256 characters` });
+    }
+  }
   const updates = {};
   if (googlePlacesKey !== undefined) updates.googlePlacesKey = googlePlacesKey || null;
   if (anthropicKey !== undefined) updates.anthropicKey = anthropicKey || null;
@@ -1691,6 +1698,12 @@ app.get('/api/admin/backups/:filename', auth, requireAdmin, (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   }
   res.download(filePath);
+});
+
+// ── Terminal error handler ───────────────────────────────
+app.use((err, req, res, next) => {
+  log('error', 'unhandled_route_error', { method: req.method, path: req.path, error: err.message });
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // ── Catch-all for SPA ────────────────────────────────────
