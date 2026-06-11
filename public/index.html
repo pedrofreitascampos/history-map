@@ -3023,6 +3023,68 @@ function rebuildIndexes() {
   }
 }
 
+// ─── Surgical index helpers (single-item mutations) ───────────────────────
+// Use these instead of rebuildIndexes() for single save/delete operations.
+function _idxAddLoc(l) {
+  stateIndex.locationById.set(l.id || l._id, l);
+  l._region = (l.address || '').split(',').pop().trim();
+  if (l.needsApproval) stateIndex.pendingApproval.push(l);
+  if (l.status === 'been') stateIndex.beenLocations.push(l);
+  if (l.tripId) {
+    let a = stateIndex.locationsByTrip.get(l.tripId);
+    if (!a) { a = []; stateIndex.locationsByTrip.set(l.tripId, a); }
+    a.push(l);
+  }
+  for (const c of (l.collections || [])) {
+    let a = stateIndex.locationsByCollection.get(c);
+    if (!a) { a = []; stateIndex.locationsByCollection.set(c, a); }
+    a.push(l);
+  }
+  for (const p of (l.people || []))
+    stateIndex.peopleCounts.set(p, (stateIndex.peopleCounts.get(p) || 0) + 1);
+  for (const t of (l.tags || []))
+    stateIndex.tagCounts.set(t, (stateIndex.tagCounts.get(t) || 0) + 1);
+}
+function _idxRemoveLoc(l) {
+  const id = l.id || l._id;
+  stateIndex.locationById.delete(id);
+  const keep = x => (x.id || x._id) !== id;
+  stateIndex.pendingApproval = stateIndex.pendingApproval.filter(keep);
+  stateIndex.beenLocations   = stateIndex.beenLocations.filter(keep);
+  if (l.tripId) {
+    const a = stateIndex.locationsByTrip.get(l.tripId);
+    if (a) { const f = a.filter(keep); f.length ? stateIndex.locationsByTrip.set(l.tripId, f) : stateIndex.locationsByTrip.delete(l.tripId); }
+  }
+  for (const c of (l.collections || [])) {
+    const a = stateIndex.locationsByCollection.get(c);
+    if (a) { const f = a.filter(keep); f.length ? stateIndex.locationsByCollection.set(c, f) : stateIndex.locationsByCollection.delete(c); }
+  }
+  for (const p of (l.people || [])) { const n = (stateIndex.peopleCounts.get(p) || 1) - 1; n > 0 ? stateIndex.peopleCounts.set(p, n) : stateIndex.peopleCounts.delete(p); }
+  for (const t of (l.tags || []))   { const n = (stateIndex.tagCounts.get(t) || 1) - 1;   n > 0 ? stateIndex.tagCounts.set(t, n) : stateIndex.tagCounts.delete(t); }
+}
+function _idxAddTransit(t) {
+  stateIndex.transitById.set(t.id, t);
+  let a = stateIndex.transitsByMode.get(t.mode);
+  if (!a) { a = []; stateIndex.transitsByMode.set(t.mode, a); }
+  a.push(t);
+  if (t.tripId) {
+    let b = stateIndex.transitsByTrip.get(t.tripId);
+    if (!b) { b = []; stateIndex.transitsByTrip.set(t.tripId, b); }
+    b.push(t);
+  }
+}
+function _idxRemoveTransit(t) {
+  const id = t.id || t._id;
+  stateIndex.transitById.delete(id);
+  const keep = x => (x.id || x._id) !== id;
+  const ma = stateIndex.transitsByMode.get(t.mode);
+  if (ma) { const f = ma.filter(keep); f.length ? stateIndex.transitsByMode.set(t.mode, f) : stateIndex.transitsByMode.delete(t.mode); }
+  if (t.tripId) {
+    const ta = stateIndex.transitsByTrip.get(t.tripId);
+    if (ta) { const f = ta.filter(keep); f.length ? stateIndex.transitsByTrip.set(t.tripId, f) : stateIndex.transitsByTrip.delete(t.tripId); }
+  }
+}
+
 let map, markersLayer, heatLayer;
 let chartRatings, chartActivity;
 
@@ -3767,7 +3829,7 @@ async function deleteFromPopup(locId) {
   try {
     await api('DELETE', '/locations/' + locId);
     state.locations = state.locations.filter(l => l.id !== locId);
-    rebuildIndexes();
+    _idxRemoveLoc(loc); stateIndex.generation++;
     map.closePopup();
     renderMarkers();
     populateFilterDropdowns();
@@ -5741,17 +5803,21 @@ async function saveLocation() {
 
   try {
     if (state.editingId) {
+      const oldLoc = stateIndex.locationById.get(state.editingId);
       const updated = mapId(await api('PUT', '/locations/' + state.editingId, data));
       const idx = state.locations.findIndex(l => l.id === state.editingId);
       if (idx >= 0) state.locations[idx] = updated;
+      if (oldLoc) _idxRemoveLoc(oldLoc);
+      _idxAddLoc(updated);
     } else {
       data.createdAt = new Date().toISOString().split('T')[0];
       const saved = mapId(await api('POST', '/locations', data));
       state.locations.push(saved);
+      _idxAddLoc(saved);
     }
+    stateIndex.generation++;
     _editSnapshot = null; // clear before close so dirty guard doesn't fire
     closeModal();
-    rebuildIndexes();
     renderMarkers();
     populateFilterDropdowns();
     updateApprovalBadge();
@@ -5762,10 +5828,11 @@ function deleteLocation() {
   if (!state.editingId) return;
   showConfirm('Delete this location? This cannot be undone.', async () => {
     try {
+      const _delLoc = stateIndex.locationById.get(state.editingId);
       await api('DELETE', '/locations/' + state.editingId);
       state.locations = state.locations.filter(l => l.id !== state.editingId);
       closeModal();
-      rebuildIndexes();
+      if (_delLoc) _idxRemoveLoc(_delLoc); stateIndex.generation++;
       renderMarkers();
       populateFilterDropdowns();
       updateApprovalBadge();
@@ -5861,7 +5928,7 @@ async function promptNewTrip() {
       color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),
     }));
     state.trips.push(trip);
-    rebuildIndexes();
+    stateIndex.tripById.set(trip.id, trip); stateIndex.generation++;
     populateModalTrips();
     document.getElementById('loc-trip').value = trip.id;
     populateFilterDropdowns();
@@ -7019,7 +7086,7 @@ async function deleteFromWishlist(locId) {
   try {
     await api('DELETE', '/locations/' + encodeURIComponent(locId));
     state.locations = state.locations.filter(l => (l.id || l._id) !== locId);
-    if (typeof rebuildIndexes === 'function') rebuildIndexes();
+    _idxRemoveLoc(loc); stateIndex.generation++;
     renderWishlist();
     renderMarkers();
     showToast('🗑️ Removed from wishlist', 'success');
@@ -8850,7 +8917,7 @@ async function addSearchResultToCollection(colId, idx) {
       createdAt: new Date().toISOString().split('T')[0],
     }));
     state.locations.push(loc);
-    rebuildIndexes();
+    _idxAddLoc(loc); stateIndex.generation++;
     viewCollection(colId);
   } catch (err) { showToast('Failed to add: ' + err.message, 'error'); }
 }
@@ -8862,7 +8929,7 @@ async function openNewCollectionModal() {
   try {
     const col = mapId(await api('POST', '/collections', { name, emoji: '🏆', description: '', totalItems: null }));
     state.collections.push(col);
-    rebuildIndexes();
+    stateIndex.collectionById.set(col.id, col); stateIndex.generation++;
     renderCollections();
   } catch (err) { showToast('Failed to create collection: ' + err.message, 'error'); }
 }
@@ -8914,7 +8981,9 @@ function deleteCollection(id) {
       renderCollections();
       return;
     }
-    rebuildIndexes();
+    stateIndex.collectionById.delete(id);
+    stateIndex.locationsByCollection.delete(id);
+    stateIndex.generation++;
     renderCollections();
     if (failedLocations > 0) showToast(`Collection deleted; ${failedLocations} locations could not be updated`, 'warn');
     else showToast(`Collection deleted`);
@@ -8943,7 +9012,7 @@ async function createCollectionFromModal() {
   try {
     const col = mapId(await api('POST', '/collections', { name, emoji: '🏆', description: '', totalItems: null }));
     state.collections.push(col);
-    rebuildIndexes();
+    stateIndex.collectionById.set(col.id, col); stateIndex.generation++;
     state.modalCollections.push(col.id);
     renderModalCollections();
   } catch (err) { showToast('Failed: ' + err.message, 'error'); }
@@ -11888,9 +11957,10 @@ async function deleteTransit(id) {
   const confirmed = await showConfirm('Delete this transit?');
   if (!confirmed) return;
   try {
+    const _delT = stateIndex.transitById.get(id);
     await api('DELETE', '/transits/' + id);
     state.transits = state.transits.filter(t => t.id !== id);
-    rebuildIndexes();
+    if (_delT) _idxRemoveTransit(_delT); stateIndex.generation++;
     renderTransitsView();
     showToast('Transit deleted', 'success');
   } catch (e) {
@@ -11966,14 +12036,20 @@ async function saveTransit() {
   try {
     let saved;
     if (_editingTransitId) {
+      const oldT = stateIndex.transitById.get(_editingTransitId);
       saved = await api('PUT', '/transits/' + _editingTransitId, payload);
+      const newT = mapId(saved);
       const i = state.transits.findIndex(t => t.id === _editingTransitId);
-      if (i >= 0) state.transits[i] = mapId(saved);
+      if (i >= 0) state.transits[i] = newT;
+      if (oldT) _idxRemoveTransit(oldT);
+      _idxAddTransit(newT);
     } else {
       saved = await api('POST', '/transits', payload);
-      state.transits.push(mapId(saved));
+      const newT = mapId(saved);
+      state.transits.push(newT);
+      _idxAddTransit(newT);
     }
-    rebuildIndexes();
+    stateIndex.generation++;
     closeTransitModal();
     renderTransitsView();
     // Re-render trip detail if a trip is currently selected

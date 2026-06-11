@@ -3648,3 +3648,104 @@ describe('Edit modal dirty guard', () => {
     expect(fn).toMatch(/modalVisits/);
   });
 });
+
+// ─── Surgical index helpers (_idxAddLoc / _idxRemoveLoc) ─────────────────
+describe('Surgical index helpers', () => {
+  // Isolated VM context: stateIndex + the four helper functions only.
+  const helperCtx = vm.createContext({ Map, Set, Array, Object, String });
+  vm.runInContext(`
+    const stateIndex = {
+      locationById: new Map(), locationsByTrip: new Map(),
+      locationsByCollection: new Map(), collectionById: new Map(),
+      peopleCounts: new Map(), tagCounts: new Map(),
+      pendingApproval: [], beenLocations: [], generation: 0,
+      transitById: new Map(), transitsByMode: new Map(), transitsByTrip: new Map(),
+    };
+    ${extractFunction('_idxAddLoc')}
+    ${extractFunction('_idxRemoveLoc')}
+    ${extractFunction('_idxAddTransit')}
+    ${extractFunction('_idxRemoveTransit')}
+  `, helperCtx);
+
+  const run = (code) => vm.runInContext(code, helperCtx);
+
+  test('_idxAddLoc populates locationById, locationsByTrip, locationsByCollection, peopleCounts, tagCounts, beenLocations', () => {
+    const loc = { id: 'l1', name: 'Café', address: 'Rua X, Lisbon, Portugal',
+                  tripId: 't1', collections: ['c1'], people: ['Ana', 'Pedro'],
+                  tags: ['food'], status: 'been', needsApproval: false };
+    run(`_idxAddLoc(${JSON.stringify(loc)})`);
+    expect(run(`stateIndex.locationById.has('l1')`)).toBe(true);
+    expect(run(`stateIndex.locationsByTrip.get('t1').length`)).toBe(1);
+    expect(run(`stateIndex.locationsByCollection.get('c1').length`)).toBe(1);
+    expect(run(`stateIndex.peopleCounts.get('Ana')`)).toBe(1);
+    expect(run(`stateIndex.tagCounts.get('food')`)).toBe(1);
+    expect(run(`stateIndex.beenLocations.length`)).toBe(1);
+    expect(run(`stateIndex.pendingApproval.length`)).toBe(0);
+    // _region derived from address last segment
+    expect(run(`stateIndex.locationById.get('l1')._region`)).toBe('Portugal');
+  });
+
+  test('_idxRemoveLoc cleans all buckets; peopleCounts/tagCounts decrement to zero and are deleted', () => {
+    const loc = { id: 'l1', name: 'Café', address: 'Rua X, Lisbon, Portugal',
+                  tripId: 't1', collections: ['c1'], people: ['Ana', 'Pedro'],
+                  tags: ['food'], status: 'been', needsApproval: false };
+    run(`_idxRemoveLoc(${JSON.stringify(loc)})`);
+    expect(run(`stateIndex.locationById.has('l1')`)).toBe(false);
+    expect(run(`stateIndex.locationsByTrip.has('t1')`)).toBe(false);
+    expect(run(`stateIndex.locationsByCollection.has('c1')`)).toBe(false);
+    expect(run(`stateIndex.peopleCounts.has('Ana')`)).toBe(false);
+    expect(run(`stateIndex.tagCounts.has('food')`)).toBe(false);
+    expect(run(`stateIndex.beenLocations.length`)).toBe(0);
+  });
+
+  test('shared peopleCounts decrements but does not delete when another location uses same person', () => {
+    const a = { id: 'la', name: 'A', address: '', tripId: null, collections: [], people: ['Shared'], tags: [], status: 'bucket', needsApproval: false };
+    const b = { id: 'lb', name: 'B', address: '', tripId: null, collections: [], people: ['Shared'], tags: [], status: 'bucket', needsApproval: false };
+    run(`_idxAddLoc(${JSON.stringify(a)}); _idxAddLoc(${JSON.stringify(b)})`);
+    expect(run(`stateIndex.peopleCounts.get('Shared')`)).toBe(2);
+    run(`_idxRemoveLoc(${JSON.stringify(a)})`);
+    expect(run(`stateIndex.peopleCounts.get('Shared')`)).toBe(1);
+    run(`_idxRemoveLoc(${JSON.stringify(b)})`);
+    expect(run(`stateIndex.peopleCounts.has('Shared')`)).toBe(false);
+  });
+
+  test('_idxAddTransit populates transitById, transitsByMode, transitsByTrip', () => {
+    const t = { id: 'tr1', mode: 'flight', tripId: 'trip1', date: '2025-01-01', fromName: 'LIS', toName: 'CDG' };
+    run(`_idxAddTransit(${JSON.stringify(t)})`);
+    expect(run(`stateIndex.transitById.has('tr1')`)).toBe(true);
+    expect(run(`stateIndex.transitsByMode.get('flight').length`)).toBe(1);
+    expect(run(`stateIndex.transitsByTrip.get('trip1').length`)).toBe(1);
+  });
+
+  test('_idxRemoveTransit cleans transitById, transitsByMode, transitsByTrip', () => {
+    const t = { id: 'tr1', mode: 'flight', tripId: 'trip1', date: '2025-01-01', fromName: 'LIS', toName: 'CDG' };
+    run(`_idxRemoveTransit(${JSON.stringify(t)})`);
+    expect(run(`stateIndex.transitById.has('tr1')`)).toBe(false);
+    expect(run(`stateIndex.transitsByMode.has('flight')`)).toBe(false);
+    expect(run(`stateIndex.transitsByTrip.has('trip1')`)).toBe(false);
+  });
+
+  test('surgical callsites no longer call rebuildIndexes: saveLocation, deleteFromPopup, promptNewTrip, saveTransit, deleteTransit', () => {
+    // Each function body must use _idxAddLoc/_idxRemoveLoc/_idxAddTransit/_idxRemoveTransit
+    // rather than rebuildIndexes(), confirming the refactor landed.
+    const saveFn = extractFunction('saveLocation');
+    expect(saveFn).toMatch(/_idxRemoveLoc\(|_idxAddLoc\(/);
+    expect(saveFn).not.toMatch(/\brebuildIndexes\(\)/);
+
+    const delPopupFn = extractFunction('deleteFromPopup');
+    expect(delPopupFn).toMatch(/_idxRemoveLoc\(/);
+    expect(delPopupFn).not.toMatch(/\brebuildIndexes\(\)/);
+
+    const newTripFn = extractFunction('promptNewTrip');
+    expect(newTripFn).toMatch(/stateIndex\.tripById\.set/);
+    expect(newTripFn).not.toMatch(/\brebuildIndexes\(\)/);
+
+    const saveTFn = extractFunction('saveTransit');
+    expect(saveTFn).toMatch(/_idxAddTransit\(|_idxRemoveTransit\(/);
+    expect(saveTFn).not.toMatch(/\brebuildIndexes\(\)/);
+
+    const delTFn = extractFunction('deleteTransit');
+    expect(delTFn).toMatch(/_idxRemoveTransit\(/);
+    expect(delTFn).not.toMatch(/\brebuildIndexes\(\)/);
+  });
+});
