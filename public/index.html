@@ -453,7 +453,7 @@ body {
 .popup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .popup-tag {
-  font-size: 9px; padding: 1px 6px; border-radius: 8px;
+  font-size: 12px; padding: 1px 6px; border-radius: 8px;
   background: var(--accent-dim); color: var(--accent); font-weight: 500;
   line-height: 1.4;
 }
@@ -644,6 +644,16 @@ select.filter-select:focus { border-color: var(--accent); }
 }
 .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 textarea.form-input { min-height: 80px; resize: vertical; }
+/* Transit modal: apply form-input styling to bare inputs/selects */
+#transit-modal input:not([type='checkbox']), #transit-modal select, #transit-modal textarea {
+  padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px;
+  font-family: var(--font-body); outline: none; transition: var(--transition);
+  box-sizing: border-box; width: 100%;
+}
+#transit-modal input:focus, #transit-modal select:focus, #transit-modal textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -821,7 +831,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   text-align: center;
 }
 .stat-card .stat-value {
-  font-family: var(--font-display); font-size: 32px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 32px;
   font-weight: 700; color: var(--accent);
 }
 .stat-card .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
@@ -901,8 +911,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .achievement-card.locked { opacity: 0.45; }
 .achievement-emoji { font-size: 28px; margin-bottom: 4px; }
 .achievement-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
-.achievement-desc { font-size: 10px; color: var(--text-muted); line-height: 1.3; }
-.achievement-progress { font-size: 10px; color: var(--accent); font-weight: 600; margin-top: 4px; }
+.achievement-desc { font-size: 12px; color: var(--text-muted); line-height: 1.3; }
+.achievement-progress { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 4px; }
 
 .top-rated-list { display: flex; flex-direction: column; gap: 6px; }
 .top-rated-item {
@@ -991,8 +1001,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 /* Fullscreen mode: panel covers the viewport so the replay map gets all the
    real estate. Map fills the height minus the controls row + route-toggle row
    (~110 px combined). Esc or the toggle button restores the inline layout. */
-.replay-panel.fullscreen { position: fixed; inset: 0; margin: 0; border-radius: 0; border: 0; z-index: 9000; background: var(--bg-primary); }
-.replay-panel.fullscreen #replay-map { height: calc(100vh - 110px); }
+.replay-panel.fullscreen { position: fixed; inset: 0; margin: 0; border-radius: 0; border: 0; z-index: 9000; background: var(--bg-primary); display: flex; flex-direction: column; overflow: hidden; }
+.replay-panel.fullscreen #replay-map { flex: 1; min-height: 0; height: auto; }
 .replay-fullscreen-btn { width: 32px; height: 32px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .replay-fullscreen-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 /* Narrate button "needs API key" state — keeps the button clickable (clicking
@@ -1098,7 +1108,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   text-align: left; padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted); font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.5px; font-size: 12px;
 }
 .import-table td {
   padding: 8px 12px; border-bottom: 1px solid var(--border);
@@ -1165,9 +1175,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   .stat-card { padding: 12px 8px; }
   .modal { width: 100vw; max-width: 100vw; border-radius: 0; max-height: 100vh; }
   /* Bulk edit actions stack vertically */
-  #bulk-view > div:nth-child(3) { flex-direction: column; }
-  #bulk-view > div:nth-child(3) select,
-  #bulk-view > div:nth-child(3) input { width: 100% !important; }
+  .bulk-actions-row { flex-direction: column; }
+  .bulk-actions-row select,
+  .bulk-actions-row input { width: 100% !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════ */
@@ -1946,7 +1956,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="add-small-btn" data-click="clearBulkSelection" style="border-style:solid;font-size:12px;">Clear</button>
     </div>
     <!-- Selection bar + actions -->
-    <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:stretch;">
+    <div class="bulk-actions-row" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:stretch;">
       <!-- Left: selection count -->
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);min-width:100px;">
         <span style="font-size:13px;color:var(--accent);font-weight:600;" id="bulk-selected-count">0 selected</span>
@@ -7509,20 +7519,25 @@ function setReplaySpeed(speed) {
 function updateReplayPositionLabel() {
   const label = document.getElementById('replay-position-label');
   if (!label) return;
-  if (replayState.frames.length === 0) { label.textContent = '— no visits in this filter —'; return; }
-  if (replayState.currentIdx < 0) {
-    label.textContent = `0 / ${replayState.frames.length}`;
-    return;
-  }
-  const frame = replayState.frames[replayState.currentIdx];
-  const total = replayState.frames.length;
-  if (frame.kind === 'transit') {
-    const m = transitMeta(frame.mode);
-    const fromTo = `${frame.fromName || ''} → ${frame.toName || ''}`.trim();
-    label.textContent = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${m.emoji} ${fromTo}`;
+  let text;
+  if (replayState.frames.length === 0) {
+    text = '— no visits in this filter —';
+  } else if (replayState.currentIdx < 0) {
+    text = `0 / ${replayState.frames.length}`;
   } else {
-    label.textContent = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${frame.name}`;
+    const frame = replayState.frames[replayState.currentIdx];
+    const total = replayState.frames.length;
+    if (frame.kind === 'transit') {
+      const m = transitMeta(frame.mode);
+      const fromTo = `${frame.fromName || ''} → ${frame.toName || ''}`.trim();
+      text = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${m.emoji} ${fromTo}`;
+    } else {
+      text = `${replayState.currentIdx + 1} / ${total} · ${frame.date} · ${frame.name}`;
+    }
   }
+  label.textContent = text;
+  const scrubber = document.getElementById('replay-scrubber');
+  if (scrubber) scrubber.setAttribute('aria-valuetext', text);
 }
 
 function onChronoFilterChange() {
@@ -8339,11 +8354,13 @@ async function moveTripLoc(locId, direction) {
   tripLocs[idx].tripOrder = tripLocs[newIdx].tripOrder;
   tripLocs[newIdx].tripOrder = temp;
 
-  // Persist both changes
-  await Promise.all([
-    api('PUT', '/locations/' + tripLocs[idx].id, { tripOrder: tripLocs[idx].tripOrder }),
-    api('PUT', '/locations/' + tripLocs[newIdx].id, { tripOrder: tripLocs[newIdx].tripOrder }),
-  ]);
+  // Persist all items — first move initialises tripOrder for the whole trip
+  try {
+    await Promise.all(tripLocs.map(l => api('PUT', '/locations/' + l.id, { tripOrder: l.tripOrder })));
+  } catch (err) {
+    showToast('Reorder failed: ' + err.message, 'error');
+    return;
+  }
 
   selectTrip(tripId); // re-render
 }
@@ -12248,6 +12265,8 @@ async function addDiscoveryToBucket(idxStr) {
     state.locations.push(mapId(newLoc));
     renderMarkers();
     showToast(`Added "${p.name}" to bucket`, 'success');
+    const btn = document.querySelector(`[data-click="addDiscoveryToBucket"][data-arg0="${idxStr}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '✓ Added'; }
   } catch (err) {
     showToast('Failed to add: ' + err.message, 'error');
   }
@@ -12399,9 +12418,13 @@ async function confirmWebImport() {
   if (selected.length === 0) { showToast('Nothing selected', 'warn'); return; }
   closeWebImportModal();
   let located = 0, unmatched = 0, failed = 0;
+  // Single self-updating progress toast replaces per-item toasts
+  const progressEl = document.createElement('div');
+  progressEl.className = 'toast';
+  document.getElementById('toast-container').appendChild(progressEl);
   for (let i = 0; i < selected.length; i++) {
     const v = selected[i];
-    showToast(`Geocoding ${i + 1}/${selected.length}: ${esc(v.name)}…`, 'info');
+    progressEl.textContent = `Geocoding ${i + 1}/${selected.length}: ${esc(v.name)}…`;
     const query = [v.name, v.address || payload.city || ''].filter(Boolean).join(', ');
     const geo = await geocodeNarratedStop(query);
     const tags = ['timeout'];
@@ -12433,6 +12456,7 @@ async function confirmWebImport() {
     }
     if (i < selected.length - 1) await new Promise(r => setTimeout(r, 200));
   }
+  progressEl.remove();
   if (typeof renderMarkers === 'function') renderMarkers();
   const bits = [`${located} located`];
   if (unmatched > 0) bits.push(`${unmatched} unmatched`);

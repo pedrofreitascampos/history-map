@@ -58,6 +58,7 @@ function makeDOM(venues = []) {
     <input type="checkbox" id="web-import-toggle-all" checked />
     <div id="web-import-list">${venueRows}</div>
     <button id="web-import-confirm-btn">Import 0 selected</button>
+    <div id="toast-container"></div>
   </body></html>`);
   return dom.window.document;
 }

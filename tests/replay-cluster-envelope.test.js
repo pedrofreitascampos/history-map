@@ -325,7 +325,9 @@ describe('replay fullscreen toggle', () => {
   });
 
   test('CSS rule sizes the map to fill the viewport in fullscreen', () => {
-    expect(indexHtml).toMatch(/\.replay-panel\.fullscreen\s+#replay-map\s*\{[^}]*height:\s*calc\(100vh/);
+    // Flex-based approach: panel is flex column, map gets flex:1 + min-height:0
+    expect(indexHtml).toMatch(/\.replay-panel\.fullscreen\s*\{[^}]*flex-direction:\s*column/);
+    expect(indexHtml).toMatch(/\.replay-panel\.fullscreen\s+#replay-map\s*\{[^}]*flex:\s*1/);
   });
 
   test('toggleReplayFullscreen flips the class and invalidates the map size', () => {

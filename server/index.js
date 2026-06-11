@@ -558,10 +558,15 @@ function sanitizeLocationUpdate(updates) {
       delete updates.notes;
     } else {
       let n = updates.notes;
-      n = n.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
-      n = n.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
-      n = n.replace(/<\/?(?:script|iframe)\b[^>]*>/gi, '');
-      n = n.replace(/javascript:/gi, '').replace(/vbscript:/gi, '');
+      // Loop until stable so nested/split patterns like <scr<script>ipt> can't survive one pass
+      let prev;
+      do {
+        prev = n;
+        n = n.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+        n = n.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
+        n = n.replace(/<\/?(?:script|iframe)\b[^>]*>/gi, '');
+        n = n.replace(/javascript:/gi, '').replace(/vbscript:/gi, '');
+      } while (n !== prev);
       if (n.length > 10000) n = n.slice(0, 10000);
       updates.notes = n;
     }
