@@ -35,11 +35,13 @@ function extractFunction(name) {
 }
 
 describe('onSearchProviderChange clears stale search results', () => {
-  test('function body clears #map-search-results innerHTML + hides it', () => {
+  test('function body clears #map-search-results innerHTML (no display:none — _runLiveSearch does not reset it)', () => {
     const fn = extractFunction('onSearchProviderChange');
     expect(fn).toMatch(/getElementById\(\s*['"]map-search-results['"]\s*\)/);
     expect(fn).toMatch(/\.innerHTML\s*=\s*['"]{2}/);
-    expect(fn).toMatch(/\.style\.display\s*=\s*['"]none['"]/);
+    // Must NOT set display:none — _runLiveSearch only writes innerHTML and
+    // would not un-hide the element, leaving live search dead after a switch.
+    expect(fn).not.toMatch(/\.style\.display\s*=\s*['"]none['"]/);
   });
 });
 

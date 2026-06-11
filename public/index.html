@@ -987,7 +987,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .timeline-milestone.tm-most { border-color: var(--accent-dim); }
 .timeline-milestone.tm-trip { border-color: var(--accent-dim); }
 
-.replay-panel { display: flex; flex-direction: column; margin: 0 20px 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-secondary); }
+.replay-panel { display: flex; flex-direction: column; flex-shrink: 0; margin: 0 20px 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-secondary); }
 #replay-map { height: 420px; background: var(--bg-primary); }
 /* Fullscreen mode: panel covers the viewport so the replay map gets all the
    real estate. Map fills the height minus the controls row + route-toggle row
@@ -1226,6 +1226,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 .toast.warn { border-color: #fb923c; color: #fb923c; }
 .toast.error { border-color: var(--danger); color: var(--danger); }
+.toast.success { border-color: #22c55e; color: #22c55e; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-8px); } }
 
@@ -1664,14 +1665,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
     <div class="filter-section">
       <h4>Trip <button class="clear-btn" type="button" data-click="openTripManager">manage</button></h4>
-      <select class="filter-select" id="trip-filter" data-click="applyFilters">
+      <select class="filter-select" id="trip-filter" data-change="applyFilters">
         <option value="">All Trips</option>
       </select>
     </div>
 
     <div class="filter-section">
       <h4>People <button class="clear-btn" type="button" data-click="openPeopleManager">manage</button></h4>
-      <select class="filter-select" id="people-filter" data-click="applyFilters">
+      <select class="filter-select" id="people-filter" data-change="applyFilters">
         <option value="">Everyone</option>
       </select>
     </div>
@@ -1695,7 +1696,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>Google Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
-        <input type="range" class="rating-slider" id="google-rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="google-rating-value" data-click="applyFilters">
+        <input type="range" class="rating-slider" id="google-rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="google-rating-value" data-change="applyFilters">
         <span class="rating-value" id="google-rating-value">0</span>
       </div>
     </div>
@@ -1704,7 +1705,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>My Rating</h4>
       <div class="rating-filter">
         <label>Min</label>
-        <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="rating-value" data-click="applyFilters">
+        <input type="range" class="rating-slider" id="rating-filter" min="0" max="5" step="0.5" value="0" data-input="syncToText" data-target="rating-value" data-change="applyFilters">
         <span class="rating-value" id="rating-value">0</span>
       </div>
     </div>
@@ -1713,7 +1714,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>Want-to-Go Strength</h4>
       <div class="rating-filter">
         <label>Min</label>
-        <input type="range" class="rating-slider" id="bucket-strength-filter" min="0" max="5" step="1" value="0" data-input="syncToText" data-target="bucket-strength-value" data-click="applyFilters">
+        <input type="range" class="rating-slider" id="bucket-strength-filter" min="0" max="5" step="1" value="0" data-input="syncToText" data-target="bucket-strength-value" data-change="applyFilters">
         <span class="rating-value" id="bucket-strength-value">0</span>
       </div>
     </div>
@@ -1805,9 +1806,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="chrono-header">
       <h1>Chronology</h1>
       <div class="chrono-filters">
-        <select id="chrono-year" data-click="onChronoFilterChange"><option value="">All Years</option></select>
-        <select id="chrono-cat" data-click="onChronoFilterChange"><option value="">All Categories</option></select>
-        <select id="chrono-trip" data-click="onChronoFilterChange"><option value="">All Trips</option></select>
+        <select id="chrono-year" data-change="onChronoFilterChange"><option value="">All Years</option></select>
+        <select id="chrono-cat" data-change="onChronoFilterChange"><option value="">All Categories</option></select>
+        <select id="chrono-trip" data-change="onChronoFilterChange"><option value="">All Trips</option></select>
         <button class="btn btn-secondary" data-click="openFileDialog" data-target="timeline-json-input" title="Import Google Timeline JSON to backfill individual places on your chronology. To create a trip bundle instead, use Trips → 📂 Timeline → New Trip." style="font-size:12px;padding:6px 12px;">📅 Import Timeline</button>
       </div>
     </div>
@@ -1846,14 +1847,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="chrono-header">
       <h1>Wishlist</h1>
       <div class="chrono-filters">
-        <select id="wishlist-sort" data-click="onWishlistFilterChange" title="Sort order">
+        <select id="wishlist-sort" data-change="onWishlistFilterChange" title="Sort order">
           <option value="strength">Sort: Strength</option>
           <option value="rating">Sort: Rating</option>
           <option value="name">Sort: Name</option>
           <option value="recent">Sort: Recently added</option>
         </select>
-        <select id="wishlist-tag" data-click="onWishlistFilterChange"><option value="">All Tags</option></select>
-        <select id="wishlist-cat" data-click="onWishlistFilterChange"><option value="">All Categories</option></select>
+        <select id="wishlist-tag" data-change="onWishlistFilterChange"><option value="">All Tags</option></select>
+        <select id="wishlist-cat" data-change="onWishlistFilterChange"><option value="">All Categories</option></select>
         <input type="text" class="form-input" id="wishlist-search" placeholder="🔍 Search..." data-input="onWishlistFilterChange" style="flex:1;max-width:200px;min-width:120px;">
       </div>
     </div>
@@ -1928,20 +1929,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <!-- Filters -->
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
       <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Filter</span>
-      <select class="filter-select" id="bulk-filter-cat" data-click="renderBulkList" style="width:150px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-cat" data-change="renderBulkList" style="width:150px;font-size:12px;">
         <option value="">All categories</option>
       </select>
-      <select class="filter-select" id="bulk-filter-status" data-click="renderBulkList" style="width:150px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-status" data-change="renderBulkList" style="width:150px;font-size:12px;">
         <option value="">All status</option>
         <option value="been">✅ Been</option>
         <option value="bucket">⭐ Bucket</option>
         <option value="uncategorized">❓ Uncategorized</option>
         <option value="pending">⏳ Pending approval</option>
       </select>
-      <select class="filter-select" id="bulk-filter-tag" data-click="renderBulkList" style="width:130px;font-size:12px;">
+      <select class="filter-select" id="bulk-filter-tag" data-change="renderBulkList" style="width:130px;font-size:12px;">
         <option value="">All tags</option>
       </select>
-      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." data-click="debouncedBulkFilter" style="flex:1;min-width:120px;font-size:12px;padding:6px 10px;">
+      <input type="text" class="form-input" id="bulk-filter-name" placeholder="Search by name..." data-input="debouncedBulkFilter" style="flex:1;min-width:120px;font-size:12px;padding:6px 10px;">
       <button class="add-small-btn" data-click="selectAllBulk" style="border-style:solid;font-size:12px;">Select all</button>
       <button class="add-small-btn" data-click="clearBulkSelection" style="border-style:solid;font-size:12px;">Clear</button>
     </div>
@@ -2119,7 +2120,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="transit-mode-chip" data-mode="train" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="train">🚆 Train</button>
       <button class="transit-mode-chip" data-mode="ferry" aria-pressed="false" data-click="setTransitModeFilter" data-arg0="ferry">⛴ Ferry</button>
     </span>
-    <input id="transit-search" type="text" placeholder="Search…" aria-label="Search transits" data-click="renderTransitsView" style="padding:6px 10px; background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; min-width:160px;">
+    <input id="transit-search" type="text" placeholder="Search…" aria-label="Search transits" data-input="renderTransitsView" style="padding:6px 10px; background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; min-width:160px;">
     <span style="margin-left:auto; color:var(--text-secondary); font-size:12px;" id="transit-count-label"></span>
   </div>
 
@@ -3562,9 +3563,10 @@ document.addEventListener('keydown', e => {
   // Context menu first
   const cm = document.getElementById('context-menu');
   if (cm && cm.classList.contains('open')) { cm.classList.remove('open'); return; }
-  // Confirm dialog
+  // Confirm dialog — route through the cancel button so the promise resolves
+  // and restoreFocus runs, rather than remove()ing the overlay mid-await.
   const confirm = document.querySelector('.confirm-overlay');
-  if (confirm) { confirm.remove(); return; }
+  if (confirm) { confirm.querySelector('.confirm-cancel').click(); return; }
   // Modals (close topmost)
   const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal'];
   for (const id of modals) {
@@ -4915,7 +4917,7 @@ const VIEW_HASHES = {
   'map-view': 'map', 'stats-view': 'stats', 'chrono-view': 'chrono',
   'trips-view': 'trips', 'collections-view': 'collections',
   'regions-view': 'regions', 'bulk-view': 'bulk', 'import-view': 'import',
-  'transits-view': 'transits',
+  'transits-view': 'transits', 'wishlist-view': 'wishlist',
 };
 const HASH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_HASHES).map(([k, v]) => [v, k]));
 
@@ -6567,7 +6569,7 @@ function computeReplayFrames(locations, trips, transits, filters) {
       fromLat: v1.lat, fromLng: v1.lng,
       toLat: v2.lat, toLng: v2.lng,
       fromName: v1.name, toName: v2.name,
-      date: v2.date,
+      date: v1.date,
       tripId: v1.tripId || v2.tripId || null,
       synthetic: true,
     });
@@ -6748,6 +6750,10 @@ function renderChronology() {
     }
   }
 
+  // Register under ACTIONS so data-click="_appendChronoPage" can resolve
+  // the nested closure (window[name] would be undefined for inner functions).
+  // Guard for test sandboxes that run this function in isolation without ACTIONS.
+  if (typeof ACTIONS !== 'undefined') ACTIONS._appendChronoPage = _appendChronoPage;
   container.innerHTML = '';
   _appendChronoPage();
 }
@@ -6916,6 +6922,10 @@ function renderWishlist() {
     }
   }
 
+  // Register under ACTIONS so data-click="_appendWishlistPage" can resolve
+  // the nested closure (window[name] would be undefined for inner functions).
+  // Guard for test sandboxes that run this function in isolation without ACTIONS.
+  if (typeof ACTIONS !== 'undefined') ACTIONS._appendWishlistPage = _appendWishlistPage;
   container.innerHTML = '';
   _appendWishlistPage();
 }
@@ -8033,18 +8043,20 @@ function computeTransitStats(transits) {
     // Aircraft
     const ac = (t.aircraft || '').trim();
     if (ac) aircraft.set(ac, (aircraft.get(ac) || 0) + 1);
-    // Airports (both endpoints — counts visits, not just unique airports)
-    for (const ep of [
-      { iata: t.fromIata, name: t.fromName },
-      { iata: t.toIata,   name: t.toName },
-    ]) {
-      const aKey = (ep.iata || ep.name || '').trim();
-      if (!aKey) continue;
-      const existing = airports.get(aKey) || { count: 0, name: ep.name || aKey };
-      existing.count++;
-      // Prefer the longer (named) display string
-      if (ep.name && (!existing.name || ep.name.length > existing.name.length)) existing.name = ep.name;
-      airports.set(aKey, existing);
+    // Airports: only accumulate flight endpoints (not car/train stops).
+    if (t.mode === 'flight') {
+      for (const ep of [
+        { iata: t.fromIata, name: t.fromName },
+        { iata: t.toIata,   name: t.toName },
+      ]) {
+        const aKey = (ep.iata || ep.name || '').trim();
+        if (!aKey) continue;
+        const existing = airports.get(aKey) || { count: 0, name: ep.name || aKey };
+        existing.count++;
+        // Prefer the longer (named) display string
+        if (ep.name && (!existing.name || ep.name.length > existing.name.length)) existing.name = ep.name;
+        airports.set(aKey, existing);
+      }
     }
   }
   const out = {
@@ -9480,7 +9492,7 @@ async function checkPlacesEnabled() {
 
 function getSearchProvider() {
   const v = localStorage.getItem('hm_search_provider');
-  return ['google', 'nominatim', 'photon'].includes(v) ? v : 'google';
+  return ['google', 'nominatim', 'photon'].includes(v) ? v : 'photon';
 }
 function setSearchProvider(val) {
   if (!['google', 'nominatim', 'photon'].includes(val)) return;
@@ -9521,12 +9533,13 @@ async function _refreshNarrateButtonState() {
     // call so toggling back to enabled drops it cleanly.
     if (!btn.dataset.narrateLabel) btn.dataset.narrateLabel = btn.textContent.trim();
     const base = btn.dataset.narrateLabel;
+    // Capture the original title BEFORE overwriting it.
+    if (!btn.dataset.narrateTitle && btn.title) btn.dataset.narrateTitle = btn.title;
     btn.classList.toggle('narrate-btn-disabled', !enabled);
     btn.textContent = enabled ? base : base + ' — needs API key';
     btn.title = enabled
       ? (btn.dataset.narrateTitle || '')
       : 'Anthropic API key not configured — click to add one in Account settings.';
-    if (!btn.dataset.narrateTitle && btn.title) btn.dataset.narrateTitle = btn.title;
   });
 }
 function onSearchProviderChange() {
@@ -9539,7 +9552,7 @@ function onSearchProviderChange() {
   // "Google Places not configured" hint from a Google→Photon switch lingers
   // in the sidebar until the user types again.
   const resultsEl = document.getElementById('map-search-results');
-  if (resultsEl) { resultsEl.innerHTML = ''; resultsEl.style.display = 'none'; }
+  if (resultsEl) resultsEl.innerHTML = '';
 }
 
 // Background sync for freshly imported locations (non-blocking)

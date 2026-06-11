@@ -3289,12 +3289,13 @@ describe('Sidebar live autocomplete (2026-05-31)', () => {
 });
 
 describe('Search provider selector + 3-way typeahead (2026-05-31)', () => {
-  test('getSearchProvider accepts google/nominatim/photon, defaults google', () => {
+  test('getSearchProvider accepts google/nominatim/photon, defaults photon (keyless-friendly)', () => {
     const fn = extractFunction('getSearchProvider');
     expect(fn).toMatch(/'google'/);
     expect(fn).toMatch(/'nominatim'/);
     expect(fn).toMatch(/'photon'/);
-    expect(fn).toMatch(/return\s+\[.+?\]\.includes\(v\)\s*\?\s*v\s*:\s*'google'/);
+    // Default is photon so keyless accounts get a working search out of the box.
+    expect(fn).toMatch(/return\s+\[.+?\]\.includes\(v\)\s*\?\s*v\s*:\s*'photon'/);
   });
 
   test('setSearchProvider rejects unknown providers', () => {

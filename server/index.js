@@ -391,6 +391,7 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
     const toUser = await db.users.findOne({ username: toUsername });
     if (!fromUser) return res.status(404).json({ error: `User "${fromUsername}" not found` });
     if (!toUser) return res.status(404).json({ error: `User "${toUsername}" not found` });
+    if (fromUser._id === toUser._id) return res.status(400).json({ error: 'Cannot merge an account into itself' });
 
     const fromId = fromUser._id;
     const toId = toUser._id;

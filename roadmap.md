@@ -11,38 +11,16 @@ Convention (companion `docs/architecture.md`):
 
 ## Status
 
-**2026-06-11:** 1056 jest (3 skip) + 8 e2e green. **All 10 audit P0s shipped + 13 S2 P1s closed across 4 batches.** ⚠️ **A fresh 4-domain audit (2026-06-11) found 2 CRIT + 2 HIGH functional bugs the green suite misses — 3 are regressions from this week's batches. See [🔴 Audit 2026-06-11 must-fix](#-audit-2026-06-11--must-fix-batch-next-up) — do this next.** Recent ships:
+**2026-06-11:** 1083 jest (3 skip) + 8 e2e green. **S2.5 audit-fix batch shipped** — all 2 CRITs + 4 HIGHs fixed + 6 cheap items + full data-click→data-change/input sweep across 11 selects + 3 sliders + 2 text inputs. Next: S2 perf round 2 or UX P1 collapse. Recent ships:
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Audit-fix (S2.5)** | **2026-06-11** | **+27 (1083)** | **flex-shrink:0 replay · Load-more ACTIONS reg · live-search display fix · 16 data-click→data-change/input · replay date v1 · self-merge guard · Escape→cancel.click · photon default · wishlist hash · narrate tooltip · airports flight-only · toast.success CSS** |
 | Live fixes | 2026-06-11 | +21 (1056) | Photon stale-results clear · Narrate "needs API key" UX · `<form>` autofill on auth + key inputs · pagination `data-click` · overlay-persist regression pin |
 | Replay redesign | 2026-06-04 eve | +12 net | Geography-based cluster zoom · car/train between all consecutive visits · fullscreen toggle |
 | Perf cold-load | 2026-06-04 pm | +14 (1000) | `Cache-Control` + Express auto-ETag on `/api/locations` · initMap before `await loadFromServer` · defer 4 non-critical CDN scripts |
 | Hardening | 2026-06-04 am | +16 (986) | narrate+discover per-endpoint rate limits · CSP `photon.komoot.io` · `render.yaml` `ANTHROPIC_API_KEY` · SDK exact-pin · notes sanitisation |
 | P0 close-out | 2026-06-03 | +210 (970) | Final 10-of-10 from the 2026-06-02 audit (see archive table) |
-
-## 🔴 Audit 2026-06-11 — must-fix batch (NEXT UP)
-
-Full 4-domain audit (security / code+perf / UX/UI / live), all Fable 5 subagents + live browser run + self-verification against source. **Headline: zero security CRITs, but the live pass caught 2 CRIT + 2 HIGH functional bugs the green test suite sails through — and 3 are regressions from the 2026-06-04/06-11 batches.** Sequence this as one "audit-fix" batch (~half-day), each item with a *behavioural* regression test (not a string-pin — that's exactly why these slipped).
-
-| # | Sev | Bug | Root cause | File:line |
-|---|---|---|---|---|
-| 1 | CRIT | **Inline replay map renders ~1px tall** — replay usable only in fullscreen | `.replay-panel` is a flex child of `#chrono-view` with no `flex-shrink:0`; the long timeline squeezes it to min-content 0. Fullscreen works (viewport-sized) which is why the redesign demos looked fine. Fix: `flex-shrink:0`. | `index.html:990` |
-| 2 | CRIT | **Chronology + Wishlist "Load more" dead** — everything past page 1 unreachable | `_appendChronoPage`/`_appendWishlistPage` are nested **inside** their render fns; `data-click` resolves `window[name]` → undefined → `console.warn unknown action`. Regression from 2026-06-11 pagination migration. Hoist both to module scope (move `_chronoEntries`/`_chronoRendered`/`_wishlist*` cursors up) or register in `ACTIONS`. | `index.html:6732, 6900` |
-| 3 | HIGH | **Live search dead after switching provider** | 2026-06-11 stale-results fix sets `#map-search-results` `display:none`; `_runLiveSearch` only writes `innerHTML`, never resets display. Simplest fix: `onSearchProviderChange` clears `innerHTML` only (drop the `display:none`); or `_runLiveSearch` sets `display:'block'` when it has results. | `index.html:9542` vs `4760` |
-| 4 | HIGH | **Bulk Edit filters don't apply on change; select-all then mutates the *unfiltered* set** (silent data-loss) | `#bulk-filter-*` selects + name input use `data-click` instead of `data-change`/`data-input`. Part of a wider sweep — see UX item below. | `index.html:1931-1944` |
-| 5 | HIGH | **Replay plays "arrive, then travel"** — synthetic transit sorts after its arrival visit; knock-on: destination visits inherit the *flight's* cluster so the zoom envelope can stay intercontinental | Synthetic transit stamped `date:v2.date` + merge tie-break puts visits before transits. Fix: splice synthetics positionally between v1→v2, or tie-break synthetic-arrival transits before same-date visits. Regression from the replay redesign. | `index.html:6570, 6579-6583, 6601-6634` |
-| 6 | HIGH | **`merge-accounts` into itself deletes the account** — no `from!==to` guard; no-op updates run, then `remove()` orphans all data | Add `if (fromUser._id === toUser._id) return 400`. | `index.js:383-410` |
-
-**Cross-cutting fix (covers #4 + a wider class):** `data-click` is bound on non-click controls across the app — transit search + bulk search inputs (typing does nothing), 11 filter `<select>`s + 3 rating sliders (keyboard/arrow changes never apply, only mouse-clicks do). Mechanical sweep: text inputs → `data-input`, selects/sliders → `data-change`. Correct siblings (`#marker-size-mode data-change`, `#wishlist-search data-input`) prove the pattern. (`index.html:2122, 1944, 1698/1707/1716, 1808-1856, 1931-1941`)
-
-**Also fix in the same batch (cheap, verified):**
-- **Escape on confirm/prompt dialogs calls `remove()` without resolving the promise** → every `await showConfirm()` leaks + `restoreFocus` skipped. Route Escape through `.confirm-cancel.click()`. (`index.html:3566`)
-- **Fresh accounts default to Google provider with no key** → first sidebar search dead-ends. Default `getSearchProvider()` to `photon`. (`index.html:9483`)
-- **`wishlist-view` missing from `VIEW_HASHES`** → Wishlist leaves the prior tab's hash; reload/share lands wrong. One line. (`index.html:4914`)
-- **`_refreshNarrateButtonState` captures tooltip AFTER overwriting it** → enabled button can show "needs API key" tooltip forever; move the capture line above the `btn.title=` assignment. Also: refresh runs only on switch-to-trips-view, not on `openTripManager` from the Map sidebar → Narrate shows enabled-looking when key absent. (`index.html:9526-9529`)
-- **`computeTransitStats` "🛬 Top airports" lists restaurants** — aggregates all transit endpoints; filter `mode==='flight'`. (`index.html:8036-8048`)
-- **Toast `success` level has no CSS rule** (13 callsites) → renders as info; severity is color-only. Add `.toast.success` + level icons (✓/⚠/✕). `showToast` double-escapes names (callers pre-`esc()` into a `textContent` sink → `Tom &amp; Jerry`). (`index.html:1227, 3602-3609, 3606`)
 
 ## 🟠 Open — pick from here
 
