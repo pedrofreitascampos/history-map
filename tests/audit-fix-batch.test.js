@@ -172,7 +172,7 @@ describe('Escape key resolves confirm promise instead of orphaning it', () => {
   test('Escape routes through .confirm-cancel.click() not remove()', () => {
     const escHandlerIdx = html.indexOf("if (e.key !== 'Escape') return;");
     expect(escHandlerIdx).toBeGreaterThan(-1);
-    const escHandler = html.slice(escHandlerIdx, escHandlerIdx + 800);
+    const escHandler = html.slice(escHandlerIdx, escHandlerIdx + 500);
     // Must route via .click() so the Promise resolves and restoreFocus runs
     expect(escHandler).toMatch(/\.confirm-cancel.*\.click\(\)/);
     // Old pattern: confirm.remove() — must be gone from the Escape handler

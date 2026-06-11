@@ -3649,60 +3649,6 @@ describe('Edit modal dirty guard', () => {
   });
 });
 
-// ─── Nav collapse: 5 primary + overflow drawer ───────────────────────────
-describe('Nav collapse (5 primary tabs + overflow drawer)', () => {
-  test('exactly 6 buttons in .nav-tabs (5 content + More)', () => {
-    const primary = indexHtml.match(/<nav class="nav-tabs">([\s\S]*?)<\/nav>/);
-    expect(primary).toBeTruthy();
-    const btns = [...primary[1].matchAll(/<button/g)];
-    expect(btns).toHaveLength(6); // Map, Trips, Transits, Stats, Chrono, More
-  });
-
-  test('primary nav contains the 5 expected views in order', () => {
-    const primary = indexHtml.match(/<nav class="nav-tabs">([\s\S]*?)<\/nav>/)[1];
-    const views = [...primary.matchAll(/data-view="([^"]+)"/g)].map(m => m[1]);
-    expect(views).toEqual(['map-view', 'trips-view', 'transits-view', 'stats-view', 'chrono-view']);
-  });
-
-  test('#nav-more-btn is the 6th element with aria-haspopup and aria-controls', () => {
-    expect(indexHtml).toMatch(/id="nav-more-btn"[^>]*aria-haspopup="true"/);
-    expect(indexHtml).toMatch(/id="nav-more-btn"[^>]*aria-controls="nav-overflow"/);
-  });
-
-  test('#nav-overflow contains exactly the 5 overflow views', () => {
-    const overflow = indexHtml.match(/<div id="nav-overflow"[^>]*>([\s\S]*?)<\/div>\s*\n/);
-    expect(overflow).toBeTruthy();
-    const views = [...overflow[1].matchAll(/data-view="([^"]+)"/g)].map(m => m[1]);
-    expect(views).toEqual(['wishlist-view', 'collections-view', 'regions-view', 'bulk-view', 'import-view']);
-  });
-
-  test('#approval-badge lives in #nav-overflow (import tab), not in .nav-tabs', () => {
-    const primary = indexHtml.match(/<nav class="nav-tabs">([\s\S]*?)<\/nav>/)[1];
-    expect(primary).not.toContain('approval-badge');
-    expect(indexHtml).toMatch(/<div id="nav-overflow"[\s\S]*?approval-badge/);
-  });
-
-  test('toggleNavOverflow function is defined', () => {
-    expect(indexHtml).toMatch(/function toggleNavOverflow\(\)/);
-  });
-
-  test('OVERFLOW_VIEWS set covers all 5 overflow views', () => {
-    const fn = extractFunction('toggleNavOverflow');
-    expect(fn).toBeTruthy(); // function exists
-    expect(indexHtml).toMatch(/const OVERFLOW_VIEWS\s*=\s*new Set\(/);
-    for (const v of ['wishlist-view', 'collections-view', 'regions-view', 'bulk-view', 'import-view']) {
-      expect(indexHtml).toMatch(new RegExp(`OVERFLOW_VIEWS[\\s\\S]{0,300}${v.replace('-', '\\-')}`));
-    }
-  });
-
-  test('switchView syncs overflow-active class and closes drawer', () => {
-    const fn = extractFunction('switchView');
-    expect(fn).toMatch(/OVERFLOW_VIEWS\.has\(viewId\)/);
-    expect(fn).toMatch(/overflow-active/);
-    expect(fn).toMatch(/_overflow\.hidden\s*=\s*true/);
-  });
-});
-
 // ─── Surgical index helpers (_idxAddLoc / _idxRemoveLoc) ─────────────────
 describe('Surgical index helpers', () => {
   // Isolated VM context: stateIndex + the four helper functions only.

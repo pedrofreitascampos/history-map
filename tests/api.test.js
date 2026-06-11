@@ -1382,16 +1382,14 @@ describe('DOM structure — views nested under #app', () => {
     expect(app.contains(transits)).toBe(true);
   });
 
-  test('nav tab order: Trips → Transits consecutive in primary nav; Collections in overflow drawer', () => {
-    // Primary nav: all tabs inside .nav-tabs (not the overflow div)
-    const primaryTabs = Array.from(doc.querySelectorAll('.nav-tabs .nav-tab')).map(t => t.dataset.view);
-    const trips = primaryTabs.indexOf('trips-view');
-    const transits = primaryTabs.indexOf('transits-view');
+  test('nav tab order: Trips → Transits → Collections (user-requested 2026-05-30)', () => {
+    const tabs = Array.from(doc.querySelectorAll('.nav-tab')).map(t => t.dataset.view);
+    const trips = tabs.indexOf('trips-view');
+    const transits = tabs.indexOf('transits-view');
+    const collections = tabs.indexOf('collections-view');
     expect(trips).toBeGreaterThanOrEqual(0);
-    expect(transits).toBe(trips + 1); // Trips and Transits are consecutive primary tabs
-    // Collections moved to overflow drawer (nav collapse 2026-06-12)
-    const overflowTabs = Array.from(doc.querySelectorAll('#nav-overflow .nav-tab')).map(t => t.dataset.view);
-    expect(overflowTabs).toContain('collections-view');
+    expect(transits).toBe(trips + 1);
+    expect(collections).toBe(transits + 1);
   });
 });
 
