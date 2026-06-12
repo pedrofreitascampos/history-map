@@ -1988,8 +1988,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <!-- Geocode / enrich row -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">Geocode selected:</span>
-      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:5px 10px;" title="Enrich selected via Photon (Komoot) — free, address + OSM category">🌍 Photon</button>
-      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:5px 10px;" title="Enrich selected via OpenStreetMap Nominatim — free, address + OSM category">🗺️ Nominatim</button>
+      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:5px 10px;" title="OpenStreetMap Fast (Photon by Komoot) — free, address + category">🌍 Fast</button>
+      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:5px 10px;" title="OpenStreetMap Detailed (Nominatim) — free, precise address + category">🗺️ Detailed</button>
       <button id="bulk-google-sync-btn" class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="display:none;font-size:12px;padding:5px 10px;" title="Enrich selected with Google Places — ratings, prices, photos (requires API key)">📍 Google Maps</button>
     </div>
     <!-- Location list -->
@@ -2026,7 +2026,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
               <input type="checkbox" id="import-auto-approve"> Auto-approve categories
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;" title="After import, reverse-geocode uncategorized locations via OpenStreetMap to infer categories and addresses. Rate limited (~1/sec), max 50 locations.">
-              <input type="checkbox" id="import-osm-enrich"> 🗺️ Enrich via OSM
+              <input type="checkbox" id="import-osm-enrich"> 🗺️ Enrich via OpenStreetMap
             </label>
             <label id="import-sync-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;" title="After import, look up each location on Google Places to fetch ratings and price levels. Uses your Google API key quota.">
               <input type="checkbox" id="import-google-sync"> 📍 Enrich via Google Places
@@ -2170,8 +2170,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-group" style="margin-bottom:14px;">
         <label style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);">Enrich data <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted);font-size:12px;">— fetch fields from a provider, you'll confirm overwrites</span></label>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-          <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="Photon (Komoot) — free, OSM-based">🌍 Photon</button>
-          <button type="button" id="loc-nominatim-sync-btn" class="add-small-btn" data-click="syncNominatimFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="OpenStreetMap Nominatim — free">🗺️ Nominatim</button>
+          <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="OpenStreetMap Fast (Photon by Komoot) — free">🌍 Fast</button>
+          <button type="button" id="loc-nominatim-sync-btn" class="add-small-btn" data-click="syncNominatimFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="OpenStreetMap Detailed (Nominatim) — free, precise address">🗺️ Detailed</button>
           <button type="button" id="loc-google-sync-btn" class="add-small-btn" data-click="syncFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;display:none;" title="Google Places — requires API key">🔄 Google</button>
         </div>
       </div>
@@ -2482,12 +2482,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           </div>
           <div style="display:flex;gap:6px;margin-top:8px;">
             <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
-              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🌍 Photon</div>
-              <div style="color:var(--text-secondary);">Free · no key · address + OSM category</div>
+              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🌍 Fast</div>
+              <div style="color:var(--text-secondary);">Free · no key · quick address lookup</div>
             </div>
             <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
-              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🗺️ Nominatim</div>
-              <div style="color:var(--text-secondary);">Free · no key · detailed address + OSM category</div>
+              <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🗺️ Detailed</div>
+              <div style="color:var(--text-secondary);">Free · no key · precise address</div>
             </div>
             <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🔄 Google</div>
@@ -4615,7 +4615,7 @@ async function bulkEnrichOSM() {
   const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
   const uncategorized = selected.filter(l => l.category === 'location' && l.lat && l.lng);
   if (uncategorized.length === 0) { showToast('No uncategorized locations in selection to enrich.', 'info'); return; }
-  showToast(`Enriching ${uncategorized.length} locations via Nominatim...`);
+  showToast(`Enriching ${uncategorized.length} locations via OpenStreetMap (Detailed)...`);
   const count = await enrichInBackground(uncategorized, {
     onProgress(done, total, found) {
       const el = document.getElementById('bulk-selected-count');
@@ -4625,7 +4625,7 @@ async function bulkEnrichOSM() {
   updateBulkCount();
   _bulkVScrollState = null;
   _bulkVScrollPaint();
-  showToast(`Enriched ${count} locations via Nominatim`);
+  showToast(`Enriched ${count} locations via OpenStreetMap (Detailed)`);
 }
 
 // Bulk variant of syncPhotonFromEditModal. Targets selected locations that
@@ -4636,7 +4636,7 @@ async function bulkEnrichPhoton() {
   const selected = state.locations.filter(l => bulkSelected.has(l.id || l._id));
   const targets = selected.filter(l => l.name && ((l.category === 'location' || !l.category) || !l.address));
   if (targets.length === 0) { showToast('No selected locations need Photon enrichment.', 'info'); return; }
-  showToast(`Enriching ${targets.length} locations via Photon...`);
+  showToast(`Enriching ${targets.length} locations via OpenStreetMap (Fast)...`);
   let done = 0, found = 0;
   for (const loc of targets) {
     try {
@@ -4680,7 +4680,7 @@ async function bulkEnrichPhoton() {
   _bulkVScrollState = null;
   _bulkVScrollPaint();
   renderMarkers();
-  showToast(`Enriched ${found}/${targets.length} via Photon`);
+  showToast(`Enriched ${found}/${targets.length} via OpenStreetMap (Fast)`);
 }
 
 async function bulkSyncGoogle() {
@@ -10037,17 +10037,17 @@ async function syncPhotonFromEditModal() {
     }
     const diffs = buildEnrichmentDiffs(loc, proposed);
     if (diffs.length === 0) {
-      showToast('Photon: nothing to add — all returned fields already match.', 'info');
+      showToast('Fast: nothing to add — all returned fields already match.', 'info');
       return;
     }
-    const result = await showEnrichmentConfirm('Photon', diffs);
-    if (!result) { showToast('Photon: cancelled.', 'info'); return; }
+    const result = await showEnrichmentConfirm('OpenStreetMap (Fast)', diffs);
+    if (!result) { showToast('Fast: cancelled.', 'info'); return; }
     const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_photonSyncedAt');
-    showToast(applied ? `Photon: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Photon: nothing applied', applied ? 'success' : 'info');
+    showToast(applied ? `Fast: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Fast: nothing applied', applied ? 'success' : 'info');
   } catch (err) {
-    showToast('Photon sync failed: ' + err.message, 'error');
+    showToast('Fast sync failed: ' + err.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🌍 Photon'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🌍 Fast'; }
   }
 }
 
@@ -10078,7 +10078,7 @@ async function syncNominatimFromEditModal() {
     if (!r.ok) throw new Error('Nominatim ' + r.status);
     const json = await r.json();
     const it = Array.isArray(json) ? json[0] : json;
-    if (!it) { showToast('Nominatim: no match.', 'warn'); return; }
+    if (!it) { showToast('Detailed: no match.', 'warn'); return; }
     const proposed = {};
     if (it.display_name) proposed.address = it.display_name;
     if (Number.isFinite(parseFloat(it.lat))) proposed.lat = parseFloat(it.lat);
@@ -10089,17 +10089,17 @@ async function syncNominatimFromEditModal() {
     }
     const diffs = buildEnrichmentDiffs(loc, proposed);
     if (diffs.length === 0) {
-      showToast('Nominatim: nothing to add — all returned fields already match.', 'info');
+      showToast('Detailed: nothing to add — all returned fields already match.', 'info');
       return;
     }
-    const result = await showEnrichmentConfirm('Nominatim', diffs);
-    if (!result) { showToast('Nominatim: cancelled.', 'info'); return; }
+    const result = await showEnrichmentConfirm('OpenStreetMap (Detailed)', diffs);
+    if (!result) { showToast('Detailed: cancelled.', 'info'); return; }
     const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_nominatimSyncedAt');
-    showToast(applied ? `Nominatim: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Nominatim: nothing applied', applied ? 'success' : 'info');
+    showToast(applied ? `Detailed: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Detailed: nothing applied', applied ? 'success' : 'info');
   } catch (err) {
-    showToast('Nominatim sync failed: ' + err.message, 'error');
+    showToast('Detailed sync failed: ' + err.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🗺️ Nominatim'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🗺️ Detailed'; }
   }
 }
 

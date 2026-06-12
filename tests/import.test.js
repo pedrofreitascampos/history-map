@@ -3378,17 +3378,17 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
     // uses the old conservative fill-only path (per the bulkEnrichPhoton test below).
     const photon = extractFunction('syncPhotonFromEditModal');
     const nominatim = extractFunction('syncNominatimFromEditModal');
-    expect(photon).toMatch(/showEnrichmentConfirm\('Photon'/);
+    expect(photon).toMatch(/showEnrichmentConfirm\('OpenStreetMap \(Fast\)'/);
     expect(photon).toMatch(/buildEnrichmentDiffs\(loc,\s*proposed\)/);
     expect(photon).toMatch(/applyEnrichmentUpdates\(loc,[\s\S]{0,80}'_photonSyncedAt'\)/);
-    expect(nominatim).toMatch(/showEnrichmentConfirm\('Nominatim'/);
+    expect(nominatim).toMatch(/showEnrichmentConfirm\('OpenStreetMap \(Detailed\)'/);
     expect(nominatim).toMatch(/buildEnrichmentDiffs\(loc,\s*proposed\)/);
     expect(nominatim).toMatch(/applyEnrichmentUpdates\(loc,[\s\S]{0,80}'_nominatimSyncedAt'\)/);
   });
 
-  test('bulk toolbar has Photon button alongside existing Nominatim (OSM) + Google', () => {
-    expect(indexHtml).toMatch(/data-arg0="bulkEnrichPhoton"[\s\S]{0,200}🌍 Photon/);
-    expect(indexHtml).toMatch(/data-arg0="bulkEnrichOSM"[\s\S]{0,200}🗺️ Nominatim/);
+  test('bulk toolbar has Fast/Detailed buttons alongside Google', () => {
+    expect(indexHtml).toMatch(/data-arg0="bulkEnrichPhoton"[\s\S]{0,200}🌍 Fast/);
+    expect(indexHtml).toMatch(/data-arg0="bulkEnrichOSM"[\s\S]{0,200}🗺️ Detailed/);
     expect(indexHtml).toMatch(/data-arg0="bulkSyncGoogle"[\s\S]{0,200}📍 Google/);
   });
 
@@ -3401,8 +3401,8 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
   });
 
   test('Account modal shows three provider explainer cards', () => {
-    expect(indexHtml).toMatch(/🌍 Photon[\s\S]{0,200}Free · no key/);
-    expect(indexHtml).toMatch(/🗺️ Nominatim[\s\S]{0,300}Free · no key/);
+    expect(indexHtml).toMatch(/🌍 Fast[\s\S]{0,200}Free · no key/);
+    expect(indexHtml).toMatch(/🗺️ Detailed[\s\S]{0,300}Free · no key/);
     expect(indexHtml).toMatch(/🔄 Google[\s\S]{0,300}Paid · key required/);
   });
 

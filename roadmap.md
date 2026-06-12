@@ -23,7 +23,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 - **Sidebar twin inputs ("Add place" / "Search place") confusable** — replace with single search-or-create input OR a floating "+ Add" FAB in bottom-right of map.
 - **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
-- **Provider & AI jargon leaks** — "Photon", "Nominatim", "OSM", "regex", "Haiku" in user-facing UI. Lead with the meaningful axis ("Google — best, needs paid key" / "OpenStreetMap — free"); chips "🤖 AI-parsed" / "📋 Built-in parser". Keep tech names in tooltips. (`index.html:2454-2472, 12209-12271`)
 
 ### Longer-term (P1+, scoped)
 
