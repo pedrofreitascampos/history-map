@@ -1,5 +1,5 @@
 // Power features regression tests — S4 batch.
-// Static markup + vm-sandbox coverage for On This Day, Year in Review, and future power features.
+// Static markup + vm-sandbox coverage for On This Day, Year in Review, Neighborhoods, and future power features.
 
 const path = require('path');
 const fs = require('fs');
@@ -191,5 +191,108 @@ describe('Year in Review — static markup', () => {
     const modalsPos = block.indexOf('const modals = [');
     expect(yrPos).toBeGreaterThan(-1);
     expect(yrPos).toBeLessThan(modalsPos);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 4. Neighborhoods — static + unit
+// ──────────────────────────────────────────────────────────────────────────────
+describe('Neighborhoods — static markup', () => {
+  test('.neighborhood-label CSS rule exists at ≥12px', () => {
+    expect(indexHtml).toMatch(/\.neighborhood-label\s*\{[^}]*font-size:\s*1[2-9]px/);
+  });
+
+  test('_nhLayer variable declared', () => {
+    expect(indexHtml).toContain('_nhLayer');
+  });
+
+  test('all neighborhood functions defined', () => {
+    ['_haversineM', '_clusterLocations', '_clusterLabel', '_updateNeighborhoodLayer'].forEach(fn => {
+      expect(indexHtml).toContain(`function ${fn}`);
+    });
+  });
+
+  test('_updateNeighborhoodLayer wired to zoomend in initMap', () => {
+    const initMap = extractFunction('initMap');
+    expect(initMap).toContain('_updateNeighborhoodLayer');
+    expect(initMap).toMatch(/zoomend.*_updateNeighborhoodLayer|_updateNeighborhoodLayer.*zoomend/);
+  });
+
+  test('_updateNeighborhoodLayer called in startApp after renderMarkers', () => {
+    const startApp = extractFunction('startApp');
+    const renderPos = startApp.indexOf('renderMarkers()');
+    const nhPos = startApp.indexOf('_updateNeighborhoodLayer()');
+    expect(renderPos).toBeGreaterThan(-1);
+    expect(nhPos).toBeGreaterThan(renderPos);
+  });
+});
+
+describe('Neighborhoods — clustering logic', () => {
+  function runCluster(locs, radiusM) {
+    const code = [
+      extractFunction('_haversineM'),
+      extractFunction('_clusterLocations'),
+      `__result = _clusterLocations(${JSON.stringify(locs)}, ${radiusM || 400});`,
+    ].join('\n');
+    const ctx = vm.createContext({ Math, Number, Array, Object, Uint8Array, __result: null });
+    vm.runInContext(code, ctx);
+    return ctx.__result;
+  }
+
+  test('two places within 400m cluster together', () => {
+    const locs = [
+      { status: 'been', lat: 38.7167, lng: -9.1395, address: 'Bairro Alto, Lisbon, Portugal' },
+      { status: 'been', lat: 38.7185, lng: -9.1421, address: 'Bairro Alto Bar, Lisbon, Portugal' },
+    ];
+    const clusters = runCluster(locs, 400);
+    expect(clusters.length).toBe(1);
+    expect(clusters[0].length).toBe(2);
+  });
+
+  test('two places >400m apart do not cluster', () => {
+    const locs = [
+      { status: 'been', lat: 38.7167, lng: -9.1395, address: 'Bairro Alto, Lisbon, Portugal' },
+      { status: 'been', lat: 38.6916, lng: -9.2160, address: 'Belém Tower, Lisbon, Portugal' },
+    ];
+    const clusters = runCluster(locs, 400);
+    expect(clusters.length).toBe(0); // neither pair meets minPts=2 on its own
+  });
+
+  test('bucket/wishlist places are excluded from clusters', () => {
+    const locs = [
+      { status: 'been', lat: 38.7167, lng: -9.1395, address: 'Place A, Lisbon, Portugal' },
+      { status: 'bucket', lat: 38.7185, lng: -9.1421, address: 'Wish B, Lisbon, Portugal' },
+    ];
+    const clusters = runCluster(locs, 400);
+    expect(clusters.length).toBe(0);
+  });
+
+  test('_clusterLabel returns common first-segment when ≥2 share it', () => {
+    const code = [
+      extractFunction('_clusterLabel'),
+      `__r = _clusterLabel([
+        { address: 'Bairro Alto, Lisbon, Portugal' },
+        { address: 'Bairro Alto, Lisbon, Portugal' },
+        { address: 'Other Place, Lisbon, Portugal' },
+      ]);`,
+    ].join('\n');
+    const ctx = vm.createContext({ Object, Array, String, __r: null });
+    vm.runInContext(code, ctx);
+    expect(ctx.__r).toContain('Bairro Alto');
+    expect(ctx.__r).toContain('3');
+  });
+
+  test('_clusterLabel falls back to "N places" when no common segment', () => {
+    const code = [
+      extractFunction('_clusterLabel'),
+      `__r = _clusterLabel([
+        { address: 'Place A, Lisbon' },
+        { address: 'Place B, Lisbon' },
+        { address: 'Place C, Lisbon' },
+      ]);`,
+    ].join('\n');
+    const ctx = vm.createContext({ Object, Array, String, __r: null });
+    vm.runInContext(code, ctx);
+    expect(ctx.__r).toBe('3 places');
   });
 });

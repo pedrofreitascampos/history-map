@@ -59,8 +59,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 Ranked by impact-vs-effort. Pick 2-3 per sprint.
 
-1. **🏘️ Spatial cluster "Neighborhoods" detector** — auto-cluster nearby Been places into named micro-areas at zoom ≥ 13.
-2. **📷 Photo timeline** — photos already attached via EXIF; render chronologically alongside visits.
+1. **📷 Photo timeline** — photos already attached via EXIF; render chronologically alongside visits.
 3. **🛣️ Plan-a-Day trip builder from Wishlist** — select 3-5 wishlist → auto walking-order route (OSRM) → named Day Trip.
 4. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
 5. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
