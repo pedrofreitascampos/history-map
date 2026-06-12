@@ -1,5 +1,5 @@
 // Power features regression tests — S4 batch.
-// Static markup + vm-sandbox coverage for On This Day, Year in Review, Neighborhoods, and future power features.
+// Static markup + vm-sandbox coverage for On This Day, Year in Review, Neighborhoods, Photo Timeline, and future power features.
 
 const path = require('path');
 const fs = require('fs');
@@ -294,5 +294,47 @@ describe('Neighborhoods — clustering logic', () => {
     const ctx = vm.createContext({ Object, Array, String, __r: null });
     vm.runInContext(code, ctx);
     expect(ctx.__r).toBe('3 places');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 5. Photo Timeline — static markup
+// ──────────────────────────────────────────────────────────────────────────────
+describe('Photo Timeline — static markup', () => {
+  test('#chrono-photo-toggle button exists with data-click="toggleChronoPhotos"', () => {
+    expect(indexHtml).toMatch(/id="chrono-photo-toggle"[\s\S]{0,100}data-click="toggleChronoPhotos"/);
+  });
+
+  test('_chronoShowPhotos variable declared', () => {
+    expect(indexHtml).toContain('_chronoShowPhotos');
+  });
+
+  test('toggleChronoPhotos function defined', () => {
+    expect(indexHtml).toContain('function toggleChronoPhotos()');
+  });
+
+  test('renderChronology reads _chronoShowPhotos and accesses loc.media', () => {
+    const fn = extractFunction('renderChronology');
+    expect(fn).toContain('_chronoShowPhotos');
+    expect(fn).toContain('loc.media');
+    expect(fn).toContain('takenAt');
+  });
+
+  test('photo entries render with ti-photo class and 📷 emoji', () => {
+    const fn = extractFunction('renderChronology');
+    expect(fn).toContain('ti-photo');
+    expect(fn).toContain('📷');
+  });
+
+  test('.ti-photo CSS rule exists', () => {
+    expect(indexHtml).toMatch(/\.timeline-item\.ti-photo\s*\{/);
+  });
+
+  test('photo entries respect year/cat/trip filters (same guards as visits)', () => {
+    const fn = extractFunction('renderChronology');
+    const photoBlock = fn.slice(fn.indexOf('_chronoShowPhotos'));
+    expect(photoBlock).toContain('yearFilter');
+    expect(photoBlock).toContain('catFilter');
+    expect(photoBlock).toContain('tripFilter');
   });
 });
