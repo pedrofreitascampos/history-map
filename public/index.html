@@ -66,6 +66,9 @@
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body: 'DM Sans', -apple-system, sans-serif;
   --sidebar-width: 320px;
+  --overlay-base: rgba(255,255,255,0.04);
+  --overlay-hover: rgba(255,255,255,0.06);
+  --overlay-strong: rgba(255,255,255,0.12);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -108,7 +111,7 @@ body {
 
 .nav-tabs {
   display: flex; gap: 2px;
-  background: rgba(255,255,255,0.04);
+  background: var(--overlay-base);
   border-radius: var(--radius);
   padding: 3px;
 }
@@ -121,7 +124,7 @@ body {
   position: relative;
   display: flex; align-items: center; gap: 6px;
 }
-.nav-tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
+.nav-tab:hover { color: var(--text-primary); background: var(--overlay-hover); }
 .nav-tab.active { color: var(--accent); background: var(--accent-dim); }
 .nav-tab .badge {
   background: var(--danger);
@@ -133,7 +136,7 @@ body {
   padding: 6px 12px; background: var(--bg-secondary); color: var(--text-secondary);
   border: 1px solid var(--border); border-radius: 16px; cursor: pointer; font-size: 13px;
 }
-.transit-mode-chip:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.transit-mode-chip:hover { background: var(--overlay-hover); color: var(--text-primary); }
 .transit-mode-chip.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
 .transit-card {
   display: flex; align-items: center; gap: 12px; padding: 12px 16px;
@@ -621,11 +624,11 @@ select.filter-select:focus { border-color: var(--accent); }
 .modal-header h2 { font-family: var(--font-display); font-size: 22px; }
 .modal-close {
   width: 32px; height: 32px; border-radius: 50%; border: none;
-  background: rgba(255,255,255,0.06); color: var(--text-secondary);
+  background: var(--overlay-hover); color: var(--text-secondary);
   cursor: pointer; font-size: 18px; display: flex;
   align-items: center; justify-content: center; transition: var(--transition);
 }
-.modal-close:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+.modal-close:hover { background: var(--overlay-strong); color: var(--text-primary); }
 
 .modal-body { padding: 20px 24px; }
 
@@ -2464,19 +2467,19 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             <option value="photon">OpenStreetMap · Fast (free)</option>
             <option value="nominatim">OpenStreetMap · Detailed (free)</option>
           </select>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
             All three providers can also enrich locations from the edit modal (🌍 / 🗺️ / 🔄 buttons) and the bulk-edit toolbar.
           </div>
           <div style="display:flex;gap:6px;margin-top:8px;">
-            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+            <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🌍 Photon</div>
               <div style="color:var(--text-secondary);">Free · no key · address + OSM category</div>
             </div>
-            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+            <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🗺️ Nominatim</div>
               <div style="color:var(--text-secondary);">Free · no key · detailed address + OSM category</div>
             </div>
-            <div style="flex:1;font-size:10px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
+            <div style="flex:1;font-size:12px;background:var(--bg-tertiary);padding:6px 8px;border-radius:6px;">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px;">🔄 Google</div>
               <div style="color:var(--text-secondary);">Paid · key required · rating + price + address</div>
             </div>
@@ -9617,7 +9620,7 @@ async function openAccountModal() {
               autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
             <button type="submit" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Save</button>
           </form>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">5,000 free searches + 5,000 free syncs per month. Key stored on server, never exposed to browser.</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">5,000 free searches + 5,000 free syncs per month. Key stored on server, never exposed to browser.</div>
         </div>
       </div>`;
     }
@@ -9651,7 +9654,7 @@ async function openAccountModal() {
               autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;" data-focusin="clearIfMasked">
             <button type="submit" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Save</button>
           </form>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/import.</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Key stored on server, never exposed to browser. ~$0.001/import.</div>
         </div>
       </div>`;
     }
@@ -11568,6 +11571,7 @@ const THEMES = {
       '--text-primary':'#1a1a1a','--text-secondary':'#555','--text-muted':'#888',
       '--border':'rgba(0,0,0,0.1)','--border-strong':'rgba(0,0,0,0.2)',
       '--accent':'#b8860b','--accent-dim':'rgba(184,134,11,0.12)','--accent-glow':'rgba(184,134,11,0.3)',
+      '--overlay-base':'rgba(0,0,0,0.04)','--overlay-hover':'rgba(0,0,0,0.06)','--overlay-strong':'rgba(0,0,0,0.12)',
     }
   },
   ocean: {

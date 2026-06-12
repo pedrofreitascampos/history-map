@@ -233,3 +233,34 @@ describe('Toast .success CSS rule exists', () => {
     expect(html).toMatch(/\.toast\.success\s*\{[^}]*border-color:/);
   });
 });
+
+// ── 13. Parchment theme overlay tokens ───────────────────────────────────────
+describe('Parchment theme overlay tokens', () => {
+  test(':root defines --overlay-base, --overlay-hover, --overlay-strong', () => {
+    const rootIdx = html.indexOf(':root {');
+    const rootBlock = html.slice(rootIdx, html.indexOf('}', rootIdx) + 1);
+    expect(rootBlock).toMatch(/--overlay-base/);
+    expect(rootBlock).toMatch(/--overlay-hover/);
+    expect(rootBlock).toMatch(/--overlay-strong/);
+  });
+
+  test('nav-tabs uses var(--overlay-base) not hardcoded rgba(255,255,255,0.04)', () => {
+    expect(html).toMatch(/\.nav-tabs\s*\{[^}]*var\(--overlay-base\)/);
+    const navIdx = html.indexOf('.nav-tabs {');
+    const navBlock = html.slice(navIdx, html.indexOf('}', navIdx));
+    expect(navBlock).not.toMatch(/rgba\(255,255,255,0\.04\)/);
+  });
+
+  test('modal-close uses var(--overlay-hover/strong) not hardcoded rgba', () => {
+    expect(html).toMatch(/\.modal-close\s*\{[^}]*var\(--overlay-hover\)/);
+    expect(html).toMatch(/\.modal-close:hover\s*\{[^}]*var\(--overlay-strong\)/);
+  });
+
+  test('parchment theme sets dark overlay tokens', () => {
+    const parchIdx = html.indexOf('parchment: {');
+    expect(parchIdx).toBeGreaterThan(-1);
+    // Grab from parchment: { to the closing } of its vars block
+    const parchBlock = html.slice(parchIdx, html.indexOf('  },', parchIdx) + 4);
+    expect(parchBlock).toMatch(/--overlay-base.*rgba\(0,0,0/);
+  });
+});
