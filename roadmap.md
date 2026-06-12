@@ -38,12 +38,12 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ### Perf round 2 (2 of 8 left)
 
 - **`rebuildIndexes()` O(n) called 28 times/session** including on every modal close. Surgical update on insert/update/delete instead of full rebuild. Touches many call sites — biggest refactor of the bunch.
-- **RainViewer frame-list cache** — 5 min TTL; toggling off+on doesn't re-fetch.
+~~**RainViewer frame-list cache**~~ ✅ already implemented (5-min TTL at `_rainviewerFramesCache`)
 
 ### Technical / correctness
 
-- **(Audit 2026-06-11) `moveTripLoc` rewrites `tripOrder` for the whole trip but persists only the swapped pair, no rollback, dropped promise** — reordering can revert on reload. Persist all changed orders + try/catch + toast. (`index.html:8271-8284`)
-- **(Audit 2026-06-11) Regions point-in-polygon drops coastal/island places** — NYC vanishes entirely; Belém/Jerónimos land in "Setúbal" (simplified admin-1 geometry, no nearest-region fallback). Add nearest-centroid snap within ~50km. Also the summary line doesn't refresh on Country granularity. (`index.html:8894-8961, 9251`)
+~~**(Audit 2026-06-11) `moveTripLoc` persists only swapped pair**~~ ✅ already `Promise.all(tripLocs.map(...))` + try/catch
+~~**(Audit 2026-06-11) Regions drops coastal/island places**~~ ✅ nearest-centroid snap shipped in prior session
 
 ### Live functionality
 
@@ -55,19 +55,19 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ~~**Numeric stats in mono font**~~ ✅ 2026-06-12 — `.trip-stat-mini .ts-val`, `.people-row .rank`, `.transit-stat-card .tsc-km` → ui-monospace stack
 - **Sidebar twin inputs ("Add place" / "Search place") confusable** — replace with single search-or-create input OR a floating "+ Add" FAB in bottom-right of map.
 - **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
-- **(Audit 2026-06-11) Narrate / Web-Import / Discover modals bypass the modal system** — open via `style.display='flex'` so they miss the Escape list, focus trap, backdrop handler, `focusModal`/`restoreFocus`, and use unstyled `<h3>` headers (body font). Migrate to `.open` + add to the Escape allowlist + `h3`→`h2`. (`index.html:9957, 12296, 12080`)
-- **(Audit 2026-06-11) Edit modal discards a 3-section form on stray backdrop/Escape** — no dirty-state guard; tags/visits/people/notes/photos lost silently. Route close through `showConfirm('Discard changes?')` when dirty. (`index.html:3580-3588`)
+~~**(Audit 2026-06-11) Narrate / Web-Import / Discover modals bypass modal system**~~ ✅ migrated to `.open` + Escape + focus trap in prior session
+~~**(Audit 2026-06-11) Edit modal discards on stray backdrop/Escape**~~ ✅ `_editSnapshot` dirty-check + showConfirm already in code
 - **(Audit 2026-06-11) Three names for one concept** — Wishlist / Bucket List / Want-to-Go, and ⭐ doubles as the rating glyph. Standardize on "Wishlist" in copy; reserve ⭐ for ratings, ♥ for wishlist strength. (`index.html:1586, 2189, 1656, 6853`)
 - **(Audit 2026-06-11) Provider & AI jargon leaks** — "Photon", "Nominatim", "OSM", "regex", "Haiku" in user-facing UI. Lead with the meaningful axis ("Google — best, needs paid key" / "OpenStreetMap — free"); chips "🤖 AI-parsed" / "📋 Built-in parser". Keep tech names in tooltips. (`index.html:2454-2472, 12209-12271`)
-- **(Audit 2026-06-11) Web-import geocoding floods ~15 stacked toasts** (one per venue, modal already closed) — single self-updating progress toast + summary at end. (`index.html:12338`)
-- **(Audit 2026-06-11) Discover results have no "added" state** — `+ Bucket` stays enabled → silent duplicates. Disable + swap to "✓ Added" on success. (`index.html:12122, 12163`)
-- **(Audit 2026-06-11) Approval badge points at Import but the queue renders below several screens of import sections** — scroll the queue into view (or render it above `.import-sections`) when count > 0. (`index.html:1604, 2073`)
-- **(Audit 2026-06-11) Add/Edit Transit modal is unstyled** — inputs lack `.form-input`, no `#transit-modal` CSS, `.form-row` grid misused → browser-default chrome. Apply the standard `.form-group` pattern. (`index.html:2532-2568`)
-- **(Audit 2026-06-11) Parchment (light) theme inherits hardcoded white-overlay surfaces** — nav tabs/hover/modal-close/transit-chip use `rgba(255,255,255,…)` → invisible in light mode; engine chip hardcodes `#7c3aed`. Add `--overlay-weak/-strong` tokens per theme. (`index.html:112, 125, 625, 12270`)
+~~**(Audit 2026-06-11) Web-import geocoding floods toasts**~~ ✅ single self-updating progress toast already in code
+~~**(Audit 2026-06-11) Discover "added" state**~~ ✅ `btn.disabled = true; btn.textContent = '✓ Added'` already in code
+~~**(Audit 2026-06-11) Approval badge scroll**~~ ✅ `scrollIntoView` when Import tab active already in code
+~~**(Audit 2026-06-11) Transit modal unstyled**~~ ✅ `#transit-modal input/select/textarea` CSS already in code
+~~**(Audit 2026-06-11) Parchment theme hardcoded white-overlay surfaces**~~ ✅ `--overlay-base/hover/strong` tokens shipped in prior session
 
 **A11y / mobile (audit 2026-06-11)**
 - **No keyboard path to set/fix coordinates** — every marker is pointer-only `draggable`, lat/lng row hidden except on save-fail. Add an "✎ Edit coordinates" disclosure in the edit modal's Identity section. (`index.html:3883, 2162`)
-- **Replay fullscreen height assumes desktop chrome** (`calc(100vh - 110px)`) — mobile wraps controls to 2-3 rows → map overdraws, scrubber pushed off-viewport. Make `.fullscreen` a flex column with `#replay-map { flex:1; height:auto }`. (`index.html:995, 1016`)
+~~**Replay fullscreen height assumes desktop chrome**~~ ✅ `.fullscreen` is already `flex-direction:column` + `#replay-map { flex:1; height:auto }`
 - **Sub-12px reading type** — `.popup-tag` 9px, achievement desc/progress 10px, import-table th 10px, account key/provider hints 10px. Raise to 11-12px. (`index.html:457, 905, 1102, 2457`)
 - **Replay scrubber announces bare indices** — add `aria-valuetext` = the position label inside `updateReplayPositionLabel`. (`index.html:1821, 7446`)
 - **Bulk-edit mobile fix is a fragile `nth-child(3)` selector** — class-target `.bulk-actions-row`. (`index.html:1169`)
