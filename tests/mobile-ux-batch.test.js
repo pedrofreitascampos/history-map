@@ -142,8 +142,9 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
     expect(indexHtml).toMatch(/function\s+saveLocation[\s\S]{0,600}_unhideLocCoordsRow\(\)/);
   });
 
-  test('static pin: quickAddPlace fires _autoGeocodeAddModalIfNeeded after setting name', () => {
-    expect(indexHtml).toMatch(/function\s+quickAddPlace[\s\S]{0,600}_autoGeocodeAddModalIfNeeded\(\)/);
+  test('static pin: quickAddPlace delegates to openAddModal (FAB replaces sidebar input)', () => {
+    expect(indexHtml).toMatch(/function\s+quickAddPlace\(\)[\s\S]{0,100}openAddModal\(\)/);
+    expect(indexHtml).toMatch(/id="add-place-fab"/);
   });
 });
 

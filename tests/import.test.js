@@ -2694,14 +2694,10 @@ describe('Sidebar+modal restructure (2026-05-31)', () => {
     expect(indexHtml).not.toMatch(/id="loc-search-results"/);
   });
 
-  test('sidebar has BOTH quick-add-input AND map-search-input at the top', () => {
-    expect(indexHtml).toMatch(/id="quick-add-input"[^>]*placeholder="Add place"/);
+  test('sidebar has map-search-input; quick-add-input replaced by FAB', () => {
     expect(indexHtml).toMatch(/id="map-search-input"[^>]*placeholder="Search place"/);
-    // Quick-add comes BEFORE search-place in source (top of the sidebar).
-    const quickIdx = indexHtml.indexOf('id="quick-add-input"');
-    const searchIdx = indexHtml.indexOf('id="map-search-input"');
-    expect(quickIdx).toBeGreaterThan(-1);
-    expect(searchIdx).toBeGreaterThan(quickIdx);
+    expect(indexHtml).not.toMatch(/id="quick-add-input"/);
+    expect(indexHtml).toMatch(/id="add-place-fab"/);
   });
 
   test('legacy bottom "+ Add New Location" button is gone', () => {
@@ -2709,9 +2705,8 @@ describe('Sidebar+modal restructure (2026-05-31)', () => {
     expect(indexHtml).not.toMatch(/\+ Add New Location/);
   });
 
-  test('quickAddPlace function exists and pre-fills loc-name from the input', () => {
-    expect(indexHtml).toMatch(/function quickAddPlace\(\)[\s\S]{0,400}openAddModal\(\)/);
-    expect(indexHtml).toMatch(/function quickAddPlace[\s\S]{0,400}getElementById\(['"]loc-name['"]\)/);
+  test('quickAddPlace function exists and delegates to openAddModal', () => {
+    expect(indexHtml).toMatch(/function quickAddPlace\(\)[\s\S]{0,100}openAddModal\(\)/);
   });
 });
 
@@ -3245,13 +3240,11 @@ describe('_runAction must NOT preventDefault unconditionally (sidebar typing reg
 });
 
 describe('Sidebar live autocomplete (2026-05-31)', () => {
-  test('both inputs carry data-input="liveSearchInput" with livesearch-source', () => {
-    expect(indexHtml).toMatch(/id="quick-add-input"[\s\S]{0,400}data-input="liveSearchInput"[\s\S]{0,120}data-livesearch-source="quick-add"/);
+  test('map-search-input carries data-input="liveSearchInput" with livesearch-source', () => {
     expect(indexHtml).toMatch(/id="map-search-input"[\s\S]{0,400}data-input="liveSearchInput"[\s\S]{0,120}data-livesearch-source="map-search"/);
   });
 
-  test('both inputs still carry enterKey + original arg0 (no regression)', () => {
-    expect(indexHtml).toMatch(/id="quick-add-input"[\s\S]{0,400}data-keydown="enterKey"[\s\S]{0,200}data-arg0="quickAddPlace"/);
+  test('map-search-input still carries enterKey + mapSearch (no regression)', () => {
     expect(indexHtml).toMatch(/id="map-search-input"[\s\S]{0,400}data-keydown="enterKey"[\s\S]{0,200}data-arg0="mapSearch"/);
   });
 

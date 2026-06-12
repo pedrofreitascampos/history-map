@@ -178,6 +178,8 @@ body {
 /* MAP VIEW                                                   */
 /* ═══════════════════════════════════════════════════════════ */
 #map { width: 100%; height: 100%; z-index: 1; }
+#add-place-fab { position:absolute;bottom:24px;right:12px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s,box-shadow .12s; }
+#add-place-fab:hover { transform:scale(1.08);box-shadow:0 4px 14px rgba(0,0,0,.4); }
 
 /* Leaflet overrides */
 .leaflet-control-zoom { border: none !important; }
@@ -1635,20 +1637,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 <div id="app">
   <div class="view active" id="map-view">
     <div id="map"></div>
+    <button id="add-place-fab" data-click="quickAddPlace" title="Add place" aria-label="Add place">+</button>
   </div>
 
   <!-- FILTER SIDEBAR -->
   <aside id="sidebar">
     <div class="filter-section">
-      <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <input type="text" class="form-input" id="quick-add-input" placeholder="Add place"
-          aria-label="Add a new place"
-          style="flex:1;font-size:12px;padding:6px 10px;"
-          data-keydown="enterKey" data-arg0="quickAddPlace" data-prevent="1"
-          data-input="liveSearchInput" data-livesearch-source="quick-add">
-        <button class="add-small-btn" data-click="quickAddPlace" title="Add place" aria-label="Add place"
-          style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">+</button>
-      </div>
       <div style="display:flex;gap:6px;">
         <input type="text" class="form-input" id="map-search-input" placeholder="Search place"
           aria-label="Search for a place"
@@ -4866,8 +4860,7 @@ function _getOrCreateSessionToken() {
 function _resetSessionToken() { _autocompleteSessionToken = null; }
 
 async function _runLiveSearch(source) {
-  const inputId = source === 'quick-add' ? 'quick-add-input' : 'map-search-input';
-  const input = document.getElementById(inputId);
+  const input = document.getElementById('map-search-input');
   if (!input) return;
   const q = input.value.trim();
   const resultsEl = document.getElementById('map-search-results');
@@ -5248,22 +5241,8 @@ async function closeModal() {
   restoreFocus();
 }
 
-// Sidebar quick-add: type a name → opens the add-location modal with that
-// name pre-filled. Replaces the legacy sidebar add button; the modal's
-// redundant search field was also removed since the sidebar already has a
-// 'Search place' input (mapSearch).
 function quickAddPlace() {
-  const input = document.getElementById('quick-add-input');
-  const name = (input?.value || '').trim();
   openAddModal();
-  if (name) {
-    document.getElementById('loc-name').value = name;
-    // Fire-and-forget Photon forward-geocode so Save isn't a dead-end on a
-    // hidden lat/lng row. saveLocation() still unhides+focuses the row if
-    // this fails or returns nothing usable.
-    _autoGeocodeAddModalIfNeeded();
-  }
-  if (input) input.value = '';
 }
 
 // Forward-geocode the Add modal's `name` via Photon and fill lat/lng/address
@@ -5385,14 +5364,6 @@ function addPlaceAtMyLocation(latStr, lngStr) {
   const lng = parseFloat(lngStr);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   openAddModal(lat, lng);
-  // Pre-fill name with whatever the user had typed in quick-add, if anything
-  const input = document.getElementById('quick-add-input');
-  const name = (input?.value || '').trim();
-  if (name) {
-    const nameEl = document.getElementById('loc-name');
-    if (nameEl) nameEl.value = name;
-    if (input) input.value = '';
-  }
 }
 
 // ── Location search (Nominatim) ──────────────────────────

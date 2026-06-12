@@ -21,7 +21,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### UX P1
 
-- **Sidebar twin inputs ("Add place" / "Search place") confusable** — replace with single search-or-create input OR a floating "+ Add" FAB in bottom-right of map.
 - **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
 
 ### Longer-term (P1+, scoped)
