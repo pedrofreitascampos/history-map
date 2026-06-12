@@ -52,7 +52,7 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ### UX P1 (from 2026-06-02 audit)
 
 - **Collapse 10-tab nav to 5 + overflow drawer** (Linear pattern). Primary: `Map · Explore · Journal · Trips · Transits`. Overflow `···`: Collections / Regions / Stats / Bulk Edit / Import / Settings. "Explore" = Wishlist + Discover merged; "Journal" = Chronology + Stats. (`public/index.html:1553-1584`)
-- **Numeric stats in mono font** — `.stat-value` uses Playfair Display (editorial serif). Switch to `DM Mono` / `JetBrains Mono`. One CSS change. (`public/index.html:6021`)
+~~**Numeric stats in mono font**~~ ✅ 2026-06-12 — `.trip-stat-mini .ts-val`, `.people-row .rank`, `.transit-stat-card .tsc-km` → ui-monospace stack
 - **Sidebar twin inputs ("Add place" / "Search place") confusable** — replace with single search-or-create input OR a floating "+ Add" FAB in bottom-right of map.
 - **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
 - **(Audit 2026-06-11) Narrate / Web-Import / Discover modals bypass the modal system** — open via `style.display='flex'` so they miss the Escape list, focus trap, backdrop handler, `focusModal`/`restoreFocus`, and use unstyled `<h3>` headers (body font). Migrate to `.open` + add to the Escape allowlist + `h3`→`h2`. (`index.html:9957, 12296, 12080`)
