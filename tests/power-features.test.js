@@ -476,3 +476,100 @@ describe('Plan-a-Day — routing logic', () => {
     expect(idx2).not.toBe(-1);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 8. Share Trip — static markup
+// ──────────────────────────────────────────────────────────────────────────────
+describe('Share Trip — static markup', () => {
+  test('#share-link-modal exists with display:none', () => {
+    expect(indexHtml).toContain('id="share-link-modal"');
+    expect(indexHtml).toMatch(/id="share-link-modal"[^>]*display:none/);
+  });
+
+  test('#share-link-url input inside modal', () => {
+    const start = indexHtml.indexOf('id="share-link-modal"');
+    const end = indexHtml.indexOf('</div>', start + 400);
+    const html = indexHtml.substring(start, end + 6);
+    expect(html).toContain('id="share-link-url"');
+  });
+
+  test('Copy button uses data-click="copyShareLink"', () => {
+    expect(indexHtml).toMatch(/data-click="copyShareLink"/);
+  });
+
+  test('Revoke button uses data-click="revokeShareLink"', () => {
+    expect(indexHtml).toMatch(/data-click="revokeShareLink"/);
+  });
+
+  test('Close button uses data-click="closeShareLinkModal"', () => {
+    expect(indexHtml).toMatch(/data-click="closeShareLinkModal"/);
+  });
+
+  test('🔗 Share button in trips view uses data-click="shareTripLink"', () => {
+    expect(indexHtml).toMatch(/data-click="shareTripLink"/);
+    expect(indexHtml).toMatch(/id="share-trip-btn"[\s\S]{0,100}data-click="shareTripLink"/);
+  });
+
+  test('all share functions defined', () => {
+    ['shareTripLink', 'closeShareLinkModal', 'copyShareLink', 'revokeShareLink'].forEach(fn => {
+      expect(indexHtml).toContain(`function ${fn}`);
+    });
+  });
+
+  test('Escape closes share-link-modal', () => {
+    const escBlock = indexHtml.match(/key !== 'Escape'[\s\S]{0,2000}const modals = \[/);
+    expect(escBlock).not.toBeNull();
+    expect(escBlock[0]).toContain('share-link-modal');
+    expect(escBlock[0]).toContain('closeShareLinkModal');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 9. Share Trip — server routes
+// ──────────────────────────────────────────────────────────────────────────────
+describe('Share Trip — server routes', () => {
+  const serverJs = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'server', 'index.js'), 'utf-8'
+  );
+
+  test('POST /api/trips/:id/share route exists', () => {
+    expect(serverJs).toMatch(/app\.post\(['"]\/api\/trips\/:id\/share['"]/);
+  });
+
+  test('DELETE /api/trips/:id/share route exists', () => {
+    expect(serverJs).toMatch(/app\.delete\(['"]\/api\/trips\/:id\/share['"]/);
+  });
+
+  test('GET /api/share/:token route exists (no auth)', () => {
+    expect(serverJs).toMatch(/app\.get\(['"]\/api\/share\/:token['"]/);
+    // Must NOT have auth middleware in the share route
+    const shareRouteIdx = serverJs.indexOf("app.get('/api/share/:token'");
+    const routeBlock = serverJs.slice(shareRouteIdx, shareRouteIdx + 200);
+    expect(routeBlock).not.toContain(', auth,');
+  });
+
+  test('share token uses crypto.randomBytes(20)', () => {
+    expect(serverJs).toMatch(/randomBytes\(20\)\.toString\(['"]hex['"]\)/);
+  });
+
+  test('token format validated with regex before DB query', () => {
+    expect(serverJs).toContain('SHARE_TOKEN_RE');
+    expect(serverJs).toMatch(/SHARE_TOKEN_RE\s*=\s*\/\^/);
+  });
+
+  test('GET /s/:token route serves share.html', () => {
+    expect(serverJs).toMatch(/app\.get\(['"]\/s\/:token['"]/);
+    expect(serverJs).toContain('share.html');
+    expect(serverJs).toContain('__CSP_NONCE__');
+  });
+
+  test('share data endpoint strips userId and shareToken from response', () => {
+    const shareRouteIdx = serverJs.indexOf("app.get('/api/share/:token'");
+    const routeEnd = serverJs.indexOf('});', shareRouteIdx);
+    const routeBlock = serverJs.slice(shareRouteIdx, routeEnd + 3);
+    expect(routeBlock).not.toContain("'userId'");
+    expect(routeBlock).not.toContain("'shareToken'");
+    expect(routeBlock).not.toContain('"userId"');
+    expect(routeBlock).not.toContain('"shareToken"');
+  });
+});

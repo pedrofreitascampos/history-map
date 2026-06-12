@@ -1914,6 +1914,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <h2 style="font-family:var(--font-display);font-size:20px;margin:0;">🧳 Trips</h2>
         <select class="filter-select" id="trip-selector" data-change="selectTrip" data-arg0="this.value" style="flex:1;max-width:300px;"></select>
         <button class="btn btn-secondary" data-click="promptNewTrip" style="font-size:12px;padding:6px 12px;">+ New Trip</button>
+        <button id="share-trip-btn" class="btn btn-secondary" data-click="shareTripLink" style="font-size:12px;padding:6px 12px;" title="Share this trip via a public link">🔗 Share</button>
         <button class="btn btn-secondary" data-click="importTripFromTimeline" title="Parse a Google Timeline export into a NEW trip — all visits become stops in one bundle. For backfilling individual places without a trip, use the button in Import or Chronology." style="font-size:12px;padding:6px 12px;">📂 Timeline → New Trip</button>
         <input type="file" id="trip-timeline-input" accept=".json" style="display:none">
       </div>
@@ -3700,6 +3701,8 @@ document.addEventListener('keydown', e => {
   if (yrOv && yrOv.style.display !== 'none') { closeYearReview(); return; }
   const planDayOv = document.getElementById('plan-day-modal');
   if (planDayOv && planDayOv.style.display !== 'none') { closePlanDayModal(); return; }
+  const shareLinkOv = document.getElementById('share-link-modal');
+  if (shareLinkOv && shareLinkOv.style.display !== 'none') { closeShareLinkModal(); return; }
   const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
@@ -7251,6 +7254,51 @@ async function confirmPlanADay() {
     sel.value = tripId;
   }
   selectTrip(tripId);
+}
+
+async function shareTripLink() {
+  const tripId = (document.getElementById('trip-selector') || {}).value;
+  if (!tripId) { showToast('Select a trip first'); return; }
+  let trip = (state.trips || []).find(t => (t.id || t._id) === tripId);
+  if (!trip) { showToast('Trip not found'); return; }
+  if (!trip.shareToken) {
+    try {
+      const result = await api('POST', '/trips/' + tripId + '/share', {});
+      trip.shareToken = result.shareToken;
+    } catch (_) { showToast('Could not create share link'); return; }
+  }
+  const url = window.location.origin + '/s/' + trip.shareToken;
+  const urlEl = document.getElementById('share-link-url');
+  if (urlEl) urlEl.value = url;
+  const modal = document.getElementById('share-link-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function closeShareLinkModal() {
+  const modal = document.getElementById('share-link-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function copyShareLink() {
+  const url = (document.getElementById('share-link-url') || {}).value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Link copied!');
+  } catch (_) {
+    const el = document.getElementById('share-link-url');
+    if (el) { el.select(); document.execCommand('copy'); }
+    showToast('Link copied!');
+  }
+}
+async function revokeShareLink() {
+  const tripId = (document.getElementById('trip-selector') || {}).value;
+  if (!tripId) return;
+  try {
+    await api('DELETE', '/trips/' + tripId + '/share');
+    const trip = (state.trips || []).find(t => (t.id || t._id) === tripId);
+    if (trip) delete trip.shareToken;
+    closeShareLinkModal();
+    showToast('Share link revoked');
+  } catch (_) { showToast('Could not revoke link'); }
 }
 
 async function showOnMapFromWishlist(locId) {
@@ -13190,6 +13238,20 @@ async function _handlePhotoFiles(fileList) {
   _checkPhotoDistance(loc);
 }
 </script>
+<div id="share-link-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);">
+    <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🔗 Share Trip</h3>
+    <p style="margin:0 0 16px;font-size:13px;opacity:.7;">Anyone with this link can view the trip — no account needed.</p>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <input id="share-link-url" type="text" readonly class="form-input" style="flex:1;font-size:12px;cursor:pointer;" onclick="this.select()">
+      <button class="btn btn-primary" data-click="copyShareLink" style="padding:6px 14px;font-size:13px;white-space:nowrap;">Copy</button>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" data-click="revokeShareLink" style="font-size:12px;margin-right:auto;">Revoke</button>
+      <button class="btn btn-secondary" data-click="closeShareLinkModal">Close</button>
+    </div>
+  </div>
+</div>
 <div id="plan-day-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);">
     <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🗺️ Name Your Day Trip</h3>

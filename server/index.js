@@ -179,6 +179,16 @@ function serveIndex(req, res) {
 }
 app.get('/', serveIndex);
 
+// Public share page — serves share.html with nonce injection (same pattern as index.html)
+let _shareTemplate = null;
+function getShareTemplate() {
+  if (!_shareTemplate) _shareTemplate = fs.readFileSync(path.join(__dirname, '..', 'public', 'share.html'), 'utf8');
+  return _shareTemplate;
+}
+app.get('/s/:token', (req, res) => {
+  res.type('html').send(getShareTemplate().replace(/__CSP_NONCE__/g, res.locals.cspNonce));
+});
+
 // Static files (excluding index.html — see above)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
@@ -661,6 +671,47 @@ app.delete('/api/trips/:id', auth, async (req, res) => {
   if (count === 0) return res.status(404).json({ error: 'Not found' });
   log('info', 'db_remove', { table: 'trips', id: req.params.id, userId: req.user.id });
   res.json({ ok: true });
+});
+
+// ── Trip share-link generation / revocation ───────────────
+app.post('/api/trips/:id/share', auth, async (req, res) => {
+  const trip = await db.trips.findOne({ _id: req.params.id, userId: req.user.id });
+  if (!trip) return res.status(404).json({ error: 'Not found' });
+  const shareToken = crypto.randomBytes(20).toString('hex');
+  await db.trips.update({ _id: trip._id }, { $set: { shareToken } });
+  log('info', 'trip_share', { tripId: trip._id, userId: req.user.id });
+  res.json({ shareToken });
+});
+
+app.delete('/api/trips/:id/share', auth, async (req, res) => {
+  const count = await db.trips.update(
+    { _id: req.params.id, userId: req.user.id },
+    { $unset: { shareToken: true } }
+  );
+  if (count === 0) return res.status(404).json({ error: 'Not found' });
+  log('info', 'trip_unshare', { tripId: req.params.id, userId: req.user.id });
+  res.json({ ok: true });
+});
+
+// ── Public shared-trip data (no auth) ─────────────────────
+const SHARE_TOKEN_RE = /^[0-9a-f]{40}$/;
+app.get('/api/share/:token', async (req, res) => {
+  if (!SHARE_TOKEN_RE.test(req.params.token)) return res.status(404).json({ error: 'Not found' });
+  const trip = await db.trips.findOne({ shareToken: req.params.token });
+  if (!trip) return res.status(404).json({ error: 'Not found' });
+  const rawLocs = await db.locations.find({ userId: trip.userId, tripId: trip._id });
+  const locations = rawLocs
+    .map(l => ({
+      _id: l._id, name: l.name, lat: l.lat, lng: l.lng,
+      address: l.address, category: l.category, tripOrder: l.tripOrder,
+      visits: (l.visits || []).map(v => ({ date: v.date })),
+      tags: l.tags || [],
+    }))
+    .sort((a, b) => (a.tripOrder ?? 999) - (b.tripOrder ?? 999));
+  res.json({
+    trip: { _id: trip._id, name: trip.name, color: trip.color, startDate: trip.startDate, endDate: trip.endDate },
+    locations,
+  });
 });
 
 // ── Narrate-a-trip (Haiku-powered NL parsing) ─────────────
