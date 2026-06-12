@@ -1338,6 +1338,40 @@ describe('XSS escape invariants', () => {
   });
 });
 
+// ─── DNS-rebinding SSRF defence ──────────────────────────
+describe('DNS-rebinding SSRF defence', () => {
+  const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
+
+  test('import/website calls dns.lookup after hostname string check', () => {
+    // Must resolve and re-check: a CNAME to 169.254.169.254 passes the string
+    // check but must fail after lookup.
+    expect(serverSrc).toMatch(/dns\.lookup/);
+    expect(serverSrc).toMatch(/SSRF_BLOCK\.some.*resolvedTarget/);
+  });
+
+  test('POST /api/import/website blocks 127.0.0.1 (SSRF_BLOCK hostname)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://127.0.0.1/secret' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('POST /api/import/website blocks http:// (https-only)', async () => {
+    const res = await request(app)
+      .post('/api/import/website')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'http://example.com' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_url');
+  });
+
+  test('dns module imported as promises (async lookup)', () => {
+    expect(serverSrc).toMatch(/require\('dns'\)\.promises/);
+  });
+});
+
 // ─── M-T3: admin1-boundaries auth regression ─────────────
 describe('admin1-boundaries auth', () => {
   test('returns 401 with no token', async () => {

@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const dns = require('dns').promises;
 const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
@@ -845,6 +846,19 @@ app.post('/api/import/website', auth, async (req, res) => {
     host = parsed.hostname;
     const ssrfTarget = normalizeHostForSSRF(host);
     if (SSRF_BLOCK.some(re => re.test(ssrfTarget))) {
+      return res.status(400).json({ error: 'invalid_url' });
+    }
+    // DNS-rebinding defence: resolve the hostname to an IP and re-apply the
+    // SSRF blocklist. A CNAME chain that ultimately points to 169.254.169.254
+    // or an RFC-1918 address would pass the string check above but fail here.
+    try {
+      const { address } = await dns.lookup(host);
+      const resolvedTarget = normalizeHostForSSRF(address);
+      if (SSRF_BLOCK.some(re => re.test(resolvedTarget))) {
+        return res.status(400).json({ error: 'invalid_url' });
+      }
+    } catch {
+      // DNS resolution failure = hostname doesn't exist; block it.
       return res.status(400).json({ error: 'invalid_url' });
     }
     // Adapter selection: prefer LLM when an Anthropic key is configured
