@@ -203,6 +203,10 @@ body {
 .yr-nav-btn:hover { background:var(--bg-tertiary); }
 .neighborhood-label { background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:12px;white-space:nowrap;pointer-events:none;border:1px solid rgba(255,255,255,.15);text-shadow:0 1px 2px rgba(0,0,0,.5); }
 [data-theme="light"] .neighborhood-label { background:rgba(255,255,255,.88);color:#222;border-color:rgba(0,0,0,.12);text-shadow:none; }
+.wish-sel-btn { width:22px;height:22px;flex-shrink:0;border-radius:4px;background:none;border:1.5px solid var(--border-color,var(--border));cursor:pointer;font-size:14px;display:inline-flex;align-items:center;justify-content:center;padding:0;color:var(--text-muted);transition:background .15s,border-color .15s; }
+.wish-sel-btn.sel { background:var(--accent);border-color:var(--accent);color:#fff; }
+.wish-sel-btn:hover { border-color:var(--accent);opacity:1; }
+.wishlist-item.wish-selected { outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px; }
 
 /* Leaflet overrides */
 .leaflet-control-zoom { border: none !important; }
@@ -1894,6 +1898,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <select id="wishlist-cat" data-change="onWishlistFilterChange"><option value="">All Categories</option></select>
         <input type="text" class="form-input" id="wishlist-search" placeholder="🔍 Search..." data-input="onWishlistFilterChange" style="flex:1;max-width:200px;min-width:120px;">
       </div>
+      <div id="plan-day-bar" style="display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+        <button id="plan-day-btn" data-click="planADay" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">🗺️ Plan a Day (0)</button>
+        <span style="font-size:12px;opacity:.65;">select 2+ places with coordinates</span>
+        <button data-click="clearWishSel" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.55;padding:2px 6px;" title="Clear selection">✕ clear</button>
+      </div>
     </div>
     <div class="timeline" id="wishlist"></div>
   </div>
@@ -3125,6 +3134,7 @@ function _idxRemoveTransit(t) {
 
 let map, markersLayer, heatLayer;
 let _nhLayer = null;
+let _wishSelIds = new Set();
 let chartRatings, chartActivity;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3688,6 +3698,8 @@ document.addEventListener('keydown', e => {
   // Modals (close topmost)
   const yrOv = document.getElementById('year-review-overlay');
   if (yrOv && yrOv.style.display !== 'none') { closeYearReview(); return; }
+  const planDayOv = document.getElementById('plan-day-modal');
+  if (planDayOv && planDayOv.style.display !== 'none') { closePlanDayModal(); return; }
   const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
@@ -7083,8 +7095,10 @@ function renderWishlist() {
       else if (typeof rl === 'number' && rl > 0) badge = `<span class="ti-badge plain">${rl.toFixed(1)}</span>`;
       const tagChips = (loc.tags || []).map(t => `<span class="ti-tag">${esc(t)}</span>`).join('');
       const addr = loc.address ? `<span class="ti-addr">${esc(loc.address)}</span>` : '';
-      html += `<div class="timeline-item wishlist-item">
+      const isSel = typeof _wishSelIds !== 'undefined' && _wishSelIds.has(loc.id);
+      html += `<div class="timeline-item wishlist-item${isSel ? ' wish-selected' : ''}">
         <div class="ti-top">
+          <button class="wish-sel-btn${isSel ? ' sel' : ''}" data-click="toggleWishSel" data-arg0="${esc(loc.id)}" title="Select for Plan a Day" aria-label="Select place">${isSel ? '☑' : '☐'}</button>
           <span class="ti-emoji">${cat.emoji}</span>
           <span class="ti-name">${esc(loc.name)}</span>
           ${badge}
@@ -7130,6 +7144,113 @@ function renderWishlist() {
   if (typeof ACTIONS !== 'undefined') ACTIONS._appendWishlistPage = _appendWishlistPage;
   container.innerHTML = '';
   _appendWishlistPage();
+  if (typeof _updatePlanDayBtn !== 'undefined') _updatePlanDayBtn();
+}
+
+function toggleWishSel(id) {
+  if (_wishSelIds.has(id)) _wishSelIds.delete(id); else _wishSelIds.add(id);
+  const btn = document.querySelector(`.wish-sel-btn[data-arg0="${id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
+  if (btn) {
+    const s = _wishSelIds.has(id);
+    btn.classList.toggle('sel', s);
+    btn.textContent = s ? '☑' : '☐';
+    const item = btn.closest('.wishlist-item');
+    if (item) item.classList.toggle('wish-selected', s);
+  }
+  _updatePlanDayBtn();
+}
+function clearWishSel() {
+  _wishSelIds.clear();
+  document.querySelectorAll('.wish-sel-btn.sel').forEach(b => {
+    b.classList.remove('sel');
+    b.textContent = '☐';
+    const item = b.closest('.wishlist-item');
+    if (item) item.classList.remove('wish-selected');
+  });
+  _updatePlanDayBtn();
+}
+function _updatePlanDayBtn() {
+  const bar = document.getElementById('plan-day-bar');
+  if (!bar) return;
+  const n = _wishSelIds.size;
+  bar.style.display = n >= 1 ? 'flex' : 'none';
+  const btn = document.getElementById('plan-day-btn');
+  if (btn) btn.textContent = `🗺️ Plan a Day (${n})`;
+}
+function planADay() {
+  const locs = state.locations.filter(l => _wishSelIds.has(l.id) && Number.isFinite(l.lat) && Number.isFinite(l.lng));
+  if (locs.length < 2) { showToast('Select at least 2 places with coordinates'); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  const nameEl = document.getElementById('plan-day-name');
+  if (nameEl) nameEl.value = `Day Trip — ${today}`;
+  const modal = document.getElementById('plan-day-modal');
+  if (modal) { modal.style.display = 'flex'; setTimeout(() => { if (nameEl) nameEl.select(); }, 50); }
+}
+function closePlanDayModal() {
+  const modal = document.getElementById('plan-day-modal');
+  if (modal) modal.style.display = 'none';
+}
+function _nearestNeighborOrder(matrix) {
+  const n = matrix.length;
+  if (n <= 1) return [0];
+  let startIdx = 0, minSum = Infinity;
+  for (let i = 0; i < n; i++) {
+    const s = matrix[i].reduce((acc, v, j) => j === i ? acc : acc + (v || 0), 0);
+    if (s < minSum) { minSum = s; startIdx = i; }
+  }
+  const visited = new Set([startIdx]);
+  const order = [startIdx];
+  while (order.length < n) {
+    const last = order[order.length - 1];
+    let next = -1, best = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (!visited.has(j) && (matrix[last][j] || 0) < best) { best = matrix[last][j]; next = j; }
+    }
+    if (next === -1) break;
+    visited.add(next);
+    order.push(next);
+  }
+  return order;
+}
+async function confirmPlanADay() {
+  const nameEl = document.getElementById('plan-day-name');
+  const name = (nameEl ? nameEl.value : '').trim();
+  if (!name) { showToast('Enter a trip name'); return; }
+  closePlanDayModal();
+  showToast('Optimising route…');
+  const locs = state.locations.filter(l => _wishSelIds.has(l.id) && Number.isFinite(l.lat) && Number.isFinite(l.lng));
+  if (locs.length < 2) { showToast('Need at least 2 locations with coordinates'); return; }
+  let orderedLocs = locs;
+  try {
+    const coords = locs.map(l => `${l.lng},${l.lat}`).join(';');
+    const res = await fetch(`https://router.project-osrm.org/table/v1/walking/${coords}?annotations=duration`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.durations) { const order = _nearestNeighborOrder(data.durations); orderedLocs = order.map(i => locs[i]); }
+    }
+  } catch (_) { /* fallback to original order */ }
+  const color = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+  const trip = mapId(await api('POST', '/trips', { name, color, startDate: '', endDate: '' }));
+  const tripId = trip.id || trip._id;
+  await Promise.all(orderedLocs.map((loc, i) => api('PUT', '/locations/' + loc.id, { tripId, tripOrder: i })));
+  orderedLocs.forEach((loc, i) => {
+    const sl = stateIndex.locationById.get(loc.id);
+    if (sl) { sl.tripId = tripId; sl.tripOrder = i; }
+  });
+  if (!state.trips) state.trips = [];
+  state.trips.push(trip);
+  _wishSelIds.clear();
+  showToast(`"${name}" created — ${orderedLocs.length} stops!`);
+  switchView('trips-view');
+  const sel = document.getElementById('trip-selector');
+  if (sel) {
+    const opt = document.createElement('option');
+    opt.value = tripId;
+    opt.textContent = name;
+    sel.appendChild(opt);
+    sel.value = tripId;
+  }
+  selectTrip(tripId);
 }
 
 async function showOnMapFromWishlist(locId) {
@@ -13069,6 +13190,17 @@ async function _handlePhotoFiles(fileList) {
   _checkPhotoDistance(loc);
 }
 </script>
+<div id="plan-day-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);">
+    <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🗺️ Name Your Day Trip</h3>
+    <p style="margin:0 0 16px;font-size:13px;opacity:.7;">Selected places will be sorted into the optimal walking order.</p>
+    <input id="plan-day-name" type="text" class="form-input" placeholder="Day Trip — 2026-06-12" style="width:100%;box-sizing:border-box;margin-bottom:16px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" data-click="closePlanDayModal">Cancel</button>
+      <button class="btn btn-primary" data-click="confirmPlanADay">Create Trip</button>
+    </div>
+  </div>
+</div>
 <div id="year-review-overlay" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.92);flex-direction:column;align-items:center;justify-content:center;padding:24px;">
   <button class="yr-close" data-click="closeYearReview" aria-label="Close Year in Review">×</button>
   <div id="yr-card" class="yr-card"></div>

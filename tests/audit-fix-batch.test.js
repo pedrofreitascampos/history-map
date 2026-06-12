@@ -286,7 +286,7 @@ describe('Bypass modals use .open class + Escape list + aria', () => {
 
   test('all three are in the Escape handler modal list', () => {
     const escIdx = html.indexOf("if (e.key !== 'Escape') return;");
-    const escBlock = html.slice(escIdx, escIdx + 900);
+    const escBlock = html.slice(escIdx, escIdx + 1200);
     expect(escBlock).toMatch(/narrate-modal/);
     expect(escBlock).toMatch(/discover-modal/);
     expect(escBlock).toMatch(/web-import-modal/);
