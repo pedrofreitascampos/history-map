@@ -21,8 +21,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### UX P1
 
-- **Map tiles → Stadia Alidade Smooth Dark + theme-aware swap** (free for personal volume). URL: `https://tiles.stadiamaps.com/tiles/{style}/{z}/{x}/{y}.png`. Wires existing theme system to tile choice.
-
 ### Longer-term (P1+, scoped)
 
 - **Direct share-from-Google-Maps → Oikumene** (2026-06-03 user ask). Two surfaces, shared server endpoint + URL parser:
@@ -91,7 +89,8 @@ Ranked by impact-vs-effort. Pick 2-3 per sprint.
 | S1 | Audit 2026-06-02 P0 close-out | ✅ All 10 shipped 2026-06-03 |
 | S2 | Hardening + perf round 2 | ✅ All batches shipped 2026-06-04 → 2026-06-12 |
 | S2.5 | Audit-fix batch (2026-06-11) | ✅ All items shipped 2026-06-12 |
-| **S3** | **UX + Power features** | 🔴 **NEXT.** Sidebar FAB, Stadia tiles, provider jargon cleanup. Then pick 2-3 from Power features. |
+| **S3** | **UX + Power features** | ✅ **DONE.** Sidebar FAB · Stadia tiles · provider jargon cleanup. |
+| **S4** | **Power features** | 🔴 **NEXT.** Pick 2-3 from Power features list. |
 
 ## ⛔ Blocked / Dropped
 
