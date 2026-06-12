@@ -191,19 +191,19 @@ describeDom('_refreshGoogleChromeVisibility (regression)', () => {
     expect(dom.window.document.getElementById('import-sync-label').style.display).toBe('flex');
   });
 
-  test('provider=photon → all three Google controls hidden (even if key configured)', async () => {
+  test('provider=photon + key configured → loc/import hidden, bulk-enrich visible', async () => {
     const { ctx, dom } = makeCtx({ provider: 'photon', placesEnabled: true });
     await vm.runInContext('_refreshGoogleChromeVisibility()', ctx);
     expect(dom.window.document.getElementById('loc-google-sync-btn').style.display).toBe('none');
-    expect(dom.window.document.getElementById('bulk-google-sync-btn').style.display).toBe('none');
+    expect(dom.window.document.getElementById('bulk-google-sync-btn').style.display).toBe('');
     expect(dom.window.document.getElementById('import-sync-label').style.display).toBe('none');
   });
 
-  test('provider=nominatim → all three Google controls hidden', async () => {
+  test('provider=nominatim + key configured → loc/import hidden, bulk-enrich visible', async () => {
     const { ctx, dom } = makeCtx({ provider: 'nominatim', placesEnabled: true });
     await vm.runInContext('_refreshGoogleChromeVisibility()', ctx);
     expect(dom.window.document.getElementById('loc-google-sync-btn').style.display).toBe('none');
-    expect(dom.window.document.getElementById('bulk-google-sync-btn').style.display).toBe('none');
+    expect(dom.window.document.getElementById('bulk-google-sync-btn').style.display).toBe('');
     expect(dom.window.document.getElementById('import-sync-label').style.display).toBe('none');
   });
 

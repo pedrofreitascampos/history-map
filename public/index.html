@@ -1959,7 +1959,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="add-small-btn" data-click="clearBulkSelection" style="border-style:solid;font-size:12px;">Clear</button>
     </div>
     <!-- Selection bar + actions -->
-    <div class="bulk-actions-row" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:stretch;">
+    <div class="bulk-actions-row" style="display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap;align-items:stretch;">
       <!-- Left: selection count -->
       <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);min-width:100px;">
         <span style="font-size:13px;color:var(--accent);font-weight:600;" id="bulk-selected-count">0 selected</span>
@@ -1982,11 +1982,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn btn-primary" data-click="withLoading" data-arg0="applyBulkEdit" style="font-size:12px;padding:6px 14px;">Apply</button>
         <button class="btn btn-secondary" data-click="openFillMissingModal" style="font-size:12px;padding:6px 10px;" title="Find and fix locations with missing coordinates, categories, or addresses">🔧 Fill missing</button>
-        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:6px 10px;" title="Enrich selected via Photon (Komoot) — free, address + OSM category">🌍 Photon</button>
-        <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:6px 10px;" title="Enrich selected via OpenStreetMap Nominatim — free, address + OSM category">🗺️ Nominatim</button>
-        <button id="bulk-google-sync-btn" class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="display:none;font-size:12px;padding:6px 10px;" title="Sync selected with Google Places — ratings + prices (requires API key)">📍 Google</button>
         <button class="btn btn-danger" data-click="deleteBulkSelection" style="font-size:12px;padding:5px 10px;" aria-label="Delete selected locations" title="Delete selected">🗑️</button>
       </div>
+    </div>
+    <!-- Geocode / enrich row -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">Geocode selected:</span>
+      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichPhoton" style="font-size:12px;padding:5px 10px;" title="Enrich selected via Photon (Komoot) — free, address + OSM category">🌍 Photon</button>
+      <button class="btn btn-secondary" data-click="withLoading" data-arg0="bulkEnrichOSM" style="font-size:12px;padding:5px 10px;" title="Enrich selected via OpenStreetMap Nominatim — free, address + OSM category">🗺️ Nominatim</button>
+      <button id="bulk-google-sync-btn" class="btn btn-secondary" data-click="withLoading" data-arg0="bulkSyncGoogle" style="display:none;font-size:12px;padding:5px 10px;" title="Enrich selected with Google Places — ratings, prices, photos (requires API key)">📍 Google Maps</button>
     </div>
     <!-- Location list -->
     <div id="bulk-list" style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow-y:auto;flex:1;min-height:0;"></div>
@@ -2177,7 +2181,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
            edit-open, map-click, and the 2026-06-03 quick-add Photon
            auto-geocode. saveLocation() unhides this row on the
            coords-missing failure path so the user has a manual path
-           forward. -->
+           forward. The toggle button gives keyboard users a path in. -->
+      <div style="margin-bottom:4px;">
+        <button type="button" id="loc-coords-toggle" class="add-small-btn" data-click="toggleLocCoordsRow"
+          style="font-size:12px;padding:3px 8px;border-style:dashed;" aria-expanded="false" aria-controls="loc-coords-row">
+          ✎ Edit coordinates
+        </button>
+      </div>
       <div class="form-row" id="loc-coords-row" style="display:none;">
         <div class="form-group">
           <label>Latitude</label>
@@ -5111,6 +5121,7 @@ function openAddModal(lat, lng) {
   document.getElementById('loc-address').value = '';
   document.getElementById('loc-lat').value = lat || '';
   document.getElementById('loc-lng').value = lng || '';
+  { const r = document.getElementById('loc-coords-row'); const b = document.getElementById('loc-coords-toggle'); if (r) r.style.display = (lat || lng) ? '' : 'none'; if (b) b.setAttribute('aria-expanded', (lat || lng) ? 'true' : 'false'); }
   document.getElementById('loc-google-rating').value = '';
   document.getElementById('loc-google-maps-link').style.display = 'none';
   document.getElementById('loc-google-sync-btn').style.display = 'none';
@@ -5158,6 +5169,7 @@ function openEditModal(id) {
   document.getElementById('loc-address').value = loc.address || '';
   document.getElementById('loc-lat').value = loc.lat;
   document.getElementById('loc-lng').value = loc.lng;
+  { const r = document.getElementById('loc-coords-row'); const b = document.getElementById('loc-coords-toggle'); if (r) r.style.display = ''; if (b) b.setAttribute('aria-expanded', 'true'); }
   document.getElementById('loc-google-rating').value = loc.googleRating || '';
   const gmapsLink = document.getElementById('loc-google-maps-link');
   const gmapsUrl = getGoogleMapsUrl(loc);
@@ -5291,10 +5303,25 @@ function _unhideLocCoordsRow() {
   const row = document.getElementById('loc-coords-row');
   if (!row) return;
   row.style.display = '';
+  const btn = document.getElementById('loc-coords-toggle');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
   const latEl = document.getElementById('loc-lat');
   if (latEl) {
     try { latEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
     latEl.focus();
+  }
+}
+
+function toggleLocCoordsRow() {
+  const row = document.getElementById('loc-coords-row');
+  const btn = document.getElementById('loc-coords-toggle');
+  if (!row) return;
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : '';
+  if (btn) btn.setAttribute('aria-expanded', String(!open));
+  if (!open) {
+    const latEl = document.getElementById('loc-lat');
+    if (latEl) { try { latEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {} latEl.focus(); }
   }
 }
 
@@ -9705,17 +9732,19 @@ async function shouldUseGoogle() {
   return getSearchProvider() === 'google' && await checkPlacesEnabled();
 }
 // Single point of truth for showing/hiding Google-enrichment chrome across
-// the app: edit-modal sync button, bulk toolbar sync button, import-view
-// auto-sync checkbox. Re-runs on provider change + app boot. The 🗺️ "Open
-// in Google Maps" popup link is a plain URL (no API call) and stays.
+// the app. edit-modal sync button + import-view checkbox require the search
+// provider to be Google; bulk-enrich button only needs the API key set.
+// The 🗺️ "Open in Google Maps" popup link is a plain URL (no API call) and stays.
 async function _refreshGoogleChromeVisibility() {
-  const show = await shouldUseGoogle();
-  const ids = ['loc-google-sync-btn', 'bulk-google-sync-btn', 'import-sync-label'];
-  ids.forEach(id => {
+  const [providerOk, keyOk] = await Promise.all([shouldUseGoogle(), checkPlacesEnabled()]);
+  const providerIds = ['loc-google-sync-btn', 'import-sync-label'];
+  providerIds.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.style.display = show ? (id === 'import-sync-label' ? 'flex' : '') : 'none';
+    el.style.display = providerOk ? (id === 'import-sync-label' ? 'flex' : '') : 'none';
   });
+  const bulkBtn = document.getElementById('bulk-google-sync-btn');
+  if (bulkBtn) bulkBtn.style.display = keyOk ? '' : 'none';
 }
 
 // Cache the narrate-enabled status across the session so the view-switch +
