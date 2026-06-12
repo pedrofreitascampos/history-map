@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-12:** 1215 jest (3 skip) · **Plan-a-Day** shipped — wishlist multi-select → OSRM route optimisation → named Day Trip.
+**2026-06-12:** 1230 jest (3 skip) · **Share Trip** shipped — public read-only link via 40-char token, standalone share.html page.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Share Trip** | **2026-06-12** | **+15 (1230)** | **POST/DELETE /trips/:id/share · GET /api/share/:token (public) · /s/:token share page · CSP-nonce injected** |
 | **Plan-a-Day** | **2026-06-12** | **+53 (1215)** | **wishlist select toggles · OSRM nearest-neighbour · plan-day-modal · trip creation + nav** |
 | **A11y + UX polish** | **2026-06-12** | **+12 (1162)** | **keyboard coords toggle · account/filter font floor · 🔖 wishlist glyph · bulk enrich row** |
 | **Security batch** | **2026-06-12** | **+9 (1150)** | **backup authz userId · DNS-rebinding dns.lookup · mono stats font · Wishlist terminology** |
@@ -60,8 +61,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 Ranked by impact-vs-effort. Pick 2-3 per sprint.
 
-1. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
-5. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
+1. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
 6. **🔍 Smart import deduplication** — fuzzy-match incoming names vs existing (Levenshtein < 0.2 + within 500 m) before commit.
 7. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri-Sat 8-10 pm". Uses existing `visits[].date`.
 8. **🧭 Context-aware Discover** — when viewing a trip, seed Discover at trip centroid + suggest missing categories.
