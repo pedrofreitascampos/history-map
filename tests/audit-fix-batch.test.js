@@ -305,3 +305,25 @@ describe('Bypass modals use .open class + Escape list + aria', () => {
     expect(line).not.toMatch(/style=[^>]*display\s*:\s*none/);
   });
 });
+
+// ── 15. Numeric stat elements use mono font (not editorial Playfair) ─────────
+describe('Numeric stat elements use monospace font', () => {
+  test('.stat-card .stat-value uses ui-monospace (not var(--font-display))', () => {
+    expect(html).toMatch(/\.stat-card \.stat-value\s*\{[^}]*ui-monospace/);
+    expect(html).not.toMatch(/\.stat-card \.stat-value\s*\{[^}]*var\(--font-display\)/);
+  });
+
+  test('.trip-stat-mini .ts-val uses ui-monospace (not var(--font-display))', () => {
+    expect(html).toMatch(/\.trip-stat-mini \.ts-val\s*\{[^}]*ui-monospace/);
+    expect(html).not.toMatch(/\.trip-stat-mini \.ts-val\s*\{[^}]*var\(--font-display\)/);
+  });
+
+  test('.people-row .rank uses ui-monospace (not var(--font-display))', () => {
+    expect(html).toMatch(/\.people-row \.rank\s*\{[^}]*ui-monospace/);
+    expect(html).not.toMatch(/\.people-row \.rank\s*\{[^}]*var\(--font-display\)/);
+  });
+
+  test('.transit-stat-card .tsc-km uses ui-monospace', () => {
+    expect(html).toMatch(/\.transit-stat-card \.tsc-km\s*\{[^}]*ui-monospace/);
+  });
+});
