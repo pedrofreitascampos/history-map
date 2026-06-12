@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-12:** 1162 jest (3 skip) · **S2.5 audit batch complete** — security hardening, a11y sweep, glyph/terminology unification, bulk-edit restructure, sub-12px text floor.
+**2026-06-12:** 1215 jest (3 skip) · **Plan-a-Day** shipped — wishlist multi-select → OSRM route optimisation → named Day Trip.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Plan-a-Day** | **2026-06-12** | **+53 (1215)** | **wishlist select toggles · OSRM nearest-neighbour · plan-day-modal · trip creation + nav** |
 | **A11y + UX polish** | **2026-06-12** | **+12 (1162)** | **keyboard coords toggle · account/filter font floor · 🔖 wishlist glyph · bulk enrich row** |
 | **Security batch** | **2026-06-12** | **+9 (1150)** | **backup authz userId · DNS-rebinding dns.lookup · mono stats font · Wishlist terminology** |
 | **Perf round 2 + security** | **2026-06-11** | **+29 (1112)** | topojson CDN · markerHash · getFilteredLocations memo · prefetchReplayRoutes · Cache-Control · SSRF |
@@ -59,8 +60,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 Ranked by impact-vs-effort. Pick 2-3 per sprint.
 
-1. **🛣️ Plan-a-Day trip builder from Wishlist** — select 3-5 wishlist → auto walking-order route (OSRM) → named Day Trip.
-4. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
+1. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
 5. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
 6. **🔍 Smart import deduplication** — fuzzy-match incoming names vs existing (Levenshtein < 0.2 + within 500 m) before commit.
 7. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri-Sat 8-10 pm". Uses existing `visits[].date`.
