@@ -327,3 +327,30 @@ describe('Numeric stat elements use monospace font', () => {
     expect(html).toMatch(/\.transit-stat-card \.tsc-km\s*\{[^}]*ui-monospace/);
   });
 });
+
+// ── 16. Keyboard path to coordinates (a11y) ──────────────────────────────────
+describe('Keyboard path to set/fix coordinates', () => {
+  test('#loc-coords-toggle button exists with data-click="toggleLocCoordsRow"', () => {
+    expect(html).toMatch(/id="loc-coords-toggle"[^>]*data-click="toggleLocCoordsRow"/);
+  });
+
+  test('#loc-coords-toggle has aria-expanded and aria-controls="loc-coords-row"', () => {
+    expect(html).toMatch(/id="loc-coords-toggle"[^>]*aria-expanded="false"/);
+    expect(html).toMatch(/id="loc-coords-toggle"[^>]*aria-controls="loc-coords-row"/);
+  });
+
+  test('toggleLocCoordsRow function is defined in the script', () => {
+    expect(html).toMatch(/function toggleLocCoordsRow\(\)/);
+  });
+
+  test('_unhideLocCoordsRow syncs aria-expanded on the toggle button', () => {
+    expect(html).toMatch(/function _unhideLocCoordsRow[\s\S]{0,300}aria-expanded.*true/);
+  });
+
+  test('#loc-coords-row starts hidden in edit modal markup', () => {
+    const rowIdx = html.indexOf('id="loc-coords-row"');
+    expect(rowIdx).toBeGreaterThan(-1);
+    const tag = html.slice(rowIdx - 100, html.indexOf('>', rowIdx) + 1);
+    expect(tag).toMatch(/display\s*:\s*none/);
+  });
+});

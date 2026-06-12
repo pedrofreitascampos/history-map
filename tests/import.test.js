@@ -2956,10 +2956,20 @@ describe('Transit stats strip is empty when state.transits is empty', () => {
 // ─── 12px font floor (a11y) ──────────────────────────────
 describe('No CSS font-size is below 12px', () => {
   test('no `font-size: 11px` or `font-size:11px` declarations remain', () => {
-    // Both spaced and unspaced forms should be gone — the floor is 12px.
-    // (10px is occasionally fine for super-tiny utility labels but the audit
-    // bumped EVERY 11px to 12px for a uniform readability floor.)
     expect(indexHtml).not.toMatch(/font-size:\s*11px/);
+  });
+
+  test('account modal summary hints use 12px (not 10px)', () => {
+    expect(indexHtml).not.toMatch(/summary[^>]*font-size:\s*10px/);
+    expect(indexHtml).toMatch(/summary[^>]*font-size:\s*12px/);
+  });
+
+  test('.filter-section h4 .clear-btn uses 12px (not 10px)', () => {
+    expect(indexHtml).toMatch(/\.filter-section h4 \.clear-btn\s*\{[^}]*font-size:\s*12px/);
+  });
+
+  test('.trip-stat-mini .ts-label uses 12px (not 10px)', () => {
+    expect(indexHtml).toMatch(/\.trip-stat-mini \.ts-label\s*\{[^}]*font-size:\s*12px/);
   });
 
   test('Transits tab icon has the emoji variation selector (U+FE0F)', () => {

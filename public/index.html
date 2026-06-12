@@ -508,7 +508,7 @@ body {
 .filter-section h4 .clear-btn {
   opacity: 0.6;
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
   color: var(--text-muted);
   text-decoration: underline;
@@ -1278,7 +1278,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   background: var(--bg-tertiary); border-radius: var(--radius); padding: 10px 12px; text-align: center;
 }
 .trip-stat-mini .ts-val { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 20px; color: var(--accent); }
-.trip-stat-mini .ts-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.trip-stat-mini .ts-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
 .trip-loc-list { display: flex; flex-direction: column; gap: 6px; }
 .trip-loc-item {
@@ -9626,7 +9626,7 @@ async function openAccountModal() {
         ${unsynced > 0 ? `<button class="btn btn-primary" data-click="confirmBulkGoogleSync" data-arg0="${esc('This will use ' + unsynced + ' of your 5,000 free monthly Find Place requests' + (unsynced > 5000 ? ' (over free tier — extra cost ~$' + ((unsynced-5000)*0.017).toFixed(2) + ')' : ' (within free tier — $0)') + '. Continue?')}" style="font-size:12px;padding:4px 10px;">Sync all ${unsynced}</button>` : ''}
       </div>
       <details style="margin-top:6px;">
-        <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
+        <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;">Change API key</summary>
         <form data-submit="savePlacesKey" autocomplete="off" style="display:flex;gap:6px;margin-top:6px;">
           <input type="password" class="form-input" id="places-key-input" placeholder="New key..." autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;">
           <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;">Save</button>
@@ -9660,7 +9660,7 @@ async function openAccountModal() {
       anthropicDiv.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:var(--radius);background:var(--bg-tertiary);font-size:12px;">
         <span style="color:var(--success);">●</span> Connected — natural-language trip parsing enabled
         <details style="margin-left:auto;">
-          <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;">Change key</summary>
+          <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;">Change key</summary>
           <form data-submit="saveAnthropicKey" autocomplete="off" style="display:flex;gap:6px;margin-top:6px;">
             <input type="password" class="form-input" id="anthropic-key-input" placeholder="New key..." autocomplete="off" style="flex:1;font-size:12px;padding:6px 8px;">
             <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;">Save</button>
