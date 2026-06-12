@@ -59,28 +59,25 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 Ranked by impact-vs-effort. Pick 2-3 per sprint.
 
-1. **🎁 "Year in Review" auto-story** — full-screen card deck: countries, km, best restaurant, first new country. Pure frontend, zero new data.
-2. **🗺️ Stadia tiles + theme-aware tile swap** — instant premium feel. (Also UX P1.)
-3. **🏘️ Spatial cluster "Neighborhoods" detector** — auto-cluster nearby Been places into named micro-areas at zoom ≥ 13.
-4. **📷 Photo timeline** — photos already attached via EXIF; render chronologically alongside visits.
-5. **🛣️ Plan-a-Day trip builder from Wishlist** — select 3-5 wishlist → auto walking-order route (OSRM) → named Day Trip.
-6. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
-7. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
-8. **🔍 Smart import deduplication** — fuzzy-match incoming names vs existing (Levenshtein < 0.2 + within 500 m) before commit.
-9. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri-Sat 8-10 pm". Uses existing `visits[].date`.
-10. **🧭 Context-aware Discover** — when viewing a trip, seed Discover at trip centroid + suggest missing categories.
-11. **💱 Currency overlay** for Regions — local symbol + FX rate per country.
-12. **👥 "People lens" in Chronology** — toggle showing each person as a colored lane.
-13. **📥 Direct Google Maps Saved Places import** (Takeout CSV) — primary first-run seeding source.
-14. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.
-15. **🚫 "Already been" detection on Timeline import** — fuzzy-match vs existing `been` items; flag as "update date?" instead of duplicating.
-16. **🕸️ Graph view on Atlas tab** — node-link over dark basemap, directed edges between consecutive visits, colored by transit mode.
-17. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner.
-18. **🌐 Dynamic overlays Tier 2+** — USGS earthquakes (lowest-cost next), FlightRadar live, ISS track, wind/jet-stream, marine AIS. Registry in place — ~30 lines per overlay.
-19. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip. Pairs with #1 Year-in-Review.
-20. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year spend roll-up. Feeds #11 currency overlay.
-21. **🗓️ "On this day" resurfacing** — "3 years ago you were in Kyoto". Zero new data.
-22. **🔀 Conflict-free import preview diff** — adds/updates/dupes as reviewable list before any import commits.
+1. **🏘️ Spatial cluster "Neighborhoods" detector** — auto-cluster nearby Been places into named micro-areas at zoom ≥ 13.
+2. **📷 Photo timeline** — photos already attached via EXIF; render chronologically alongside visits.
+3. **🛣️ Plan-a-Day trip builder from Wishlist** — select 3-5 wishlist → auto walking-order route (OSRM) → named Day Trip.
+4. **🔗 Share trip via public read-only link** — no account needed to view a shared itinerary.
+5. **📡 Offline / PWA mode** — Service Worker + tile cache. Unblocks Google-Maps share-target above.
+6. **🔍 Smart import deduplication** — fuzzy-match incoming names vs existing (Levenshtein < 0.2 + within 500 m) before commit.
+7. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri-Sat 8-10 pm". Uses existing `visits[].date`.
+8. **🧭 Context-aware Discover** — when viewing a trip, seed Discover at trip centroid + suggest missing categories.
+9. **💱 Currency overlay** for Regions — local symbol + FX rate per country.
+10. **👥 "People lens" in Chronology** — toggle showing each person as a colored lane.
+11. **📥 Direct Google Maps Saved Places import** (Takeout CSV) — primary first-run seeding source.
+12. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.
+13. **🚫 "Already been" detection on Timeline import** — fuzzy-match vs existing `been` items; flag as "update date?" instead of duplicating.
+14. **🕸️ Graph view on Atlas tab** — node-link over dark basemap, directed edges between consecutive visits, colored by transit mode.
+15. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost travel planner.
+16. **🌐 Dynamic overlays Tier 2+** — USGS earthquakes (lowest-cost next), FlightRadar live, ISS track, wind/jet-stream, marine AIS. Registry in place — ~30 lines per overlay.
+17. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip.
+18. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year spend roll-up.
+19. **🔀 Conflict-free import preview diff** — adds/updates/dupes as reviewable list before any import commits.
 
 ## Sequenced ship plan
 

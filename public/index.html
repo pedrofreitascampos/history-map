@@ -183,6 +183,24 @@ body {
 #on-this-day-banner button { margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--text-muted);padding:0 2px; }
 #add-place-fab { position:absolute;bottom:24px;right:12px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s,box-shadow .12s; }
 #add-place-fab:hover { transform:scale(1.08);box-shadow:0 4px 14px rgba(0,0,0,.4); }
+.yr-card { background:var(--bg-secondary);border:1px solid var(--border-strong);border-radius:20px;padding:48px 40px;text-align:center;max-width:480px;width:100%;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px; }
+.yr-eyebrow { font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-muted); }
+.yr-year { font-family:var(--font-display);font-size:72px;font-weight:700;color:var(--accent);line-height:1; }
+.yr-big-num { font-family:var(--font-display);font-size:80px;font-weight:700;color:var(--text-primary);line-height:1; }
+.yr-big-emoji { font-size:56px;line-height:1; }
+.yr-subtitle { font-size:16px;color:var(--text-secondary); }
+.yr-place-name { font-family:var(--font-display);font-size:32px;font-weight:600;color:var(--text-primary); }
+.yr-stars { font-size:24px; }
+.yr-date { font-size:14px;color:var(--text-muted); }
+.yr-cta { font-size:20px;color:var(--accent);font-weight:600; }
+.yr-region-grid { display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px; }
+.yr-region { font-size:13px;background:var(--bg-tertiary);padding:4px 10px;border-radius:20px; }
+.yr-region em { color:var(--text-muted);font-style:normal;font-size:12px; }
+.yr-dot { width:8px;height:8px;border-radius:50%;background:var(--border-strong);cursor:pointer;transition:background .15s;display:inline-block; }
+.yr-dot.active { background:var(--accent); }
+.yr-close { position:absolute;top:20px;right:24px;background:none;border:none;font-size:28px;color:var(--text-muted);cursor:pointer;line-height:1; }
+.yr-nav-btn { background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);font-size:18px;padding:10px 20px;border-radius:8px;cursor:pointer;transition:background .15s; }
+.yr-nav-btn:hover { background:var(--bg-tertiary); }
 
 /* Leaflet overrides */
 .leaflet-control-zoom { border: none !important; }
@@ -1774,6 +1792,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="stats-header">
       <h1>Your Journey in Numbers</h1>
       <p>A snapshot of everywhere you've been and everywhere you dream of going.</p>
+      <button class="btn btn-secondary" data-click="showYearReview" style="margin-top:12px;font-size:13px;padding:6px 14px;">🎁 Year in Review</button>
     </div>
 
     <div class="stats-top-row stagger" id="stats-top-cards"></div>
@@ -3660,6 +3679,8 @@ document.addEventListener('keydown', e => {
   const confirm = document.querySelector('.confirm-overlay');
   if (confirm) { confirm.querySelector('.confirm-cancel').click(); return; }
   // Modals (close topmost)
+  const yrOv = document.getElementById('year-review-overlay');
+  if (yrOv && yrOv.style.display !== 'none') { closeYearReview(); return; }
   const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
@@ -11704,6 +11725,161 @@ function dismissOnThisDay() {
   if (banner) banner.style.display = 'none';
 }
 
+// ── Year in Review ──────────────────────────────────────────────────────────
+let _yrState = null;
+
+function showYearReview() {
+  const years = new Set();
+  for (const loc of state.locations) {
+    if (loc.status !== 'been') continue;
+    for (const v of (loc.visits || [])) {
+      if (typeof v.date === 'string' && v.date.length >= 4) years.add(v.date.slice(0, 4));
+    }
+  }
+  if (years.size === 0) { showToast('No visits recorded yet.', 'info'); return; }
+  const year = [...years].sort().reverse()[0];
+  _showYearReviewForYear(year);
+}
+
+function _showYearReviewForYear(year) {
+  const yearLocs = state.locations.filter(loc => {
+    if (loc.status !== 'been') return false;
+    return (loc.visits || []).some(v => typeof v.date === 'string' && v.date.startsWith(year + '-'));
+  });
+
+  const regionCounts = {};
+  const catCounts = {};
+  const peopleCounts = {};
+  let bestRated = null;
+  let firstVisit = null, firstDate = null;
+
+  for (const loc of yearLocs) {
+    if (loc.address) {
+      const r = loc.address.split(',').pop().trim();
+      if (r) regionCounts[r] = (regionCounts[r] || 0) + 1;
+    }
+    catCounts[loc.category || 'location'] = (catCounts[loc.category || 'location'] || 0) + 1;
+    for (const p of (loc.people || [])) peopleCounts[p] = (peopleCounts[p] || 0) + 1;
+    if (loc.myRating > 0 && (!bestRated || loc.myRating > bestRated.myRating)) bestRated = loc;
+    for (const v of (loc.visits || [])) {
+      if (typeof v.date === 'string' && v.date.startsWith(year + '-')) {
+        if (!firstDate || v.date < firstDate) { firstDate = v.date; firstVisit = loc; }
+      }
+    }
+  }
+
+  const topCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const topRegions = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const topBuddy = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1])[0];
+  const regionCount = Object.keys(regionCounts).length;
+
+  const cards = [];
+  cards.push({ type: 'cover', year, total: yearLocs.length, countries: regionCount });
+  cards.push({ type: 'places', total: yearLocs.length, topCats });
+  if (regionCount > 0) cards.push({ type: 'countries', count: regionCount, topRegions });
+  if (bestRated) cards.push({ type: 'best', loc: bestRated });
+  if (firstVisit) cards.push({ type: 'first', loc: firstVisit, date: firstDate });
+  if (topBuddy) cards.push({ type: 'buddy', name: topBuddy[0], count: topBuddy[1] });
+  cards.push({ type: 'wrap', year, total: yearLocs.length, countries: regionCount });
+
+  _yrState = { cards, idx: 0 };
+  _renderYrCard();
+  const ov = document.getElementById('year-review-overlay');
+  if (ov) ov.style.display = 'flex';
+}
+
+function _renderYrCard() {
+  if (!_yrState) return;
+  const { cards, idx } = _yrState;
+  const card = cards[idx];
+  const cardEl = document.getElementById('yr-card');
+  if (!cardEl) return;
+
+  let html = '';
+  const pl = (n, w, s) => n === 1 ? `${n} ${w}` : `${n} ${s}`;
+
+  if (card.type === 'cover') {
+    html = `<div class="yr-eyebrow">Year in Review</div>
+      <div class="yr-year">${esc(card.year)}</div>
+      <div class="yr-subtitle">${pl(card.total,'place','places')} · ${pl(card.countries,'country','countries')}</div>`;
+  } else if (card.type === 'places') {
+    const catLine = card.topCats.map(([cat, n]) => {
+      const c = (typeof CATEGORIES !== 'undefined' && CATEGORIES[cat]) || {};
+      return `${c.emoji || '📍'} ${n}`;
+    }).join('  ·  ');
+    html = `<div class="yr-eyebrow">Places Visited</div>
+      <div class="yr-big-num">${card.total}</div>
+      ${catLine ? `<div class="yr-subtitle">${esc(catLine)}</div>` : ''}`;
+  } else if (card.type === 'countries') {
+    const chips = card.topRegions.map(([r, n]) =>
+      `<span class="yr-region">${esc(r)}${n > 1 ? ` <em>${n}×</em>` : ''}</span>`
+    ).join('');
+    html = `<div class="yr-eyebrow">Countries &amp; Regions</div>
+      <div class="yr-big-num">${card.count}</div>
+      <div class="yr-region-grid">${chips}</div>`;
+  } else if (card.type === 'best') {
+    const stars = '⭐'.repeat(Math.min(5, Math.round(card.loc.myRating)));
+    const cat = (typeof CATEGORIES !== 'undefined' && CATEGORIES[card.loc.category]) || {};
+    html = `<div class="yr-eyebrow">Best Rated</div>
+      <div class="yr-place-name">${esc(card.loc.name)}</div>
+      <div class="yr-subtitle">${cat.emoji ? cat.emoji + ' ' : ''}${esc(card.loc.address || '')}</div>
+      <div class="yr-stars">${stars}</div>`;
+  } else if (card.type === 'first') {
+    const cat = (typeof CATEGORIES !== 'undefined' && CATEGORIES[card.loc.category]) || {};
+    html = `<div class="yr-eyebrow">First Adventure of ${esc(card.date.slice(0,4))}</div>
+      <div class="yr-place-name">${esc(card.loc.name)}</div>
+      <div class="yr-subtitle">${cat.emoji ? cat.emoji + ' ' : ''}${esc(card.loc.address || '')}</div>
+      <div class="yr-date">📅 ${esc(card.date)}</div>`;
+  } else if (card.type === 'buddy') {
+    html = `<div class="yr-eyebrow">Top Travel Buddy</div>
+      <div class="yr-big-emoji">👥</div>
+      <div class="yr-place-name">${esc(card.name)}</div>
+      <div class="yr-subtitle">${pl(card.count,'place together','places together')}</div>`;
+  } else if (card.type === 'wrap') {
+    html = `<div class="yr-big-emoji">🎉</div>
+      <div class="yr-year">${esc(card.year)}</div>
+      <div class="yr-cta">What a year!</div>
+      <div class="yr-subtitle">${pl(card.total,'place','places')} · ${pl(card.countries,'country','countries')}</div>`;
+  }
+
+  cardEl.innerHTML = html;
+
+  const dotsEl = document.getElementById('yr-dots');
+  if (dotsEl) {
+    dotsEl.innerHTML = cards.map((_, i) =>
+      `<span class="yr-dot${i === idx ? ' active' : ''}" data-click="yearReviewGoTo" data-arg0="${i}"></span>`
+    ).join('');
+  }
+
+  const prevBtn = document.getElementById('yr-prev');
+  const nextBtn = document.getElementById('yr-next');
+  if (prevBtn) prevBtn.style.opacity = idx === 0 ? '0.3' : '1';
+  if (nextBtn) nextBtn.textContent = idx === cards.length - 1 ? '✕ Close' : '→';
+}
+
+function yearReviewNav(dir) {
+  if (!_yrState) return;
+  const newIdx = _yrState.idx + parseInt(dir, 10);
+  if (newIdx < 0) return;
+  if (newIdx >= _yrState.cards.length) { closeYearReview(); return; }
+  _yrState.idx = newIdx;
+  _renderYrCard();
+}
+
+function yearReviewGoTo(idx) {
+  if (!_yrState) return;
+  const i = parseInt(idx, 10);
+  if (i < 0 || i >= _yrState.cards.length) return;
+  _yrState.idx = i;
+  _renderYrCard();
+}
+
+function closeYearReview() {
+  const ov = document.getElementById('year-review-overlay');
+  if (ov) ov.style.display = 'none';
+  _yrState = null;
+}
+
 function cycleTheme() {
   const idx = THEME_ORDER.indexOf(currentTheme);
   const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
@@ -12778,5 +12954,14 @@ async function _handlePhotoFiles(fileList) {
   _checkPhotoDistance(loc);
 }
 </script>
+<div id="year-review-overlay" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.92);flex-direction:column;align-items:center;justify-content:center;padding:24px;">
+  <button class="yr-close" data-click="closeYearReview" aria-label="Close Year in Review">×</button>
+  <div id="yr-card" class="yr-card"></div>
+  <div id="yr-dots" style="margin-top:24px;display:flex;gap:8px;align-items:center;"></div>
+  <div style="display:flex;gap:16px;margin-top:20px;align-items:center;">
+    <button id="yr-prev" class="yr-nav-btn" data-click="yearReviewNav" data-arg0="-1" aria-label="Previous">←</button>
+    <button id="yr-next" class="yr-nav-btn" data-click="yearReviewNav" data-arg0="1" aria-label="Next">→</button>
+  </div>
+</div>
 </body>
 </html>

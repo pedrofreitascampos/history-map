@@ -1,5 +1,5 @@
 // Power features regression tests — S4 batch.
-// Static markup + vm-sandbox coverage for On This Day and future power features.
+// Static markup + vm-sandbox coverage for On This Day, Year in Review, and future power features.
 
 const path = require('path');
 const fs = require('fs');
@@ -144,5 +144,52 @@ describe('On This Day — logic', () => {
     vm.runInContext('dismissOnThisDay()', ctx);
     expect(bannerEl.style.display).toBe('none');
     expect(ls['hm_otd_dismissed']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 3. Year in Review — static markup
+// ──────────────────────────────────────────────────────────────────────────────
+describe('Year in Review — static markup', () => {
+  test('#year-review-overlay exists with display:none', () => {
+    expect(indexHtml).toContain('id="year-review-overlay"');
+    expect(indexHtml).toMatch(/id="year-review-overlay"[^>]*style="[^"]*display:none/);
+  });
+
+  test('#yr-card and #yr-dots exist inside overlay', () => {
+    const ovStart = indexHtml.indexOf('id="year-review-overlay"');
+    const ovEnd = indexHtml.indexOf('</div>', ovStart + 500);
+    const ovHtml = indexHtml.substring(ovStart, ovEnd + 6);
+    expect(ovHtml).toContain('id="yr-card"');
+    expect(ovHtml).toContain('id="yr-dots"');
+  });
+
+  test('prev/next buttons use data-click dispatcher', () => {
+    expect(indexHtml).toMatch(/id="yr-prev"[\s\S]{0,100}data-click="yearReviewNav"[\s\S]{0,50}data-arg0="-1"/);
+    expect(indexHtml).toMatch(/id="yr-next"[\s\S]{0,100}data-click="yearReviewNav"[\s\S]{0,50}data-arg0="1"/);
+  });
+
+  test('close button uses data-click="closeYearReview"', () => {
+    expect(indexHtml).toMatch(/data-click="closeYearReview"/);
+  });
+
+  test('stats-view has Year in Review trigger button', () => {
+    expect(indexHtml).toMatch(/data-click="showYearReview"[\s\S]{0,100}Year in Review/);
+  });
+
+  test('all yr functions defined', () => {
+    ['showYearReview', '_showYearReviewForYear', '_renderYrCard', 'yearReviewNav', 'yearReviewGoTo', 'closeYearReview'].forEach(fn => {
+      expect(indexHtml).toContain(`function ${fn}`);
+    });
+  });
+
+  test('Escape handler closes yr-overlay before modals', () => {
+    const escBlock = indexHtml.match(/key !== 'Escape'[\s\S]{0,1200}const modals = \[/);
+    expect(escBlock).not.toBeNull();
+    const block = escBlock[0];
+    const yrPos = block.indexOf('year-review-overlay');
+    const modalsPos = block.indexOf('const modals = [');
+    expect(yrPos).toBeGreaterThan(-1);
+    expect(yrPos).toBeLessThan(modalsPos);
   });
 });
