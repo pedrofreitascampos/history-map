@@ -1195,9 +1195,8 @@ app.put('/api/settings', auth, async (req, res) => {
 app.get('/api/my-backups', auth, async (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
-    const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
     const userBackups = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+      .filter(f => f.startsWith(req.user.id + '_') && f.endsWith('.json'))
       .sort().reverse();
     const list = userBackups.map(name => {
       const stats = fs.statSync(path.join(BACKUP_DIR, name));
@@ -1215,9 +1214,8 @@ app.get('/api/my-backups', auth, async (req, res) => {
 app.get('/api/my-backup', auth, async (req, res) => {
   try {
     if (!fs.existsSync(BACKUP_DIR)) return res.status(404).json({ error: 'No backups yet' });
-    const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
     const userBackups = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+      .filter(f => f.startsWith(req.user.id + '_') && f.endsWith('.json'))
       .sort().reverse();
     if (userBackups.length === 0) return res.status(404).json({ error: 'No backups for your account yet' });
     res.download(path.join(BACKUP_DIR, userBackups[0]));
@@ -1228,9 +1226,8 @@ app.get('/api/my-backup', auth, async (req, res) => {
 });
 
 app.get('/api/my-backup/:filename', auth, (req, res) => {
-  const username = req.user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
   const filename = path.basename(req.params.filename);
-  if (!filename.startsWith(username + '_') || !filename.endsWith('.json')) {
+  if (!filename.startsWith(req.user.id + '_') || !filename.endsWith('.json')) {
     return res.status(403).json({ error: 'Access denied' });
   }
   const filePath = path.resolve(BACKUP_DIR, filename);
@@ -1650,7 +1647,7 @@ async function runBackup() {
     for (const user of users) {
       const userId = user._id;
       const username = user.username.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const backupFile = path.join(BACKUP_DIR, `${username}_${date}.json`);
+      const backupFile = path.join(BACKUP_DIR, `${userId}_${date}.json`);
 
       // Skip if today's backup already exists
       if (fs.existsSync(backupFile)) continue;
@@ -1673,7 +1670,7 @@ async function runBackup() {
 
       // Prune old backups for this user
       const userBackups = fs.readdirSync(BACKUP_DIR)
-        .filter(f => f.startsWith(username + '_') && f.endsWith('.json'))
+        .filter(f => f.startsWith(userId + '_') && f.endsWith('.json'))
         .sort().reverse();
       for (const old of userBackups.slice(MAX_BACKUPS_PER_USER)) {
         fs.unlinkSync(path.join(BACKUP_DIR, old));

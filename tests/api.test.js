@@ -733,6 +733,15 @@ describe('User backup endpoints', () => {
     expect(res.status).toBe(403);
   });
 
+  test('my-backup/:filename rejects username-prefixed filename (authz by userId not username)', async () => {
+    // Old scheme: files named `username_date.json`. A user "testuse" could access
+    // "testuser_2026-01-01.json" via startsWith("testuse_") = false, but "testuser" accessing
+    // "testuser2_…" was the real bug. This test ensures the current user's own username
+    // is no longer a valid prefix — only the opaque userId is.
+    const res = await request(app).get('/api/my-backup/testuser_2026-01-01.json').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
   test('my-backups requires auth', async () => {
     const res = await request(app).get('/api/my-backups');
     expect(res.status).toBe(401);
