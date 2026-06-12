@@ -90,6 +90,8 @@ function makeCtx({ apiImpl, geocodeImpl, docOverride } = {}) {
     mapId: (o) => ({ ...o, id: o._id || o.id }),
     renderMarkers: () => {},
     geocodeNarratedStop: geocodeImpl || (() => null),
+    focusModal: () => {},
+    restoreFocus: () => {},
     document: doc,
     window: {},
   };
@@ -229,8 +231,8 @@ describe('webImportFetch', () => {
       articleTitle: 'Best restaurants in Lisbon',
       venues: serverResponse.venues,
     });
-    // Modal should be visible after success
-    expect(doc.getElementById('web-import-modal').style.display).toBe('flex');
+    // Modal should be visible after success (now uses .open class, not style.display)
+    expect(doc.getElementById('web-import-modal').classList.contains('open')).toBe(true);
   });
 });
 

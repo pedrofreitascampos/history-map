@@ -264,3 +264,44 @@ describe('Parchment theme overlay tokens', () => {
     expect(parchBlock).toMatch(/--overlay-base.*rgba\(0,0,0/);
   });
 });
+
+// ── 14. Narrate/Discover/Web-import modal system migration ───────────────────
+describe('Bypass modals use .open class + Escape list + aria', () => {
+  const BYPASS_MODALS = ['narrate-modal', 'discover-modal', 'web-import-modal'];
+
+  test.each(BYPASS_MODALS)('%s uses classList.add("open") not style.display', (id) => {
+    const fnMap = { 'narrate-modal': 'openNarrateModal', 'discover-modal': 'openDiscoverModal', 'web-import-modal': 'openWebImportModal' };
+    const fn = extractFunction(fnMap[id]);
+    expect(fn).toMatch(/classList\.add\(['"]open['"]\)/);
+    expect(fn).not.toMatch(/style\.display\s*=\s*['"]flex['"]/);
+  });
+
+  test.each(BYPASS_MODALS)('%s close fn calls classList.remove("open") and restoreFocus', (id) => {
+    const fnMap = { 'narrate-modal': 'closeNarrateModal', 'discover-modal': 'closeDiscoverModal', 'web-import-modal': 'closeWebImportModal' };
+    const fn = extractFunction(fnMap[id]);
+    expect(fn).toMatch(/classList\.remove\(['"]open['"]\)/);
+    expect(fn).toMatch(/restoreFocus\(\)/);
+    expect(fn).not.toMatch(/style\.display\s*=\s*['"]none['"]/);
+  });
+
+  test('all three are in the Escape handler modal list', () => {
+    const escIdx = html.indexOf("if (e.key !== 'Escape') return;");
+    const escBlock = html.slice(escIdx, escIdx + 900);
+    expect(escBlock).toMatch(/narrate-modal/);
+    expect(escBlock).toMatch(/discover-modal/);
+    expect(escBlock).toMatch(/web-import-modal/);
+  });
+
+  test.each(BYPASS_MODALS)('%s h3 → h2 (semantic heading upgrade)', (id) => {
+    const markerIdx = html.indexOf(`id="${id}"`);
+    const block = html.slice(markerIdx, markerIdx + 400);
+    expect(block).toMatch(/<h2\b/);
+    expect(block).not.toMatch(/<h3\b/);
+  });
+
+  test.each(BYPASS_MODALS)('%s overlay has no hardcoded style="display:none"', (id) => {
+    const markerIdx = html.indexOf(`id="${id}"`);
+    const line = html.slice(markerIdx, html.indexOf('>', markerIdx) + 1);
+    expect(line).not.toMatch(/style=[^>]*display\s*:\s*none/);
+  });
+});

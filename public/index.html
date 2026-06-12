@@ -2375,10 +2375,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Narrate-a-trip Modal -->
-<div id="narrate-modal" class="modal-overlay" style="display:none;" data-click="closeOnOverlay" data-arg0="narrate-modal">
+<div id="narrate-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="narrate-modal-title">
   <div class="modal" data-stop="1" style="max-width:560px;">
     <div class="modal-header">
-      <h3>✨ Narrate a trip</h3>
+      <h2 id="narrate-modal-title">✨ Narrate a trip</h2>
       <button class="modal-close" data-click="closeNarrateModal" aria-label="Close">×</button>
     </div>
     <div class="modal-body">
@@ -2398,10 +2398,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Web Import Review Modal -->
-<div id="web-import-modal" class="modal-overlay" style="display:none;" data-click="closeWebImportModal" data-arg0="web-import-modal">
+<div id="web-import-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="web-import-modal-title">
   <div class="modal" style="width:640px;max-width:90vw;" data-stop="1">
     <div class="modal-header">
-      <h3 id="web-import-modal-title">🌐 Review venues</h3>
+      <h2 id="web-import-modal-title">🌐 Review venues</h2>
       <button class="modal-close" data-click="closeWebImportModal" aria-label="Close">×</button>
     </div>
     <div class="modal-body">
@@ -2606,10 +2606,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Discover Modal -->
-<div id="discover-modal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="discover-modal-title">
+<div id="discover-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="discover-modal-title">
   <div class="modal" style="max-width:560px;">
     <div class="modal-header">
-      <h3 id="discover-modal-title">✨ Discover top-rated places</h3>
+      <h2 id="discover-modal-title">✨ Discover top-rated places</h2>
       <button class="modal-close" data-click="closeDiscoverModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
@@ -3649,7 +3649,7 @@ document.addEventListener('keydown', e => {
   const confirm = document.querySelector('.confirm-overlay');
   if (confirm) { confirm.querySelector('.confirm-cancel').click(); return; }
   // Modals (close topmost)
-  const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal'];
+  const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
     if (m && m.classList.contains('open')) {
@@ -10170,9 +10170,11 @@ async function openNarrateModal() {
   } catch { showToast('Could not check narrate status', 'warn'); return; }
   document.getElementById('narrate-text').value = '';
   document.getElementById('narrate-preview').innerHTML = '';
-  document.getElementById('narrate-modal').style.display = 'flex';
+  const _nm = document.getElementById('narrate-modal');
+  _nm.classList.add('open');
+  focusModal(_nm);
 }
-function closeNarrateModal() { document.getElementById('narrate-modal').style.display = 'none'; }
+function closeNarrateModal() { document.getElementById('narrate-modal').classList.remove('open'); restoreFocus(); }
 
 async function parseNarration() {
   const text = document.getElementById('narrate-text').value.trim();
@@ -12301,10 +12303,13 @@ const CATEGORY_TO_OSM_TAG = {
 
 function openDiscoverModal() {
   document.getElementById('discover-results').innerHTML = '';
-  document.getElementById('discover-modal').style.display = 'flex';
+  const _dm = document.getElementById('discover-modal');
+  _dm.classList.add('open');
+  focusModal(_dm);
 }
 function closeDiscoverModal() {
-  document.getElementById('discover-modal').style.display = 'none';
+  document.getElementById('discover-modal').classList.remove('open');
+  restoreFocus();
 }
 async function runDiscover() {
   const category = document.getElementById('discover-category').value;
@@ -12519,11 +12524,14 @@ function openWebImportModal() {
   const toggleAll = document.getElementById('web-import-toggle-all');
   if (toggleAll) toggleAll.checked = true;
   updateWebImportSelectedCount();
-  document.getElementById('web-import-modal').style.display = 'flex';
+  const _wm = document.getElementById('web-import-modal');
+  _wm.classList.add('open');
+  focusModal(_wm);
 }
 
 function closeWebImportModal() {
-  document.getElementById('web-import-modal').style.display = 'none';
+  document.getElementById('web-import-modal').classList.remove('open');
+  restoreFocus();
 }
 
 function toggleAllWebImport(el) {
