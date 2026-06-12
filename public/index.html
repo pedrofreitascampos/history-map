@@ -177,7 +177,10 @@ body {
 /* ═══════════════════════════════════════════════════════════ */
 /* MAP VIEW                                                   */
 /* ═══════════════════════════════════════════════════════════ */
-#map { width: 100%; height: 100%; z-index: 1; }
+#map-view { flex-direction: column; }
+#map { width: 100%; flex: 1; min-height: 0; z-index: 1; }
+#on-this-day-banner { flex-shrink:0;align-items:center;gap:10px;padding:7px 14px;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:12px;z-index:500; }
+#on-this-day-banner button { margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--text-muted);padding:0 2px; }
 #add-place-fab { position:absolute;bottom:24px;right:12px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s,box-shadow .12s; }
 #add-place-fab:hover { transform:scale(1.08);box-shadow:0 4px 14px rgba(0,0,0,.4); }
 
@@ -1636,6 +1639,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 <!-- ═══════════════════════ MAP VIEW ═══════════════════════ -->
 <div id="app">
   <div class="view active" id="map-view">
+    <div id="on-this-day-banner" role="status" aria-live="polite" style="display:none">
+      <span id="on-this-day-text"></span>
+      <button data-click="dismissOnThisDay" aria-label="Dismiss">×</button>
+    </div>
     <div id="map"></div>
     <button id="add-place-fab" data-click="quickAddPlace" title="Add place" aria-label="Add place">+</button>
   </div>
@@ -11653,6 +11660,50 @@ function applyTheme(name) {
   }
 }
 
+function checkOnThisDay() {
+  const todayDate = new Date();
+  const todayStr = todayDate.toISOString().split('T')[0];
+  if (localStorage.getItem('hm_otd_dismissed') === todayStr) return;
+  const mm = String(todayDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(todayDate.getDate()).padStart(2, '0');
+  const mmdd = `${mm}-${dd}`;
+  const thisYear = todayDate.getFullYear();
+  const byYear = {};
+  for (const loc of state.locations) {
+    if (loc.status !== 'been') continue;
+    for (const v of (loc.visits || [])) {
+      if (typeof v.date !== 'string' || v.date.length < 10) continue;
+      const vYear = parseInt(v.date.slice(0, 4), 10);
+      if (v.date.slice(5) === mmdd && vYear < thisYear) {
+        (byYear[vYear] = byYear[vYear] || []).push(loc.name);
+        break;
+      }
+    }
+  }
+  const years = Object.keys(byYear).sort((a, b) => b - a);
+  if (years.length === 0) return;
+  const parts = years.map(y => {
+    const n = thisYear - parseInt(y, 10);
+    const ago = n === 1 ? '1 year ago' : `${n} years ago`;
+    const names = byYear[y];
+    const shown = names.slice(0, 3).map(s => s.length > 28 ? s.slice(0, 25) + '…' : s).join(', ');
+    const extra = names.length > 3 ? ` +${names.length - 3}` : '';
+    return `${ago}: ${shown}${extra}`;
+  });
+  const textEl = document.getElementById('on-this-day-text');
+  const banner = document.getElementById('on-this-day-banner');
+  if (!textEl || !banner) return;
+  textEl.textContent = `🗓️ On this day — ${parts.join(' · ')}`;
+  banner.style.display = 'flex';
+}
+
+function dismissOnThisDay() {
+  const todayStr = new Date().toISOString().split('T')[0];
+  localStorage.setItem('hm_otd_dismissed', todayStr);
+  const banner = document.getElementById('on-this-day-banner');
+  if (banner) banner.style.display = 'none';
+}
+
 function cycleTheme() {
   const idx = THEME_ORDER.indexOf(currentTheme);
   const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
@@ -11710,6 +11761,7 @@ async function startApp(username) {
   // re-render + invalidateSize tick it always did.
   renderMarkers();
   if (map) setTimeout(() => map.invalidateSize(), 100);
+  checkOnThisDay();
 
   // Restore sidebar state. On mobile (≤480px viewport) the sidebar covers
   // the entire screen, so default to collapsed when the user has no saved
