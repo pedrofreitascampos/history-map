@@ -47,7 +47,7 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 
 ### Live functionality
 
-- **Quick-add → Add modal Photon shortcut** — auto-run Photon search on modal open when name filled but coords empty. Partial overlap with the 2026-06-03 `_autoGeocodeAddModalIfNeeded` ship — verify gap before picking; may already be closed.
+~~**Quick-add → Add modal Photon shortcut**~~ ✅ `_autoGeocodeAddModalIfNeeded()` already fires on `openAddModal` when name filled + coords empty
 
 ### UX P1 (from 2026-06-02 audit)
 
@@ -66,11 +66,11 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 ~~**(Audit 2026-06-11) Parchment theme hardcoded white-overlay surfaces**~~ ✅ `--overlay-base/hover/strong` tokens shipped in prior session
 
 **A11y / mobile (audit 2026-06-11)**
-- **No keyboard path to set/fix coordinates** — every marker is pointer-only `draggable`, lat/lng row hidden except on save-fail. Add an "✎ Edit coordinates" disclosure in the edit modal's Identity section. (`index.html:3883, 2162`)
+~~**No keyboard path to set/fix coordinates**~~ ✅ 2026-06-12 — `#loc-coords-toggle` disclosure button added; toggleLocCoordsRow shows/hides lat/lng row + syncs aria-expanded
 ~~**Replay fullscreen height assumes desktop chrome**~~ ✅ `.fullscreen` is already `flex-direction:column` + `#replay-map { flex:1; height:auto }`
-- **Sub-12px reading type** — `.popup-tag` 9px, achievement desc/progress 10px, import-table th 10px, account key/provider hints 10px. Raise to 11-12px. (`index.html:457, 905, 1102, 2457`)
-- **Replay scrubber announces bare indices** — add `aria-valuetext` = the position label inside `updateReplayPositionLabel`. (`index.html:1821, 7446`)
-- **Bulk-edit mobile fix is a fragile `nth-child(3)` selector** — class-target `.bulk-actions-row`. (`index.html:1169`)
+~~**Sub-12px reading type**~~ ✅ 2026-06-12 — account summary hints + filter clear-btn + ts-label all raised to 12px
+~~**Replay scrubber announces bare indices**~~ ✅ aria-valuetext already set in updateReplayPositionLabel
+~~**Bulk-edit mobile fix is a fragile `nth-child(3)` selector**~~ ✅ already targets `.bulk-actions-row` directly in the `@media (max-width:480px)` block
 
 ### Longer-term wishlist (P1+, scoped)
 

@@ -24,9 +24,10 @@ function extractFunction(name) {
 // 1. Static markup pins (no sandbox needed)
 // ──────────────────────────────────────────────────────────────────────────────
 describe('Wishlist view — static markup pins', () => {
-  test('nav tab data-view="wishlist-view" exists with ⭐ emoji', () => {
+  test('nav tab data-view="wishlist-view" exists with 🔖 emoji (not ⭐ — reserved for ratings)', () => {
     expect(indexHtml).toContain('data-view="wishlist-view"');
-    expect(indexHtml).toMatch(/data-view="wishlist-view"[\s\S]{0,200}⭐/);
+    expect(indexHtml).toMatch(/data-view="wishlist-view"[\s\S]{0,200}🔖/);
+    expect(indexHtml).not.toMatch(/data-view="wishlist-view"[\s\S]{0,200}⭐/);
   });
 
   test('<div class="view" id="wishlist-view"> exists', () => {

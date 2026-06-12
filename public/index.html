@@ -1597,7 +1597,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       📅 <span class="tab-label">Chronology</span>
     </button>
     <button class="nav-tab" data-view="wishlist-view" data-click="switchView" data-arg0="wishlist-view">
-      ⭐ <span class="tab-label">Wishlist</span>
+      🔖 <span class="tab-label">Wishlist</span>
     </button>
     <button class="nav-tab" data-view="trips-view" data-click="switchView" data-arg0="trips-view">
       🧳 <span class="tab-label">Trips</span>
@@ -1666,7 +1666,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="filter-group">
         <button class="filter-group-btn active" data-status="all" data-click="setStatusFilter" data-arg0="all" data-arg1="this">All</button>
         <button class="filter-group-btn" data-status="been" data-click="setStatusFilter" data-arg0="been" data-arg1="this">✅ Been</button>
-        <button class="filter-group-btn" data-status="bucket" data-click="setStatusFilter" data-arg0="bucket" data-arg1="this">⭐ Bucket</button>
+        <button class="filter-group-btn" data-status="bucket" data-click="setStatusFilter" data-arg0="bucket" data-arg1="this">🔖 Wishlist</button>
       </div>
     </div>
 
@@ -1947,7 +1947,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <select class="filter-select" id="bulk-filter-status" data-change="renderBulkList" style="width:150px;font-size:12px;">
         <option value="">All status</option>
         <option value="been">✅ Been</option>
-        <option value="bucket">⭐ Bucket</option>
+        <option value="bucket">🔖 Wishlist</option>
         <option value="uncategorized">❓ Uncategorized</option>
         <option value="pending">⏳ Pending approval</option>
       </select>
@@ -1968,7 +1968,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;">
         <select class="filter-select" id="bulk-category" style="width:140px;font-size:12px;"><option value="">Category →</option></select>
         <select class="filter-select" id="bulk-status" style="width:110px;font-size:12px;">
-          <option value="">Status →</option><option value="been">✅ Been</option><option value="bucket">⭐ Bucket</option>
+          <option value="">Status →</option><option value="been">✅ Been</option><option value="bucket">🔖 Wishlist</option>
         </select>
         <select class="filter-select" id="bulk-trip" style="width:140px;font-size:12px;"><option value="">Trip →</option><option value="_none">No trip</option></select>
         <select class="filter-select" id="bulk-tag-action" style="width:120px;font-size:12px;">
@@ -2209,7 +2209,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <label>Status</label>
           <div class="status-toggle">
             <button class="status-option selected" data-status="been" data-click="selectStatus" data-arg0="been" data-arg1="this">✅ Been There</button>
-            <button class="status-option" data-status="bucket" data-click="selectStatus" data-arg0="bucket" data-arg1="this">⭐ Wishlist</button>
+            <button class="status-option" data-status="bucket" data-click="selectStatus" data-arg0="bucket" data-arg1="this">🔖 Wishlist</button>
           </div>
         </div>
         <div class="form-group" id="price-group" style="display:none;flex:1 1 40%;">
@@ -4523,7 +4523,7 @@ function _renderBulkItem(loc) {
   const c = CATEGORIES[loc.category] || CATEGORIES.location;
   const locId = loc.id || loc._id;
   const checked = bulkSelected.has(locId) ? 'checked' : '';
-  const statusIcon = loc.status === 'been' ? '✅' : '⭐';
+  const statusIcon = loc.status === 'been' ? '✅' : '🔖';
   const rating = loc.myRating ? `★${loc.myRating}` : '';
   // Show want-to-go strength on bucket items only, when set
   const strength = loc.status === 'bucket' && loc.bucketStrength > 0
@@ -8742,7 +8742,7 @@ function viewCollection(colId) {
   } else {
     html += locs.map(loc => {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
-      const statusIcon = loc.status === 'been' ? '✅' : '⭐';
+      const statusIcon = loc.status === 'been' ? '✅' : '🔖';
       const rating = loc.myRating ? ' · ★' + loc.myRating : '';
       return `<div class="cat-stat-card" style="cursor:pointer;" data-click="switchToMapAndEdit" data-arg0="${esc(loc.id)}">
         <span class="cat-stat-emoji">${cat.emoji}</span>
