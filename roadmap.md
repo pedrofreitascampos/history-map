@@ -37,7 +37,7 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 
 ### Perf round 2 (2 of 8 left)
 
-- **`rebuildIndexes()` O(n) called 28 times/session** including on every modal close. Surgical update on insert/update/delete instead of full rebuild. Touches many call sites — biggest refactor of the bunch.
+~~**`rebuildIndexes()` O(n) called 28 times/session**~~ ✅ surgical helpers (`_idxAddLoc/RemoveLoc/AddTransit/RemoveTransit`) cover all hot paths; remaining 17 calls are correct bulk-op full rebuilds
 ~~**RainViewer frame-list cache**~~ ✅ already implemented (5-min TTL at `_rainviewerFramesCache`)
 
 ### Technical / correctness

@@ -8498,8 +8498,7 @@ async function detachTransitFromTrip(transitId) {
   try {
     const saved = await api('PUT', '/transits/' + transitId, { tripId: '' });
     const i = state.transits.findIndex(t => t.id === transitId);
-    if (i >= 0) { state.transits[i] = mapId(saved); }
-    rebuildIndexes();
+    if (i >= 0) { _idxRemoveTransit(state.transits[i]); state.transits[i] = mapId(saved); _idxAddTransit(state.transits[i]); stateIndex.generation++; }
     const tripSel = document.getElementById('trip-selector');
     if (tripSel && tripSel.value) selectTrip(tripSel.value);
     renderTransitsView();
