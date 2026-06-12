@@ -11,10 +11,11 @@ Convention (companion `docs/architecture.md`):
 
 ## Status
 
-**2026-06-11:** 1112 jest (3 skip) + 8 e2e green. **S2 perf round 2 + security sweep shipped** — topojson CDN removed, markerHash template literal, buildTagFilters fingerprint, getFilteredLocations memo, renderReplayPath transitLayer append-only, prefetchReplayRoutes cap+abort, _runAction async catch, playReplay panelOpen guard, toggleReplayFullscreen listener fix + server: private Cache-Control, email_verified SSO check, SSRF `::` block, settings validation, error middleware. Next: nav collapse (UX P1) or remaining perf (rebuildIndexes, RainViewer). Recent ships:
+**2026-06-12:** 1150 jest (3 skip). **Security batch** — backup authz userId prefix, DNS-rebinding SSRF defence, confirmed notes sanitizer loop-until-stable + deleted-user cookie check already in place. Next: rebuildIndexes perf or UX P1 mono stats font.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Security** | **2026-06-12** | **+4 (1150)** | **backup authz userId · DNS-rebinding dns.lookup · notes loop-until-stable (already in) · deleted-user cookie (already in)** |
 | **Perf round 2 + security** | **2026-06-11** | **+29 (1112)** | **topojson CDN removed · markerHash template literal · buildTagFilters fingerprint skip · getFilteredLocations memo · renderReplayPath transitLayer append-only · prefetchReplayRoutes 100-cap+abort · _runAction .catch · playReplay panelOpen guard · fullscreen listener fix · private Cache-Control · email_verified SSO · SSRF :: · settings validation · error middleware** |
 | **Audit-fix (S2.5)** | **2026-06-11** | **+27 (1083)** | **flex-shrink:0 replay · Load-more ACTIONS reg · live-search display fix · 16 data-click→data-change/input · replay date v1 · self-merge guard · Escape→cancel.click · photon default · wishlist hash · narrate tooltip · airports flight-only · toast.success CSS** |
 | Live fixes | 2026-06-11 | +21 (1056) | Photon stale-results clear · Narrate "needs API key" UX · `<form>` autofill on auth + key inputs · pagination `data-click` · overlay-persist regression pin |
@@ -29,10 +30,10 @@ Active backlog. Grouped by theme; small-effort items first within each section.
 
 ### Security / hardening
 
-- **DNS-rebinding / CNAME-chain SSRF defence** — `dns.lookup(host)` after the WHATWG hostname check, then re-apply the SSRF blocklist to the resolved IP. The current regex blocklist trusts the hostname string, so an attacker-controlled DNS name that resolves to a private IP slips through. Lower priority now that redirect bypass + direct-IP cases are closed. ~half-day.
-- **(Audit 2026-06-11) `notes` sanitizer is single-pass / bypassable** (`index.js:559`) — `<scr<script>ipt>` re-forms after one replace. Defense-in-depth only (renders via `esc()`), but loop-until-stable.
-- **(Audit 2026-06-11) Deleted (merged-away) user keeps a valid 30-day cookie** writing orphaned docs — `auth` never checks the user still exists. Cheap `db.users.findOne` on mutating routes, or a `deletedUserIds` set. (`index.js:251-265, 410`)
-- **(Audit 2026-06-11) Backup authz by username *prefix*** (`startsWith(username+'_')`) — `ana` matches `ana_maria_*.json`; sanitization can collide distinct usernames. Move to per-`userId` subdirs. (`index.js:1183, 1203, 1216, 1658-1663`)
+~~**DNS-rebinding / CNAME-chain SSRF defence**~~ ✅ 2026-06-12
+~~**(Audit 2026-06-11) `notes` sanitizer is single-pass / bypassable**~~ ✅ already loop-until-stable in code
+~~**(Audit 2026-06-11) Deleted (merged-away) user keeps a valid 30-day cookie**~~ ✅ already `db.users.findOne` in `auth()`
+~~**(Audit 2026-06-11) Backup authz by username prefix**~~ ✅ 2026-06-12 userId prefix
 
 ### Perf round 2 (2 of 8 left)
 
