@@ -1,0 +1,24 @@
+{
+  "name": "Oikumene",
+  "short_name": "Oikumene",
+  "description": "Track, discover, and remember every place.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0f0f12",
+  "background_color": "#0f0f12",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["travel", "maps", "lifestyle"],
+  "shortcuts": [
+    { "name": "Map", "url": "/#map", "description": "Open the map" },
+    { "name": "Wishlist", "url": "/#wishlist", "description": "Open wishlist" },
+    { "name": "Trips", "url": "/#trips", "description": "Open trips" }
+  ]
+}

@@ -179,6 +179,12 @@ function serveIndex(req, res) {
 }
 app.get('/', serveIndex);
 
+// Service worker — must be served no-store so browsers always check for updates
+app.get('/sw.js', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, '..', 'public', 'sw.js'));
+});
+
 // Public share page — serves share.html with nonce injection (same pattern as index.html)
 let _shareTemplate = null;
 function getShareTemplate() {
