@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-12:** 1230 jest (3 skip) · S4 power features in progress.
+**2026-06-13:** 1249 jest (3 skip) · PWA shipped — SW tile cache + manifest + installable.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **PWA / Offline** | **2026-06-13** | **+19 (1249)** | **sw.js tile cache (200 cap) · cache-first CDN · network-first API · manifest.json · no-store SW route** |
 | **Share Trip** | **2026-06-12** | **+15 (1230)** | **POST/DELETE /trips/:id/share · GET /api/share/:token (public) · /s/:token page · CSP-nonce** |
 | **Plan-a-Day** | **2026-06-12** | **+53 (1215)** | **wishlist select toggles · OSRM nearest-neighbour · plan-day-modal · trip creation + nav** |
 | **S3 + S4 start** | **2026-06-12** | **+21 (1162)** | **Sidebar FAB · Stadia tiles · jargon cleanup · On This Day · Year in Review · Neighborhoods · Photo Timeline** |
@@ -19,8 +20,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Power features (ranked by impact-vs-effort)
 
-1. **📡 Offline / PWA mode** — Service Worker + tile cache. Also unblocks Google-Maps share-target.
-2. **🔍 Smart import dedup** — fuzzy-match incoming names (Levenshtein < 0.2 + within 500 m) before commit.
+1. **🔍 Smart import dedup** — fuzzy-match incoming names (Levenshtein < 0.2 + within 500 m) before commit.
 3. **📥 Google Maps Saved Places import** (Takeout CSV) — primary first-run seeding source.
 4. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri–Sat 8–10 pm". Uses `visits[].date`.
 5. **🚫 Already-been detection on import** — fuzzy-match vs existing `been`; flag "update date?" instead of dupe.
@@ -37,7 +37,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Longer-term / blocked
 
-- **Direct share-from-Google-Maps** — Mobile PWA share-target (blocked on SW above) + Desktop bookmarklet (no blocker). Bookmarklet: `javascript:` on `google.com/maps/...` → `#add?url=<encoded>`.
+- **Direct share-from-Google-Maps** — Mobile PWA share-target (SW ✅ now unblocked — add `share_target` to manifest + `POST /api/import/google-maps-link`) + Desktop bookmarklet (`javascript:` on `google.com/maps/...` → `#add?url=<encoded>`).
 - **Bootstrap preset collections** — UNESCO (~1200), National Parks, Airports, Stadiums, Wonders. Open design Q: in `state.locations` vs overlay layer.
 - **Google Data Portability API OAuth** — blocked on Google restricted-scope verification.
 - **Strict `style-src` CSP** — Leaflet injects nonceless inline styles; gap accepted until replacement.
