@@ -25,7 +25,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Power features (ranked by impact-vs-effort)
 
-~~6. **🧭 Context-aware Discover** — seed Discover at trip centroid + suggest missing categories when in a trip.~~ ✅ 2026-06-14
 7. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year roll-up.
 8. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.
 9. **🔀 Conflict-free import preview diff** — adds/updates/dupes as reviewable list before committing.
