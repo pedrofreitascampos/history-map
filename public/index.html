@@ -2692,6 +2692,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <button class="modal-close" data-click="closeDiscoverModal" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body">
+      <div id="discover-trip-context" style="display:none;background:var(--bg-tertiary);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:13px;"></div>
       <div class="form-group">
         <label for="discover-category">Category</label>
         <select id="discover-category" class="form-input">
@@ -13131,8 +13132,59 @@ const CATEGORY_TO_OSM_TAG = {
   shopping: 'shop:mall',
 };
 
+function _tripCentroid(locs) {
+  const valid = locs.filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lng));
+  if (!valid.length) return null;
+  return {
+    lat: valid.reduce((s, l) => s + l.lat, 0) / valid.length,
+    lng: valid.reduce((s, l) => s + l.lng, 0) / valid.length,
+  };
+}
+
+function setDiscoverCategory(cat) {
+  const sel = document.getElementById('discover-category');
+  if (sel) sel.value = cat;
+}
+
 function openDiscoverModal() {
   document.getElementById('discover-results').innerHTML = '';
+  const ctxEl = document.getElementById('discover-trip-context');
+
+  // Context-aware: if a trip is selected in Trips view, seed at its centroid
+  const DISCOVERABLE = ['restaurant', 'cafe', 'bar', 'museum', 'monument', 'park', 'hotel', 'shopping'];
+  const tripId = document.getElementById('trip-selector')?.value;
+  const tripLocs = tripId
+    ? (stateIndex.locationsByTrip.get(tripId) || []).filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lng))
+    : [];
+
+  if (tripId && tripLocs.length >= 2) {
+    const trip = state.trips.find(t => t.id === tripId);
+    const centroid = _tripCentroid(tripLocs);
+    // Cover all trip stops + 30 % buffer, capped at 20 km
+    const maxDistKm = Math.max(...tripLocs.map(l => haversineKm(centroid.lat, centroid.lng, l.lat, l.lng)));
+    const radius = Math.min(20, Math.max(1, Math.round(maxDistKm * 1.3)));
+
+    // Pan map so runDiscover's map.getCenter() lands on the trip centroid
+    map.setView([centroid.lat, centroid.lng], map.getZoom());
+    document.getElementById('discover-radius').value = radius;
+
+    // Missing-category chips
+    const haveCats = new Set(tripLocs.map(l => l.category));
+    const missing = DISCOVERABLE.filter(c => !haveCats.has(c));
+    let html = `<div>📍 Seeded at <strong>${esc(trip?.name || 'trip')}</strong> centroid · radius ${radius} km</div>`;
+    if (missing.length) {
+      const chips = missing.slice(0, 5).map(c => {
+        const cat = CATEGORIES[c] || {};
+        return `<button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;" data-click="setDiscoverCategory" data-arg0="${c}">${cat.emoji || ''} ${cat.label || c}</button>`;
+      }).join('');
+      html += `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:12px;opacity:.7;">Try:</span>${chips}</div>`;
+    }
+    if (ctxEl) { ctxEl.innerHTML = html; ctxEl.style.display = ''; }
+  } else {
+    if (ctxEl) ctxEl.style.display = 'none';
+  }
+
   const _dm = document.getElementById('discover-modal');
   _dm.classList.add('open');
   focusModal(_dm);
