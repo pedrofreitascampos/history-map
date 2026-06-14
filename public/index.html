@@ -1836,6 +1836,25 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
 
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h3 style="font-family:var(--font-display);margin:0;">⏱️ When Do You Visit?</h3>
+      <select id="timing-cat-filter" class="form-select" style="font-size:12px;padding:4px 8px;width:auto;" data-change="onTimingCatFilter" data-arg0="this">
+        <option value="">All categories</option>
+      </select>
+    </div>
+    <div class="stats-panel" style="grid-column:1/-1;margin-bottom:24px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Day of week</div>
+          <canvas id="chart-dow"></canvas>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Month of year</div>
+          <canvas id="chart-month"></canvas>
+        </div>
+      </div>
+    </div>
+
     <h3 style="font-family:var(--font-display);margin-bottom:16px;">🏆 Achievements</h3>
     <div class="category-stats-grid stagger" id="achievements-grid"></div>
 
@@ -3151,7 +3170,7 @@ function _idxRemoveTransit(t) {
 let map, markersLayer, heatLayer;
 let _nhLayer = null;
 let _wishSelIds = new Set();
-let chartRatings, chartActivity;
+let chartRatings, chartActivity, chartDow, chartMonth;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* AUTH & API LAYER                                                      */
@@ -6509,6 +6528,16 @@ function renderStats() {
     </div>`;
   }).join('');
 
+  // Populate timing category filter (categories that have ≥1 been visit)
+  const timingSelect = document.getElementById('timing-cat-filter');
+  if (timingSelect) {
+    const activeCats = Object.keys(s.byCat).filter(k => s.byCat[k].been > 0);
+    const prev = timingSelect.value;
+    timingSelect.innerHTML = '<option value="">All categories</option>' +
+      activeCats.map(k => `<option value="${k}">${CATEGORIES[k]?.emoji || ''} ${CATEGORIES[k]?.label || k}</option>`).join('');
+    if (activeCats.includes(prev)) timingSelect.value = prev;
+  }
+
   // Charts
   renderCharts(s.beenLocs);
 
@@ -6602,6 +6631,69 @@ function renderCharts(been) {
       options: { ...chartOpts, scales: { ...chartOpts.scales, y: { ...chartOpts.scales.y, beginAtZero: true } } }
     });
   }
+
+  renderTimingCharts('');
+}
+
+function renderTimingCharts(catFilter) {
+  const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const MON_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // JS getDay(): 0=Sun…6=Sat. Remap to Mon-first display order.
+  const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const dow = new Array(7).fill(0);
+  const mon = new Array(12).fill(0);
+  for (const loc of state.locations) {
+    if (loc.needsApproval || loc.status !== 'been') continue;
+    if (catFilter && loc.category !== catFilter) continue;
+    for (const v of (loc.visits || [])) {
+      if (!v.date) continue;
+      const d = new Date(v.date + 'T12:00:00');
+      if (isNaN(d.getTime())) continue;
+      dow[d.getDay()]++;
+      mon[d.getMonth()]++;
+    }
+  }
+  const dowData = DOW_ORDER.map(i => dow[i]);
+  const chartOpts = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'DM Sans', size: 11 } } },
+      y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { family: 'DM Sans', size: 11 }, precision: 0 } },
+    },
+  };
+  const accent = '#ffc144';
+  const weekendColor = '#f97316'; // orange for Sat/Sun
+  const dowColors = DOW_ORDER.map(i => (i === 0 || i === 6) ? weekendColor : accent);
+
+  if (chartDow) {
+    chartDow.data.datasets[0].data = dowData;
+    chartDow.data.datasets[0].backgroundColor = dowColors;
+    chartDow.update('none');
+  } else {
+    const el = document.getElementById('chart-dow');
+    if (el) chartDow = new Chart(el, {
+      type: 'bar',
+      data: { labels: DOW_LABELS, datasets: [{ data: dowData, backgroundColor: dowColors, borderRadius: 5, barThickness: 'flex' }] },
+      options: chartOpts,
+    });
+  }
+
+  if (chartMonth) {
+    chartMonth.data.datasets[0].data = mon;
+    chartMonth.update('none');
+  } else {
+    const el = document.getElementById('chart-month');
+    if (el) chartMonth = new Chart(el, {
+      type: 'bar',
+      data: { labels: MON_LABELS, datasets: [{ data: mon, backgroundColor: accent, borderRadius: 5, barThickness: 'flex' }] },
+      options: chartOpts,
+    });
+  }
+}
+
+function onTimingCatFilter(el) {
+  renderTimingCharts(el ? el.value : '');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
