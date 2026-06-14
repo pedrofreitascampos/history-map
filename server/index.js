@@ -117,6 +117,7 @@ app.use(helmet({
         "https://c.basemaps.cartocdn.com",
         "https://d.basemaps.cartocdn.com",
         "https://valhalla1.openstreetmap.de",  // isochrone API
+        "https://open.er-api.com",             // live FX rates (currency overlay)
       ],
       frameSrc: ["https://accounts.google.com"],
       objectSrc: ["'none'"],

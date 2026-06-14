@@ -917,6 +917,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 }
 .flag-card .flag-name { font-size: 12px; color: var(--text-primary); text-align: center; font-weight: 500; }
 .flag-card .flag-count { font-size: 12px; color: var(--text-muted); }
+.flag-card .flag-currency { font-size: 12px; color: var(--accent); font-weight: 600; text-align: center; }
 .flag-card.flag-unknown .flag-emoji { opacity: 0.55; }
 .cat-stat-card {
   background: var(--bg-card); border: 1px solid var(--border);
@@ -1855,7 +1856,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <h3 style="font-family:var(--font-display);margin-bottom:16px;">Per Category</h3>
     <div class="category-stats-grid stagger" id="category-stats"></div>
 
-    <h3 style="font-family:var(--font-display);margin-bottom:16px;">🌍 Countries Visited <span id="countries-count" style="font-family:var(--font-body); font-size:14px; color:var(--text-muted); font-weight:400;"></span></h3>
+    <h3 style="font-family:var(--font-display);margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">🌍 Countries Visited <span id="countries-count" style="font-family:var(--font-body); font-size:14px; color:var(--text-muted); font-weight:400;"></span><button id="stats-currency-toggle" class="btn btn-secondary" data-click="toggleStatsCurrency" style="font-size:12px;padding:4px 10px;margin-left:auto;" title="Show local currency and live exchange rate per country">💱 Rates</button></h3>
     <div class="flags-grid stagger" id="countries-flags"></div>
 
     <div class="stats-grid">
@@ -6533,6 +6534,133 @@ function computeStats() {
   return s;
 }
 
+/* ── Currency overlay ── */
+const COUNTRY_CURRENCY = {
+  AD:['EUR','€'],AE:['AED','د.إ'],AF:['AFN','؋'],AL:['ALL','L'],AM:['AMD','֏'],
+  AO:['AOA','Kz'],AR:['ARS','$'],AT:['EUR','€'],AU:['AUD','$'],AZ:['AZN','₼'],
+  BA:['BAM','KM'],BB:['BBD','$'],BD:['BDT','৳'],BE:['EUR','€'],BF:['XOF','Fr'],
+  BG:['BGN','лв'],BH:['BHD','BD'],BI:['BIF','Fr'],BJ:['XOF','Fr'],BN:['BND','$'],
+  BO:['BOB','Bs'],BR:['BRL','R$'],BS:['BSD','$'],BT:['BTN','Nu'],BW:['BWP','P'],
+  BY:['BYN','Br'],BZ:['BZD','$'],CA:['CAD','$'],CD:['CDF','Fr'],CF:['XAF','Fr'],
+  CG:['XAF','Fr'],CH:['CHF','Fr'],CI:['XOF','Fr'],CL:['CLP','$'],CM:['XAF','Fr'],
+  CN:['CNY','¥'],CO:['COP','$'],CR:['CRC','₡'],CU:['CUP','$'],CV:['CVE','$'],
+  CY:['EUR','€'],CZ:['CZK','Kč'],DE:['EUR','€'],DJ:['DJF','Fr'],DK:['DKK','kr'],
+  DO:['DOP','$'],DZ:['DZD','دج'],EC:['USD','$'],EE:['EUR','€'],EG:['EGP','£'],
+  ES:['EUR','€'],ET:['ETB','Br'],FI:['EUR','€'],FJ:['FJD','$'],FR:['EUR','€'],
+  GA:['XAF','Fr'],GB:['GBP','£'],GE:['GEL','₾'],GH:['GHS','₵'],GM:['GMD','D'],
+  GN:['GNF','Fr'],GQ:['XAF','Fr'],GR:['EUR','€'],GT:['GTQ','Q'],GW:['XOF','Fr'],
+  GY:['GYD','$'],HN:['HNL','L'],HR:['EUR','€'],HT:['HTG','G'],HU:['HUF','Ft'],
+  ID:['IDR','Rp'],IE:['EUR','€'],IL:['ILS','₪'],IN:['INR','₹'],IQ:['IQD','ع.د'],
+  IR:['IRR','﷼'],IS:['ISK','kr'],IT:['EUR','€'],JM:['JMD','$'],JO:['JOD','JD'],
+  JP:['JPY','¥'],KE:['KES','KSh'],KG:['KGS','лв'],KH:['KHR','₭'],KM:['KMF','Fr'],
+  KP:['KPW','₩'],KR:['KRW','₩'],KW:['KWD','KD'],KZ:['KZT','₸'],LA:['LAK','₭'],
+  LB:['LBP','£'],LI:['CHF','Fr'],LK:['LKR','₨'],LR:['LRD','$'],LS:['LSL','L'],
+  LT:['EUR','€'],LU:['EUR','€'],LV:['EUR','€'],LY:['LYD','LD'],MA:['MAD','MAD'],
+  MC:['EUR','€'],MD:['MDL','L'],ME:['EUR','€'],MG:['MGA','Ar'],MK:['MKD','ден'],
+  ML:['XOF','Fr'],MM:['MMK','K'],MN:['MNT','₮'],MT:['EUR','€'],MU:['MUR','₨'],
+  MV:['MVR','Rf'],MW:['MWK','MK'],MX:['MXN','$'],MY:['MYR','RM'],MZ:['MZN','MT'],
+  NA:['NAD','$'],NE:['XOF','Fr'],NG:['NGN','₦'],NI:['NIO','C$'],NL:['EUR','€'],
+  NO:['NOK','kr'],NP:['NPR','₨'],NZ:['NZD','$'],OM:['OMR','﷼'],PA:['PAB','B/.'],
+  PE:['PEN','S/.'],PG:['PGK','K'],PH:['PHP','₱'],PK:['PKR','₨'],PL:['PLN','zł'],
+  PT:['EUR','€'],PY:['PYG','Gs'],QA:['QAR','﷼'],RO:['RON','lei'],RS:['RSD','дин'],
+  RU:['RUB','₽'],RW:['RWF','Fr'],SA:['SAR','﷼'],SB:['SBD','$'],SC:['SCR','₨'],
+  SD:['SDG','£'],SE:['SEK','kr'],SG:['SGD','$'],SI:['EUR','€'],SK:['EUR','€'],
+  SL:['SLL','Le'],SM:['EUR','€'],SN:['XOF','Fr'],SO:['SOS','Sh'],SR:['SRD','$'],
+  SS:['SSP','£'],ST:['STN','Db'],SV:['USD','$'],SY:['SYP','£'],SZ:['SZL','L'],
+  TD:['XAF','Fr'],TG:['XOF','Fr'],TH:['THB','฿'],TJ:['TJS','SM'],TL:['USD','$'],
+  TM:['TMT','T'],TN:['TND','دت'],TO:['TOP','T$'],TR:['TRY','₺'],TT:['TTD','$'],
+  TZ:['TZS','Sh'],UA:['UAH','₴'],UG:['UGX','Sh'],US:['USD','$'],UY:['UYU','$'],
+  UZ:['UZS','сўм'],VA:['EUR','€'],VE:['VES','Bs.S'],VN:['VND','₫'],VU:['VUV','Vt'],
+  WS:['WST','T'],YE:['YER','﷼'],ZA:['ZAR','R'],ZM:['ZMW','ZK'],ZW:['ZWL','$'],
+};
+
+let _statsShowCurrency = false;
+let _fxCache = null;       // { rates: {CODE: number}, fetchedAt: ts }
+const _FX_TTL_MS = 3600000; // 1hr
+
+async function _getFxRates() {
+  const now = Date.now();
+  if (_fxCache && (now - _fxCache.fetchedAt < _FX_TTL_MS)) return _fxCache.rates;
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/EUR');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const json = await r.json();
+    _fxCache = { rates: json.rates, fetchedAt: now };
+    return json.rates;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function toggleStatsCurrency() {
+  _statsShowCurrency = !_statsShowCurrency;
+  const btn = document.getElementById('stats-currency-toggle');
+  if (btn) {
+    btn.classList.toggle('btn-primary', _statsShowCurrency);
+    btn.classList.toggle('btn-secondary', !_statsShowCurrency);
+  }
+  if (_statsShowCurrency) {
+    const rates = await _getFxRates();
+    _renderCountryFlags(rates);
+  } else {
+    _renderCountryFlags(null);
+  }
+}
+
+function _renderCountryFlags(rates) {
+  const byCountry = {};
+  const unknownRegions = {};
+  for (const l of state.locations) {
+    if (l.needsApproval || l.status !== 'been' || !l._region) continue;
+    const iso = regionToCountryCode(l._region);
+    if (iso) {
+      if (!byCountry[iso]) byCountry[iso] = { code: iso, name: l._region, count: 0 };
+      byCountry[iso].count++;
+    } else {
+      unknownRegions[l._region] = (unknownRegions[l._region] || 0) + 1;
+    }
+  }
+  const countryRanked = Object.values(byCountry).sort((a, b) => b.count - a.count);
+  const flagsEl = document.getElementById('countries-flags');
+  if (!flagsEl) return;
+  if (countryRanked.length === 0 && Object.keys(unknownRegions).length === 0) {
+    flagsEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;grid-column:1/-1;">No countries visited yet.</p>';
+    return;
+  }
+  const cards = countryRanked.map(c => {
+    const isoLower = esc(c.code.toLowerCase());
+    const cur = COUNTRY_CURRENCY[c.code];
+    let currencyLine = '';
+    if (_statsShowCurrency && cur) {
+      const [code, sym] = cur;
+      if (rates && rates[code] && code !== 'EUR') {
+        const rate = rates[code];
+        const fmt = rate >= 100 ? Math.round(rate).toLocaleString() : rate >= 10 ? rate.toFixed(1) : rate.toFixed(2);
+        currencyLine = `<span class="flag-currency">${sym} ${code} · ${fmt}</span>`;
+      } else if (cur) {
+        currencyLine = `<span class="flag-currency">${sym} ${code}</span>`;
+      }
+    }
+    return `<div class="flag-card" data-click="viewCountryOnMap" data-arg0="${esc(c.code)}" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
+      <img class="flag-img" src="https://flagcdn.com/w80/${isoLower}.png" srcset="https://flagcdn.com/w160/${isoLower}.png 2x" alt="${esc(c.name)} flag" width="48" height="36" loading="lazy">
+      <span class="flag-name">${esc(c.name)}</span>
+      <span class="flag-count">${c.count} place${c.count === 1 ? '' : 's'}</span>
+      ${currencyLine}
+    </div>`;
+  });
+  const unknownEntries = Object.entries(unknownRegions);
+  if (unknownEntries.length > 0) {
+    const totalUnknown = unknownEntries.reduce((sum, [, n]) => sum + n, 0);
+    const titleList = unknownEntries.map(([r, n]) => `${r} (${n})`).join(', ');
+    cards.push(`<div class="flag-card flag-unknown" title="${esc(titleList)}">
+      <span class="flag-emoji">🌍</span>
+      <span class="flag-name">Other</span>
+      <span class="flag-count">${unknownEntries.length} region${unknownEntries.length === 1 ? '' : 's'} · ${totalUnknown} place${totalUnknown === 1 ? '' : 's'}</span>
+    </div>`);
+  }
+  flagsEl.innerHTML = cards.join('');
+}
+
 function renderStats() {
   const s = computeStats();
 
@@ -6569,54 +6697,12 @@ function renderStats() {
 
   // Countries visited — flag grid, derived from loc._region with name→ISO-2 lookup.
   // Group only `been` locations (visiting != wishlisting). Unknown regions land in
-  // a single "🌍 Other" bucket whose hover-title lists the raw region names.
-  const byCountry = {};
-  const unknownRegions = {};
-  for (const l of state.locations) {
-    if (l.needsApproval || l.status !== 'been' || !l._region) continue;
-    const iso = regionToCountryCode(l._region);
-    if (iso) {
-      if (!byCountry[iso]) byCountry[iso] = { code: iso, name: l._region, count: 0 };
-      byCountry[iso].count++;
-    } else {
-      unknownRegions[l._region] = (unknownRegions[l._region] || 0) + 1;
-    }
-  }
-  const countryRanked = Object.values(byCountry).sort((a, b) => b.count - a.count);
-  const flagsEl = document.getElementById('countries-flags');
+  // Delegate flag grid to _renderCountryFlags (handles currency overlay too)
+  _renderCountryFlags(_statsShowCurrency ? (_fxCache && _fxCache.rates) : null);
   const countEl = document.getElementById('countries-count');
-  if (flagsEl) {
-    if (countryRanked.length === 0 && Object.keys(unknownRegions).length === 0) {
-      flagsEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;grid-column:1/-1;">No countries visited yet. Mark places as Been to fill your map.</p>';
-      if (countEl) countEl.textContent = '';
-    } else {
-      const cards = countryRanked.map(c => {
-        // Regional-indicator emoji (🇵🇹) renders as text "PT" on Windows because
-        // Segoe UI Emoji deliberately omits flag glyphs. Switching to flagcdn.com
-        // SVG so every platform shows real flags. Wrapped in a span carrying the
-        // regional-indicator as an aria-label for screen readers.
-        const isoLower = esc(c.code.toLowerCase());
-        return `<div class="flag-card" data-click="viewCountryOnMap" data-arg0="${esc(c.code)}" title="${esc(c.name)} — ${c.count} location${c.count === 1 ? '' : 's'}">
-          <img class="flag-img" src="https://flagcdn.com/w80/${isoLower}.png" srcset="https://flagcdn.com/w160/${isoLower}.png 2x" alt="${esc(c.name)} flag" width="48" height="36" loading="lazy">
-          <span class="flag-name">${esc(c.name)}</span>
-          <span class="flag-count">${c.count} place${c.count === 1 ? '' : 's'}</span>
-        </div>`;
-      });
-      const unknownEntries = Object.entries(unknownRegions);
-      if (unknownEntries.length > 0) {
-        const totalUnknown = unknownEntries.reduce((sum, [, n]) => sum + n, 0);
-        const titleList = unknownEntries.map(([r, n]) => `${r} (${n})`).join(', ');
-        cards.push(
-          `<div class="flag-card flag-unknown" title="${esc(titleList)}">
-            <span class="flag-emoji">🌍</span>
-            <span class="flag-name">Other</span>
-            <span class="flag-count">${unknownEntries.length} region${unknownEntries.length === 1 ? '' : 's'} · ${totalUnknown} place${totalUnknown === 1 ? '' : 's'}</span>
-          </div>`
-        );
-      }
-      flagsEl.innerHTML = cards.join('');
-      if (countEl) countEl.textContent = `· ${countryRanked.length} countr${countryRanked.length === 1 ? 'y' : 'ies'}`;
-    }
+  if (countEl) {
+    const cnt = state.locations.filter(l => !l.needsApproval && l.status === 'been' && l._region && regionToCountryCode(l._region)).reduce((set, l) => set.add(regionToCountryCode(l._region)), new Set()).size;
+    countEl.textContent = cnt > 0 ? `· ${cnt} countr${cnt === 1 ? 'y' : 'ies'}` : '';
   }
 
   // Nights by Place — hotel visits aggregated by region
