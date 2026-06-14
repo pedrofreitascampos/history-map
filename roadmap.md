@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-13:** 1323 jest (3 skip) · Visit timing charts shipped.
+**2026-06-14:** 1326 jest (3 skip) · Already-been detection shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Already-been detection** | **2026-06-14** | **+3 (1326)** | **Per-item dedup choices: Skip/Add visit date/Import as new · visit PATCH on existing · #dedup-apply-btn** |
 | **Visit timing charts** | **2026-06-13** | **+20 (1323)** | **Day-of-week (Mon-first, weekend orange) + month-of-year bars · category filter · renderTimingCharts** |
 | **Google Saved Places import** | **2026-06-13** | **+23 (1303)** | **Takeout JSON parser (old+new format) · Geo Coordinates strings · Want-to-go→bucket · import guide UI** |
 | **Smart import dedup** | **2026-06-13** | **+31 (1280)** | **Levenshtein sim + 500 m gate · confirmImport hook · saveLocation toast · #dedup-modal review UI** |
@@ -23,7 +24,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Power features (ranked by impact-vs-effort)
 
-5. **🚫 Already-been detection on import** — fuzzy-match vs existing `been`; flag "update date?" instead of dupe.
 6. **🧭 Context-aware Discover** — seed Discover at trip centroid + suggest missing categories when in a trip.
 7. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year roll-up.
 8. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.
