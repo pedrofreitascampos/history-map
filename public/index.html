@@ -1038,6 +1038,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .timeline-milestone strong { color: var(--text-primary); font-weight: 600; }
 .timeline-milestone.tm-most { border-color: var(--accent-dim); }
 .timeline-milestone.tm-trip { border-color: var(--accent-dim); }
+.people-legend { display:flex; flex-wrap:wrap; gap:6px; padding:0 0 16px; margin-left:40px; }
+.people-legend-chip { font-size:12px; padding:3px 10px; border-radius:12px; font-weight:600; }
 
 .replay-panel { display: flex; flex-direction: column; flex-shrink: 0; margin: 0 20px 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-secondary); }
 #replay-map { height: 420px; background: var(--bg-primary); }
@@ -1918,7 +1920,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <select id="chrono-year" data-change="onChronoFilterChange"><option value="">All Years</option></select>
         <select id="chrono-cat" data-change="onChronoFilterChange"><option value="">All Categories</option></select>
         <select id="chrono-trip" data-change="onChronoFilterChange"><option value="">All Trips</option></select>
+        <select id="chrono-person" data-change="onChronoFilterChange"><option value="">All People</option></select>
         <button id="chrono-photo-toggle" class="btn btn-secondary" data-click="toggleChronoPhotos" style="font-size:12px;padding:6px 12px;" title="Show/hide attached photo dates in timeline">📷 Photos</button>
+        <button id="chrono-people-toggle" class="btn btn-secondary" data-click="toggleChronoPeopleLens" style="font-size:12px;padding:6px 12px;" title="Color-code timeline entries by person">👥 People</button>
         <button class="btn btn-secondary" data-click="openFileDialog" data-target="timeline-json-input" title="Import Google Timeline JSON to backfill individual places on your chronology. To create a trip bundle instead, use Trips → 📂 Timeline → New Trip." style="font-size:12px;padding:6px 12px;">📅 Import Timeline</button>
       </div>
     </div>
@@ -1949,6 +1953,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <span id="replay-route-status" style="margin-left:auto;color:var(--text-muted);font-size:12px;"></span>
       </div>
     </div>
+    <div id="people-legend"></div>
     <div class="timeline" id="timeline"></div>
   </div>
 
@@ -6884,6 +6889,19 @@ function onTimingCatFilter(el) {
 let _milestoneCache = null;
 let _milestoneCacheGen = -1;
 let _chronoShowPhotos = false;
+let _chronoPeopleLens = false;
+const PEOPLE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#14b8a6', '#a855f7'];
+
+function _buildPeopleColorMap(entries) {
+  const seen = [];
+  entries.forEach(e => {
+    (e.loc && e.loc.people ? e.loc.people : []).forEach(p => { if (p && !seen.includes(p)) seen.push(p); });
+  });
+  seen.sort();
+  const map = new Map();
+  seen.forEach((name, i) => map.set(name, PEOPLE_COLORS[i % PEOPLE_COLORS.length]));
+  return map;
+}
 
 function computeChronologyMilestones(locations, trips) {
   const eligible = locations.filter(l => l.status === 'been' && !l.needsApproval);
@@ -7143,6 +7161,7 @@ function renderChronology() {
   const yearFilter = document.getElementById('chrono-year').value;
   const catFilter = document.getElementById('chrono-cat').value;
   const tripFilter = document.getElementById('chrono-trip').value;
+  const personFilter = document.getElementById('chrono-person')?.value || '';
 
   if (_milestoneCacheGen !== stateIndex.generation) {
     _milestoneCache = computeChronologyMilestones(state.locations, state.trips);
@@ -7159,6 +7178,7 @@ function renderChronology() {
       if (yearFilter && !v.date.startsWith(yearFilter)) return;
       if (catFilter && loc.category !== catFilter) return;
       if (tripFilter && loc.tripId !== tripFilter) return;
+      if (personFilter && !(loc.people || []).includes(personFilter)) return;
       entries.push({ ...v, loc });
     });
   });
@@ -7182,6 +7202,20 @@ function renderChronology() {
   }
 
   entries.sort((a, b) => b.date.localeCompare(a.date));
+
+  // People lens: build color map + render legend
+  let peopleColorMap = new Map();
+  const legendEl = document.getElementById('people-legend');
+  if (_chronoPeopleLens) {
+    peopleColorMap = _buildPeopleColorMap(entries);
+    if (legendEl) {
+      legendEl.innerHTML = [...peopleColorMap.entries()].map(([name, color]) =>
+        `<span class="people-legend-chip" style="background:${color}22;color:${color};border:1px solid ${color}55;">${esc(name)}</span>`
+      ).join('') || '<span style="font-size:12px;color:var(--text-muted);">No people tagged on visible entries.</span>';
+    }
+  } else if (legendEl) {
+    legendEl.innerHTML = '';
+  }
 
   const container = document.getElementById('timeline');
   if (entries.length === 0) {
@@ -7226,10 +7260,24 @@ function renderChronology() {
       }
       const cat = CATEGORIES[entry.loc.category] || CATEGORIES.location;
       const trip = stateIndex.tripById.get(entry.loc.tripId);
-      const people = (entry.loc.people || []).map(p => esc(p)).join(', ');
+      const locPeople = entry.loc.people || [];
       const entryKey = `${entry.loc.id}|${entry.date}`;
       const firstVisitRegion = firstVisit.get(entryKey);
-      html += `<div class="timeline-item" data-click="openEditModal" data-arg0="${entry.loc.id}">
+
+      let peopleChip = '';
+      let laneStyle = '';
+      if (_chronoPeopleLens && locPeople.length) {
+        const primaryColor = peopleColorMap.get(locPeople[0]) || 'var(--accent)';
+        laneStyle = `box-shadow:inset 4px 0 0 ${primaryColor};`;
+        peopleChip = `<span class="ti-people">${locPeople.map(p => {
+          const col = peopleColorMap.get(p) || 'var(--text-muted)';
+          return `<span style="color:${col};font-weight:600;">● ${esc(p)}</span>`;
+        }).join(' ')}</span>`;
+      } else if (locPeople.length) {
+        peopleChip = `<span class="ti-people">👥 ${locPeople.map(p => esc(p)).join(', ')}</span>`;
+      }
+
+      html += `<div class="timeline-item" style="${laneStyle}" data-click="openEditModal" data-arg0="${entry.loc.id}">
         <div class="ti-top">
           <span class="ti-emoji">${cat.emoji}</span>
           <span class="ti-name">${esc(entry.loc.name)}</span>
@@ -7238,7 +7286,7 @@ function renderChronology() {
         <div class="ti-bottom">
           ${firstVisitRegion ? `<span class="ti-firstvisit">🥇 First visit to ${esc(firstVisitRegion)}</span>` : ''}
           ${trip ? `<span class="ti-trip">🧳 ${esc(trip.name)}</span>` : ''}
-          ${people ? `<span class="ti-people">👥 ${people}</span>` : ''}
+          ${peopleChip}
         </div>
       </div>`;
     }
@@ -7295,6 +7343,16 @@ function populateChronoFilters() {
   tripSel.innerHTML = '<option value="">All Trips</option>' +
     state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   tripSel.value = currentTrip;
+
+  const personSel = document.getElementById('chrono-person');
+  if (personSel) {
+    const currentPerson = personSel.value;
+    const people = new Set();
+    state.locations.forEach(l => (l.people || []).forEach(p => { if (p) people.add(p); }));
+    personSel.innerHTML = '<option value="">All People</option>' +
+      [...people].sort().map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    personSel.value = currentPerson;
+  }
 }
 
 function formatDate(dateStr) {
@@ -8117,6 +8175,16 @@ function toggleChronoPhotos() {
   if (btn) {
     btn.classList.toggle('btn-primary', _chronoShowPhotos);
     btn.classList.toggle('btn-secondary', !_chronoShowPhotos);
+  }
+  renderChronology();
+}
+
+function toggleChronoPeopleLens() {
+  _chronoPeopleLens = !_chronoPeopleLens;
+  const btn = document.getElementById('chrono-people-toggle');
+  if (btn) {
+    btn.classList.toggle('btn-primary', _chronoPeopleLens);
+    btn.classList.toggle('btn-secondary', !_chronoPeopleLens);
   }
   renderChronology();
 }

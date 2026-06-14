@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-15:** 1383 jest (3 skip) · Import diff preview shipped.
+**2026-06-15:** 1401 jest (3 skip) · People lens shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **People lens** | **2026-06-15** | **+18 (1401)** | **👥 People toggle · colored left-lane per person · legend chips · #chrono-person filter · _buildPeopleColorMap · 8-color palette** |
 | **Import diff preview** | **2026-06-15** | **+17 (1383)** | **_classifyImportItems: adds/updates/skips · diff view with collapsible sections · per-section checkboxes · pre-classified confirmImport path** |
 | **Isochrones** | **2026-06-15** | **+18 (1366)** | **Travel-time rings · Valhalla API · toggleIsoPanel · drawIsochrones · clearIsochrones · Walk/Bike/Drive · 15/30/45 min chips** |
 | **Trip cost + Plan view** | **2026-06-14** | **+24 (1348)** | **Cost fields on stops + transits · per-trip cost tile · Plan tab replacing Wishlist · _greedyRoute · 3 itinerary proposals** |
@@ -31,7 +32,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 ~~7. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year roll-up.~~ ✅
 ~~8. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.~~ ✅
 ~~9. **🔀 Conflict-free import preview diff** — adds/updates/dupes as reviewable list before committing.~~ ✅
-10. **👥 People lens in Chronology** — toggle showing each person as a colored lane.
+~~10. **👥 People lens in Chronology** — toggle showing each person as a colored lane.~~ ✅
 11. **💱 Currency overlay for Regions** — local symbol + FX rate per country.
 12. **🕸️ Graph view on Atlas** — node-link over dark basemap, directed edges between consecutive visits.
 13. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip.

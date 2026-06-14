@@ -367,7 +367,7 @@ describe('Static markup (regression)', () => {
   test('Timeline import button surfaces on Chronology view (header + empty-state CTA)', () => {
     // Chronology header: sibling to the year/cat/trip selects inside chrono-filters.
     // Use class="chrono-filters" to anchor to markup (CSS uses .chrono-filters which appears earlier in the file).
-    expect(indexHtml).toMatch(/class="chrono-filters"[\s\S]{0,800}data-target="timeline-json-input"[\s\S]{0,300}Import Timeline/);
+    expect(indexHtml).toMatch(/class="chrono-filters"[\s\S]{0,1200}data-target="timeline-json-input"[\s\S]{0,300}Import Timeline/);
     // Empty-state CTA: rendered via innerHTML in the timeline view when no visits exist.
     expect(indexHtml).toMatch(/No Visits Yet[\s\S]{0,500}data-target="timeline-json-input"[\s\S]{0,200}Import Timeline JSON/);
     // The hidden file input lives once in the Import view; both new buttons re-use it.
