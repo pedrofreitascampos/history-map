@@ -47,9 +47,25 @@ describe('Dedup — static markup', () => {
 
   test('all dedup functions defined', () => {
     ['_levenshtein', '_levenshteinSim', '_findDups', '_checkImportDups',
-      '_showDedupModal', 'closeDedupModal', 'dedupSkip', 'dedupImportAll'].forEach(fn => {
+      '_showDedupModal', 'closeDedupModal', 'dedupSkip', 'dedupImportAll', 'dedupResolve'].forEach(fn => {
       expect(indexHtml).toContain(`function ${fn}`);
     });
+  });
+
+  test('"Apply choices" button uses data-click="dedupResolve"', () => {
+    expect(indexHtml).toMatch(/data-click="dedupResolve"/);
+  });
+
+  test('#dedup-apply-btn exists', () => {
+    expect(indexHtml).toContain('id="dedup-apply-btn"');
+  });
+
+  test('confirmImport processes _dedupResult.updates (visit-date patching)', () => {
+    const fn = extractFunction('confirmImport');
+    expect(fn).toContain('_dedupResult');
+    expect(fn).toContain('updates');
+    expect(fn).toContain('existingId');
+    expect(fn).toContain('visitDate');
   });
 
   test('confirmImport calls _checkImportDups before bulk POST', () => {

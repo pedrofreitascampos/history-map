@@ -11897,10 +11897,27 @@ async function confirmImport() {
     if (!isFullRestore && toImport.length > 0) {
       const _dupFlagged = _checkImportDups(toImport);
       if (_dupFlagged.length > 0) {
-        const _filtered = await _showDedupModal(toImport, _dupFlagged);
-        if (_filtered === null) return; // user cancelled
-        toImport = _filtered;
-        if (toImport.length === 0) { showToast('All locations skipped — they already exist nearby.', 'warn'); return; }
+        const _dedupResult = await _showDedupModal(toImport, _dupFlagged);
+        if (_dedupResult === null) return; // user cancelled
+        // Apply "add visit date" choices — patch existing locations in-place
+        for (const { existingId, visitDate } of (_dedupResult.updates || [])) {
+          const _existing = state.locations.find(l => l.id === existingId);
+          if (_existing && visitDate) {
+            const _alreadyHas = (_existing.visits || []).some(v => v.date === visitDate);
+            if (!_alreadyHas) {
+              const _newVisits = [...(_existing.visits || []), { date: visitDate, notes: '' }];
+              try { await api('PUT', `/locations/${existingId}`, { visits: _newVisits }); _existing.visits = _newVisits; } catch (_e) {}
+            }
+          }
+        }
+        const _updateCount = (_dedupResult.updates || []).length;
+        toImport = _dedupResult.filtered;
+        if (toImport.length === 0) {
+          if (_updateCount) showToast(`Visit date added to ${_updateCount} existing place${_updateCount !== 1 ? 's' : ''}`);
+          else showToast('All locations skipped — they already exist nearby.', 'warn');
+          if (_updateCount) { renderMarkers(); updateApprovalBadge(); }
+          return;
+        }
       }
     }
 
@@ -12166,14 +12183,38 @@ function _showDedupModal(toImport, flagged) {
   return new Promise(resolve => {
     _dedupCtx = { toImport, flagged, resolve };
     const n = flagged.length, total = toImport.length;
+    const hasUpdatable = flagged.some(({ candidate, matches }) =>
+      matches.some(m => m.status === 'been') && !!(candidate.visits?.[0]?.date || candidate.createdAt));
     document.getElementById('dedup-summary').textContent =
       `${n} of ${total} place${total !== 1 ? 's' : ''} look like ${n === 1 ? 'it' : 'they'} already exist nearby.`;
-    document.getElementById('dedup-list').innerHTML = flagged.map(({candidate, matches}) => {
-      const matchNames = matches.slice(0, 2).map(m => `"${esc(m.name)}"`).join(', ');
-      return `<div style="padding:6px 4px;border-bottom:1px solid var(--border);font-size:13px;">
-        <strong>${esc(candidate.name)}</strong><span style="opacity:.6;"> → matches ${matchNames}</span>
+    document.getElementById('dedup-list').innerHTML = flagged.map(({ idx, candidate, matches }) => {
+      const best = matches[0];
+      const canUpdate = best?.status === 'been' && !!(candidate.visits?.[0]?.date || candidate.createdAt);
+      const visitDate = candidate.visits?.[0]?.date || candidate.createdAt || '';
+      const visitLabel = visitDate ? ` (${visitDate})` : '';
+      const statusBadge = best?.status === 'been'
+        ? '<span style="color:var(--accent);font-size:12px;margin-left:4px;">✅ been</span>'
+        : '<span style="opacity:.5;font-size:12px;margin-left:4px;">📋 wishlist</span>';
+      return `<div style="padding:10px 4px;border-bottom:1px solid var(--border);font-size:13px;">
+        <div style="margin-bottom:6px;">
+          <strong>${esc(candidate.name)}</strong>
+          <span style="opacity:.6;"> → </span><strong>${esc(best?.name || '')}</strong>${statusBadge}
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+            <input type="radio" name="dedup-choice-${idx}" value="skip" checked> Skip
+          </label>
+          ${canUpdate ? `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+            <input type="radio" name="dedup-choice-${idx}" value="update"> Add visit${esc(visitLabel)}
+          </label>` : ''}
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+            <input type="radio" name="dedup-choice-${idx}" value="import"> Import as new
+          </label>
+        </div>
       </div>`;
     }).join('');
+    const applyBtn = document.getElementById('dedup-apply-btn');
+    if (applyBtn) applyBtn.style.display = hasUpdatable ? '' : 'none';
     document.getElementById('dedup-modal').style.display = 'flex';
   });
 }
@@ -12181,20 +12222,39 @@ function closeDedupModal() {
   if (_dedupCtx) { _dedupCtx.resolve(null); _dedupCtx = null; }
   document.getElementById('dedup-modal').style.display = 'none';
 }
+function dedupResolve() {
+  if (!_dedupCtx) return;
+  const { toImport, flagged, resolve } = _dedupCtx;
+  _dedupCtx = null;
+  document.getElementById('dedup-modal').style.display = 'none';
+  const updates = [], skipIdxs = new Set();
+  for (const { idx, candidate, matches } of flagged) {
+    const checked = document.querySelector(`input[name="dedup-choice-${idx}"]:checked`);
+    const choice = checked ? checked.value : 'skip';
+    if (choice === 'skip') { skipIdxs.add(idx); }
+    else if (choice === 'update') {
+      skipIdxs.add(idx);
+      const best = matches[0];
+      const visitDate = candidate.visits?.[0]?.date || candidate.createdAt || '';
+      if (best?.id && visitDate) updates.push({ existingId: best.id, visitDate });
+    }
+  }
+  resolve({ filtered: toImport.filter((_, i) => !skipIdxs.has(i)), updates });
+}
 function dedupSkip() {
   if (!_dedupCtx) return;
   const { toImport, flagged, resolve } = _dedupCtx;
   const flaggedIdxs = new Set(flagged.map(f => f.idx));
   _dedupCtx = null;
   document.getElementById('dedup-modal').style.display = 'none';
-  resolve(toImport.filter((_, i) => !flaggedIdxs.has(i)));
+  resolve({ filtered: toImport.filter((_, i) => !flaggedIdxs.has(i)), updates: [] });
 }
 function dedupImportAll() {
   if (!_dedupCtx) return;
   const { toImport, resolve } = _dedupCtx;
   _dedupCtx = null;
   document.getElementById('dedup-modal').style.display = 'none';
-  resolve(toImport);
+  resolve({ filtered: toImport, updates: [] });
 }
 
 // ── Neighborhood detector ───────────────────────────────────────────────────
@@ -13505,7 +13565,8 @@ async function _handlePhotoFiles(fileList) {
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
       <button class="btn btn-secondary" data-click="closeDedupModal" style="font-size:13px;">Cancel</button>
       <button class="btn btn-secondary" data-click="dedupImportAll" style="font-size:13px;">Import all anyway</button>
-      <button class="btn btn-primary" data-click="dedupSkip" style="font-size:13px;">Skip duplicates</button>
+      <button class="btn btn-secondary" data-click="dedupSkip" style="font-size:13px;">Skip duplicates</button>
+      <button id="dedup-apply-btn" class="btn btn-primary" data-click="dedupResolve" style="font-size:13px;">Apply choices</button>
     </div>
   </div>
 </div>
