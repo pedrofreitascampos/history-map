@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-13:** 1280 jest (3 skip) · Smart import dedup shipped.
+**2026-06-13:** 1303 jest (3 skip) · Google Maps Saved Places import shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Google Saved Places import** | **2026-06-13** | **+23 (1303)** | **Takeout JSON parser (old+new format) · Geo Coordinates strings · Want-to-go→bucket · import guide UI** |
 | **Smart import dedup** | **2026-06-13** | **+31 (1280)** | **Levenshtein sim + 500 m gate · confirmImport hook · saveLocation toast · #dedup-modal review UI** |
 | **PWA / Offline** | **2026-06-13** | **+19 (1249)** | **sw.js tile cache (200 cap) · cache-first CDN · network-first API · manifest.json · no-store SW route** |
 | **Share Trip** | **2026-06-12** | **+15 (1230)** | **POST/DELETE /trips/:id/share · GET /api/share/:token (public) · /s/:token page · CSP-nonce** |
@@ -21,7 +22,6 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Power features (ranked by impact-vs-effort)
 
-3. **📥 Google Maps Saved Places import** (Takeout CSV) — primary first-run seeding source.
 4. **⏱️ Time-of-day heatmap** — "you visit restaurants mostly Fri–Sat 8–10 pm". Uses `visits[].date`.
 5. **🚫 Already-been detection on import** — fuzzy-match vs existing `been`; flag "update date?" instead of dupe.
 6. **🧭 Context-aware Discover** — seed Discover at trip centroid + suggest missing categories when in a trip.
