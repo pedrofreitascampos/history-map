@@ -116,6 +116,7 @@ app.use(helmet({
         "https://b.basemaps.cartocdn.com",
         "https://c.basemaps.cartocdn.com",
         "https://d.basemaps.cartocdn.com",
+        "https://valhalla1.openstreetmap.de",  // isochrone API
       ],
       frameSrc: ["https://accounts.google.com"],
       objectSrc: ["'none'"],

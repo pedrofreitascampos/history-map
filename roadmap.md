@@ -4,10 +4,12 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-14:** 1342 jest (3 skip) · Context-aware Discover shipped.
+**2026-06-15:** 1366 jest (3 skip) · Isochrones shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Isochrones** | **2026-06-15** | **+18 (1366)** | **Travel-time rings · Valhalla API · toggleIsoPanel · drawIsochrones · clearIsochrones · Walk/Bike/Drive · 15/30/45 min chips** |
+| **Trip cost + Plan view** | **2026-06-14** | **+24 (1348)** | **Cost fields on stops + transits · per-trip cost tile · Plan tab replacing Wishlist · _greedyRoute · 3 itinerary proposals** |
 | **Context-aware Discover** | **2026-06-14** | **+16 (1342)** | **Trip centroid seeding · auto-radius · missing-category chips · _tripCentroid + setDiscoverCategory** |
 | **Already-been detection** | **2026-06-14** | **+3 (1326)** | **Per-item dedup choices: Skip/Add visit date/Import as new · visit PATCH on existing · #dedup-apply-btn** |
 | **Visit timing charts** | **2026-06-13** | **+20 (1323)** | **Day-of-week (Mon-first, weekend orange) + month-of-year bars · category filter · renderTimingCharts** |
@@ -25,8 +27,8 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Power features (ranked by impact-vs-effort)
 
-7. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year roll-up.
-8. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.
+~~7. **💰 Trip cost tracker** — cost field per stop/transit → per-trip + per-year roll-up.~~ ✅
+~~8. **🎯 Isochrones / travel-time rings** — X min by car/walk/transit from a pinned location.~~ ✅
 9. **🔀 Conflict-free import preview diff** — adds/updates/dupes as reviewable list before committing.
 10. **👥 People lens in Chronology** — toggle showing each person as a colored lane.
 11. **💱 Currency overlay for Regions** — local symbol + FX rate per country.

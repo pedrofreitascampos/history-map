@@ -189,6 +189,9 @@ body {
 #on-this-day-banner button { margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--text-muted);padding:0 2px; }
 #add-place-fab { position:absolute;bottom:24px;right:12px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s,box-shadow .12s; }
 #add-place-fab:hover { transform:scale(1.08);box-shadow:0 4px 14px rgba(0,0,0,.4); }
+#iso-panel { position:absolute;top:60px;right:10px;z-index:1000;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px 14px;width:220px;box-shadow:0 2px 10px rgba(0,0,0,.3); }
+#iso-panel label { font-size:12px;display:block;margin-bottom:4px;color:var(--text-secondary); }
+#iso-status { font-size:12px;color:var(--text-muted);margin:6px 0 0;min-height:14px; }
 .yr-card { background:var(--bg-secondary);border:1px solid var(--border-strong);border-radius:20px;padding:48px 40px;text-align:center;max-width:480px;width:100%;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px; }
 .yr-eyebrow { font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-muted); }
 .yr-year { font-family:var(--font-display);font-size:72px;font-weight:700;color:var(--accent);line-height:1; }
@@ -1677,6 +1680,29 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
     <div id="map"></div>
     <button id="add-place-fab" data-click="quickAddPlace" title="Add place" aria-label="Add place">+</button>
+    <div id="iso-panel" style="display:none;" role="dialog" aria-label="Travel-time rings">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <strong style="font-size:13px;">Travel rings</strong>
+        <button type="button" data-click="closeIsoPanel" aria-label="Close" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;color:var(--text-muted);">×</button>
+      </div>
+      <label>Mode</label>
+      <div class="filter-group" id="iso-mode-group" style="margin-bottom:10px;">
+        <button class="filter-group-btn active" data-click="setIsoMode" data-arg0="pedestrian" data-arg1="this">🚶 Walk</button>
+        <button class="filter-group-btn" data-click="setIsoMode" data-arg0="bicycle" data-arg1="this">🚲 Bike</button>
+        <button class="filter-group-btn" data-click="setIsoMode" data-arg0="auto" data-arg1="this">🚗 Drive</button>
+      </div>
+      <label>Minutes from map center</label>
+      <div class="filter-chips" id="iso-time-chips" style="margin-bottom:12px;">
+        <button class="filter-chip active" data-time="15" data-click="toggleIsoTime" data-arg0="15" data-arg1="this">15</button>
+        <button class="filter-chip active" data-time="30" data-click="toggleIsoTime" data-arg0="30" data-arg1="this">30</button>
+        <button class="filter-chip" data-time="45" data-click="toggleIsoTime" data-arg0="45" data-arg1="this">45</button>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-primary" style="flex:1;font-size:12px;padding:6px;" data-click="drawIsochrones">Draw rings</button>
+        <button class="add-small-btn" style="font-size:12px;padding:6px 10px;" data-click="clearIsochrones">Clear</button>
+      </div>
+      <p id="iso-status"></p>
+    </div>
   </div>
 
   <!-- FILTER SIDEBAR -->
@@ -3216,6 +3242,11 @@ let _nhLayer = null;
 let _planCats = new Set();
 let _planParty = 'any';
 let _planItineraries = [];
+
+// Isochrones
+let _isoLayers = [];
+let _isoMode = 'pedestrian';
+let _isoTimes = new Set([15, 30]);
 let chartRatings, chartActivity, chartDow, chartMonth;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3491,7 +3522,8 @@ function initMap() {
       div.innerHTML =
         '<button type="button" id="locate-me-btn" data-click="locateMe" title="Pan map to my current GPS location" aria-label="My location">📍</button>' +
         '<button type="button" id="discover-btn" data-click="openDiscoverModal" title="Discover top-rated places nearby" aria-label="Discover">✨</button>' +
-        '<button type="button" id="overlay-rainviewer-btn" data-click="toggleOverlay" data-arg0="rainviewer" title="Toggle live weather radar (RainViewer)" aria-label="Toggle weather overlay">🌧️</button>';
+        '<button type="button" id="overlay-rainviewer-btn" data-click="toggleOverlay" data-arg0="rainviewer" title="Toggle live weather radar (RainViewer)" aria-label="Toggle weather overlay">🌧️</button>' +
+        '<button type="button" id="iso-btn" data-click="toggleIsoPanel" title="Travel-time rings from map center" aria-label="Travel rings">🎯</button>';
       // Stop click bubble so map drag/zoom doesn't fire when clicking the buttons.
       L.DomEvent.disableClickPropagation(div);
       return div;
@@ -4570,6 +4602,70 @@ async function restorePersistedOverlays() {
       await toggleOverlay(key);
     }
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ISOCHRONES — travel-time reachability rings                           */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function toggleIsoPanel() {
+  const p = document.getElementById('iso-panel');
+  p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+}
+
+function closeIsoPanel() {
+  document.getElementById('iso-panel').style.display = 'none';
+}
+
+function setIsoMode(mode, btn) {
+  _isoMode = mode;
+  document.querySelectorAll('#iso-mode-group .filter-group-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function toggleIsoTime(t, btn) {
+  const n = Number(t);
+  if (_isoTimes.has(n)) {
+    if (_isoTimes.size > 1) { _isoTimes.delete(n); btn.classList.remove('active'); }
+  } else {
+    _isoTimes.add(n);
+    btn.classList.add('active');
+  }
+}
+
+async function drawIsochrones() {
+  clearIsochrones();
+  const c = map.getCenter();
+  const contours = Array.from(_isoTimes).sort((a, b) => a - b).map(t => ({ time: t }));
+  const statusEl = document.getElementById('iso-status');
+  statusEl.textContent = 'Fetching…';
+  try {
+    const r = await fetch('https://valhalla1.openstreetmap.de/isochrone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: [{ lat: c.lat, lon: c.lng }], costing: _isoMode, contours, polygons: true }),
+    });
+    if (!r.ok) throw new Error('API error ' + r.status);
+    const geo = await r.json();
+    const ISO_COLORS = { 15: '#22c55e', 30: '#f59e0b', 45: '#ef4444' };
+    const layer = L.geoJSON(geo, {
+      style: feat => {
+        const t = feat.properties && feat.properties.contour;
+        const col = ISO_COLORS[t] || '#6366f1';
+        return { color: col, fillColor: col, fillOpacity: 0.12, weight: 2, opacity: 0.8 };
+      },
+    }).addTo(map);
+    _isoLayers.push(layer);
+    statusEl.textContent = 'Rings from map center.';
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+function clearIsochrones() {
+  _isoLayers.forEach(l => map.removeLayer(l));
+  _isoLayers = [];
+  const statusEl = document.getElementById('iso-status');
+  if (statusEl) statusEl.textContent = '';
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
