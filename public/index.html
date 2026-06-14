@@ -1855,6 +1855,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
     </div>
 
+    <div id="stats-cost-section" style="display:none;margin-bottom:24px;">
+      <h3 style="font-family:var(--font-display);margin-bottom:16px;">💰 Spend by Year</h3>
+      <div id="stats-cost-list" class="top-rated-list"></div>
+    </div>
+
     <h3 style="font-family:var(--font-display);margin-bottom:16px;">🏆 Achievements</h3>
     <div class="category-stats-grid stagger" id="achievements-grid"></div>
 
@@ -2384,6 +2389,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </div>
 
       <div class="form-group">
+        <label>Cost</label>
+        <input type="number" class="form-input" id="loc-cost" min="0" step="0.01" placeholder="e.g. 45.00" style="width:140px;">
+      </div>
+
+      <div class="form-group">
         <label>Notes</label>
         <textarea class="form-input" id="loc-notes" placeholder="Your notes, memories, thoughts..."></textarea>
       </div>
@@ -2656,6 +2666,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-row" style="display:flex; gap:8px;">
         <label style="flex:1" for="transit-distance">Distance (km)<input id="transit-distance" type="number" step="any"></label>
         <label style="flex:1" for="transit-duration">Duration (min)<input id="transit-duration" type="number" step="any"></label>
+      </div>
+      <div class="form-row" style="display:flex; gap:8px;">
+        <label style="flex:1" for="transit-cost">Cost<input id="transit-cost" type="number" min="0" step="0.01" placeholder="e.g. 120.00"></label>
       </div>
       <div class="form-row"><label for="transit-notes">Notes</label><textarea id="transit-notes" rows="2"></textarea></div>
     </div>
@@ -5206,6 +5219,7 @@ function openAddModal(lat, lng) {
   document.getElementById('loc-google-maps-link').style.display = 'none';
   document.getElementById('loc-google-sync-btn').style.display = 'none';
   document.getElementById('loc-notes').value = '';
+  document.getElementById('loc-cost').value = '';
   document.getElementById('loc-trip').value = '';
 
   document.querySelectorAll('.category-option').forEach(o => o.classList.remove('selected'));
@@ -5262,6 +5276,7 @@ function openEditModal(id) {
   syncBtn.style.display = 'none';
   shouldUseGoogle().then(ok => { if (ok) syncBtn.style.display = ''; });
   document.getElementById('loc-notes').value = loc.notes || '';
+  document.getElementById('loc-cost').value = loc.cost != null ? loc.cost : '';
 
   populateModalTrips();
   document.getElementById('loc-trip').value = loc.tripId || '';
@@ -5876,6 +5891,7 @@ async function saveLocation() {
     people: [...state.modalPeople],
     visits: state.modalVisits.filter(v => v.date),
     notes: document.getElementById('loc-notes').value.trim(),
+    cost: parseFloat(document.getElementById('loc-cost').value) || null,
     tags: [...state.modalTags],
     priceLevel: state.modalPrice || null,
     collections: [...state.modalCollections],
@@ -6497,6 +6513,36 @@ function renderStats() {
     }).join('');
   } else {
     document.getElementById('stats-collections-section').style.display = 'none';
+  }
+
+  // Spend by year — trips grouped by start year, summing stop + transit costs
+  const costByYear = {};
+  for (const trip of state.trips) {
+    const year = trip.startDate ? trip.startDate.slice(0, 4) : null;
+    if (!year) continue;
+    const c = _tripTotalCost(trip.id);
+    if (c > 0) costByYear[year] = (costByYear[year] || 0) + c;
+  }
+  const costYears = Object.entries(costByYear).sort((a, b) => b[0].localeCompare(a[0]));
+  const costSection = document.getElementById('stats-cost-section');
+  const costList = document.getElementById('stats-cost-list');
+  if (costYears.length > 0 && costSection && costList) {
+    const maxCost = Math.max(...costYears.map(([, v]) => v));
+    costList.innerHTML = costYears.map(([year, total]) => {
+      const pct = maxCost > 0 ? Math.round(total / maxCost * 100) : 0;
+      const label = total >= 1000 ? Math.round(total).toLocaleString() : total % 1 === 0 ? total : total.toFixed(2);
+      return `<div class="top-rated-item" style="flex-direction:column;align-items:stretch;gap:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;">
+          <span>${year}</span><span style="font-weight:600;">${label}</span>
+        </div>
+        <div style="height:4px;border-radius:2px;background:var(--border);">
+          <div style="height:100%;width:${pct}%;border-radius:2px;background:var(--accent);"></div>
+        </div>
+      </div>`;
+    }).join('');
+    costSection.style.display = '';
+  } else if (costSection) {
+    costSection.style.display = 'none';
   }
 
   // Achievements
@@ -8677,6 +8723,14 @@ function computeTripStats(trip, tripLocs) {
   };
 }
 
+function _tripTotalCost(tripId) {
+  const locs = stateIndex.locationsByTrip.get(tripId) || [];
+  const transits = stateIndex.transitsByTrip.get(tripId) || [];
+  const locCost = locs.reduce((s, l) => s + (Number.isFinite(l.cost) ? l.cost : 0), 0);
+  const transitCost = transits.reduce((s, t) => s + (Number.isFinite(t.cost) ? t.cost : 0), 0);
+  return locCost + transitCost;
+}
+
 function renderTripDetail(trip, tripLocs) {
   const s = computeTripStats(trip, tripLocs);
 
@@ -8684,6 +8738,8 @@ function renderTripDetail(trip, tripLocs) {
   const duration = s.days ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '';
   const avgRating = s.avgRating !== null ? s.avgRating.toFixed(1) : '—';
   const distance = s.km > 0 ? (s.km >= 100 ? Math.round(s.km) : s.km.toFixed(1)) : '—';
+  const totalCost = _tripTotalCost(trip.id);
+  const costDisplay = totalCost > 0 ? (totalCost >= 1000 ? Math.round(totalCost).toLocaleString() : totalCost % 1 === 0 ? totalCost : totalCost.toFixed(2)) : '—';
 
   let html = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
@@ -8702,6 +8758,7 @@ function renderTripDetail(trip, tripLocs) {
       <div class="trip-stat-mini" title="Hotel-category locations in this trip"><div class="ts-val">${s.stays || '—'}</div><div class="ts-label">Stays</div></div>
       <div class="trip-stat-mini"><div class="ts-val">${avgRating}</div><div class="ts-label">Avg Rating</div></div>
       <div class="trip-stat-mini"><div class="ts-val">${s.allPeople.size}</div><div class="ts-label">People</div></div>
+      <div class="trip-stat-mini" title="Sum of stop + transit costs"><div class="ts-val">${costDisplay}</div><div class="ts-label">Cost</div></div>
     </div>`;
 
   // Quality breakdown — food / nature / attractions
@@ -12861,6 +12918,7 @@ function openTransitModal(id) {
   document.getElementById('transit-airline').value = t.airline || '';
   document.getElementById('transit-distance').value = (t.distanceKm ?? '');
   document.getElementById('transit-duration').value = (t.durationMin ?? '');
+  document.getElementById('transit-cost').value = (t.cost ?? '');
   document.getElementById('transit-notes').value = t.notes || '';
   const modalEl = document.getElementById('transit-modal');
   modalEl.classList.add('open');
@@ -12891,6 +12949,7 @@ async function saveTransit() {
     airline: get('transit-airline'),
     distanceKm: num('transit-distance'),
     durationMin: num('transit-duration'),
+    cost: num('transit-cost'),
     notes: get('transit-notes'),
   };
   // Handle tripId: always send it (empty string = explicit clear on server)
