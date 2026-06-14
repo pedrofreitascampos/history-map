@@ -485,15 +485,16 @@ describe('Import parsers', () => {
 
   test('import preview has dedup detection', () => {
     // Regression: importing the same data twice created duplicates.
-    // Preview must flag items that match existing locations by name or proximity.
+    // Preview classifies items into adds / updates / skips before committing.
     expect(indexHtml).toContain('function findDuplicate');
-    expect(indexHtml).toContain('_duplicate');
-    expect(indexHtml).toContain('skip-dups-btn');
+    expect(indexHtml).toContain('function _classifyImportItems');
+    expect(indexHtml).toContain('pendingImportUpdates');
   });
 
   test('confirmImport respects unchecked rows', () => {
-    // Users can uncheck duplicates before importing
-    expect(indexHtml).toContain('import-row-cb');
+    // Users can uncheck add rows and update rows before confirming
+    expect(indexHtml).toContain('import-add-cb');
+    expect(indexHtml).toContain('import-update-cb');
     expect(indexHtml).toContain('uncheckedIdxs');
   });
 

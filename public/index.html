@@ -1143,7 +1143,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   margin-top: 16px; display: none;
 }
 .import-preview.active { display: block; }
-.import-preview h4 { font-size: 14px; margin-bottom: 12px; color: var(--text-secondary); }
+.import-preview h4 { font-size: 14px; margin-bottom: 6px; color: var(--text-secondary); }
+.diff-badges { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+.diff-badge { font-size:12px; padding:2px 8px; border-radius:12px; font-weight:600; }
+.diff-badge-add { background:rgba(34,197,94,.15); color:#22c55e; }
+.diff-badge-update { background:rgba(251,191,36,.15); color:var(--accent); }
+.diff-badge-skip { background:var(--bg-tertiary); color:var(--text-muted); }
+.diff-section { border:1px solid var(--border); border-radius:6px; margin-bottom:6px; overflow:hidden; }
+.diff-section summary { cursor:pointer; padding:8px 12px; font-size:13px; font-weight:600; list-style:none; display:flex; align-items:center; gap:6px; user-select:none; background:var(--bg-tertiary); }
+.diff-section summary::-webkit-details-marker { display:none; }
+.diff-section summary::before { content:'▶'; font-size:12px; color:var(--text-muted); transition:transform .15s; }
+.diff-section[open] summary::before { transform:rotate(90deg); }
+.diff-section-add summary { color:#22c55e; }
+.diff-section-update summary { color:var(--accent); }
+.diff-section-skip summary { color:var(--text-muted); }
 .import-table {
   width: 100%; border-collapse: collapse; font-size: 12px;
 }
@@ -2135,13 +2148,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <input type="file" id="folder-input" webkitdirectory style="display:none">
         </div>
         <div class="import-preview" id="import-preview">
-          <h4>Preview (<span id="import-count">0</span> locations)</h4>
-          <div style="max-height:300px;overflow:auto;">
-            <table class="import-table">
-              <thead><tr><th>Name</th><th>Category</th><th>Lat</th><th>Lng</th><th>Status</th></tr></thead>
-              <tbody id="import-tbody"></tbody>
-            </table>
-          </div>
+          <div id="import-diff-header" style="margin-bottom:8px;"></div>
+          <div id="import-diff-body" style="max-height:360px;overflow:auto;margin-bottom:8px;"></div>
           <div class="import-actions" style="flex-wrap:wrap;gap:8px;">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;">
               <input type="checkbox" id="import-auto-approve"> Auto-approve categories
@@ -2154,7 +2162,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             </label>
             <span style="flex:1;"></span>
             <button class="btn btn-secondary" data-click="cancelImport">Cancel</button>
-            <button class="btn btn-primary" data-click="withLoading" data-arg0="confirmImport">Import All</button>
+            <button class="btn btn-primary" id="import-confirm-btn" data-click="withLoading" data-arg0="confirmImport">Import</button>
           </div>
         </div>
       </div>
@@ -3103,6 +3111,7 @@ let state = {
   markerStyle: 'circle', // 'circle' | 'squircle' | 'teardrop' | 'glyph' | 'pill'
   activeOverlays: new Set(), // ids of currently-active dynamic overlays (rainviewer, etc.)
   pendingImport: [],
+  pendingImportUpdates: [],
   pendingRestoreTrips: [],
   contextMenuLatLng: null,
 };
@@ -11867,91 +11876,148 @@ function findDuplicate(item, nameIndex) {
   return null;
 }
 
+function _classifyImportItems(items) {
+  const nameIndex = new Map();
+  state.locations.forEach(loc => {
+    const key = (loc.name || '').toLowerCase().trim();
+    if (key) nameIndex.set(key, loc);
+  });
+  const adds = [], updates = [], skips = [];
+  items.forEach(item => {
+    const existing = findDuplicate(item, nameIndex);
+    if (!existing) {
+      adds.push(item);
+    } else {
+      const incomingVisits = item.visits || [];
+      const existingDates = new Set((existing.visits || []).map(v => v.date).filter(Boolean));
+      const newVisits = incomingVisits.filter(v => v.date && !existingDates.has(v.date));
+      if (newVisits.length > 0) {
+        updates.push({ item, existing, newVisits });
+      } else {
+        skips.push({ item, existing });
+      }
+    }
+  });
+  return { adds, updates, skips };
+}
+
 function showImportPreview(items) {
   document.getElementById('import-preview').classList.add('active');
   const isRestore = items[0]?._isFullRestore;
-  const hasVisits = items.some(i => i.visits?.length);
-  const format = isRestore ? '🔄 Oikumene Backup' :
-    hasVisits ? '📅 Google Timeline' :
+
+  if (isRestore) {
+    // Full-restore backup: flat table, import everything verbatim
+    const headerEl = document.getElementById('import-diff-header');
+    headerEl.innerHTML = `<h4>🔄 Oikumene Backup — ${items.length} location${items.length !== 1 ? 's' : ''}</h4>`;
+    const bodyEl = document.getElementById('import-diff-body');
+    bodyEl.innerHTML = `<table class="import-table">
+      <thead><tr><th>Name</th><th>Category</th><th>Lat</th><th>Lng</th><th>Status</th></tr></thead>
+      <tbody>${items.slice(0, 200).map((item, idx) => {
+        const cat = CATEGORIES[item.category] || CATEGORIES.location;
+        return `<tr><td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" class="import-row-cb" data-idx="${idx}" checked>
+          ${esc(item.name)}</label></td>
+          <td>${cat.emoji} ${cat.label}</td>
+          <td>${item.lat?.toFixed(4) || '?'}</td>
+          <td>${item.lng?.toFixed(4) || '?'}</td>
+          <td>${item.status}</td></tr>`;
+      }).join('')}${items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">…and ${items.length - 200} more</td></tr>` : ''}</tbody>
+    </table>`;
+    document.getElementById('import-confirm-btn').textContent = `Restore ${items.length}`;
+    shouldUseGoogle().then(e => { const l = document.getElementById('import-sync-label'); if (l) l.style.display = e ? 'flex' : 'none'; });
+    return;
+  }
+
+  // Standard import: classify into adds / updates / skips
+  const format = items.some(i => i.visits?.length) ? '📅 Google Timeline' :
     items[0]?._googleUrl !== undefined ? '⭐ Google Saved Places' :
     items[0]?._folderName ? '🗺️ Google My Maps' : '📁 File Import';
 
-  // Build name index for O(1) dedup lookups
-  const nameIndex = new Map();
-  state.locations.forEach(loc => {
-    const key = (loc.name || '').toLowerCase();
-    if (key) nameIndex.set(key, loc);
-  });
+  const { adds, updates, skips } = _classifyImportItems(items);
+  state.pendingImport = adds;
+  state.pendingImportUpdates = updates;
+  state._importPreClassified = true;
 
-  // Flag duplicates
-  let dupCount = 0;
-  items.forEach(item => {
-    item._duplicate = findDuplicate(item, nameIndex);
-    if (item._duplicate) dupCount++;
-  });
+  const headerEl = document.getElementById('import-diff-header');
+  headerEl.innerHTML = `
+    <h4>${format} — ${items.length} location${items.length !== 1 ? 's' : ''}</h4>
+    <div class="diff-badges">
+      ${adds.length ? `<span class="diff-badge diff-badge-add">➕ ${adds.length} new</span>` : ''}
+      ${updates.length ? `<span class="diff-badge diff-badge-update">🔄 ${updates.length} visit update${updates.length !== 1 ? 's' : ''}</span>` : ''}
+      ${skips.length ? `<span class="diff-badge diff-badge-skip">⊘ ${skips.length} already here</span>` : ''}
+    </div>`;
 
-  const dupMsg = dupCount > 0 ? ` · ⚠️ ${dupCount} possible duplicate${dupCount > 1 ? 's' : ''}` : '';
-  document.getElementById('import-count').textContent = `${items.length} locations — ${format}${dupMsg}`;
-
-  const tbody = document.getElementById('import-tbody');
-  tbody.innerHTML = items.slice(0, 200).map((item, idx) => {
+  const addsRows = adds.slice(0, 200).map((item, idx) => {
     const cat = CATEGORIES[item.category] || CATEGORIES.location;
-    const visits = (item.visits || []).length;
-    const isDup = !!item._duplicate;
-    const rowStyle = isDup ? 'background:rgba(251,191,36,0.08);' : '';
-    const dupLabel = isDup ? `<span style="color:var(--accent);font-size:10px;" title="Matches: ${esc(item._duplicate.name||'')}">⚠️dup</span>` : '';
-    return `<tr style="${rowStyle}">
-      <td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-        <input type="checkbox" class="import-row-cb" data-idx="${idx}" ${isDup ? '' : 'checked'}>
-        ${esc(item.name)} ${dupLabel}
-      </label></td>
-      <td>${cat.emoji} ${cat.label}</td>
-      <td>${item.lat?.toFixed(4) || '?'}</td>
-      <td>${item.lng?.toFixed(4) || '?'}</td>
-      <td>${item.status}${visits ? ` · ${visits} visit${visits>1?'s':''}` : ''}</td>
-    </tr>`;
-  }).join('') + (items.length > 200 ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">... and ${items.length - 200} more</td></tr>
-<tr><td colspan="5"><div style="font-size:12px;color:var(--warning,#f59e0b);margin-top:8px;">⚠️ Items beyond #200 are not visible but will be imported. Check carefully before confirming.</div></td></tr>` : '');
+    return `<tr><td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" class="import-row-cb import-add-cb" data-idx="${idx}" checked>
+      ${esc(item.name)}</label></td>
+      <td>${cat.emoji} ${cat.label}</td><td>${item.status}</td></tr>`;
+  }).join('') + (adds.length > 200 ? `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">…and ${adds.length - 200} more</td></tr>` : '');
 
-  // Duplicate action button (always recreate to avoid stale state)
-  const oldSkipBtn = document.getElementById('skip-dups-btn');
-  if (oldSkipBtn) oldSkipBtn.remove();
-  if (dupCount > 0) {
-    const actionsDiv = document.querySelector('.import-actions');
-    if (actionsDiv) {
-      const btn = document.createElement('button');
-      btn.id = 'skip-dups-btn';
-      btn.className = 'btn btn-secondary';
-      btn.style.cssText = 'font-size:12px;padding:6px 10px;';
-      btn.textContent = `Include ${dupCount} duplicate${dupCount > 1 ? 's' : ''}`;
-      btn.onclick = () => {
-        document.querySelectorAll('.import-row-cb').forEach(cb => {
-          const idx = parseInt(cb.dataset.idx);
-          if (state.pendingImport[idx]?._duplicate) cb.checked = !cb.checked;
-        });
-      };
-      actionsDiv.insertBefore(btn, actionsDiv.querySelector('.btn-secondary'));
-    }
-  }
+  const updatesRows = updates.map(({ existing, newVisits }, idx) =>
+    `<tr><td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" class="import-update-cb" data-uidx="${idx}" checked>
+      ${esc(existing.name)}</label></td>
+      <td style="color:var(--accent);font-size:12px;">${newVisits.map(v => v.date).join(', ')}</td></tr>`
+  ).join('');
 
-  // Show Google sync toggle only if Google is the configured search provider
-  // AND Places API is set up. Honors the provider choice in Account settings.
-  shouldUseGoogle().then(enabled => {
-    const label = document.getElementById('import-sync-label');
-    if (label) label.style.display = enabled ? 'flex' : 'none';
+  const skipsRows = skips.slice(0, 50).map(({ item, existing }) =>
+    `<tr style="opacity:.5;"><td>${esc(item.name)}</td><td>${esc(existing.name)}</td></tr>`
+  ).join('') + (skips.length > 50 ? `<tr><td colspan="2" style="text-align:center;color:var(--text-muted);">…and ${skips.length - 50} more</td></tr>` : '');
+
+  const bodyEl = document.getElementById('import-diff-body');
+  bodyEl.innerHTML = [
+    adds.length ? `<details class="diff-section diff-section-add" open>
+      <summary>➕ ${adds.length} to add</summary>
+      <table class="import-table">
+        <thead><tr><th><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="import-adds-all" checked> Name</label></th><th>Category</th><th>Status</th></tr></thead>
+        <tbody>${addsRows}</tbody>
+      </table></details>` : '',
+    updates.length ? `<details class="diff-section diff-section-update" open>
+      <summary>🔄 ${updates.length} visit update${updates.length !== 1 ? 's' : ''}</summary>
+      <table class="import-table">
+        <thead><tr><th><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="import-updates-all" checked> Existing place</label></th><th>New date(s)</th></tr></thead>
+        <tbody>${updatesRows}</tbody>
+      </table></details>` : '',
+    skips.length ? `<details class="diff-section diff-section-skip">
+      <summary>⊘ ${skips.length} already here — will be skipped</summary>
+      <table class="import-table">
+        <thead><tr><th>Incoming</th><th>Already saved as</th></tr></thead>
+        <tbody>${skipsRows}</tbody>
+      </table></details>` : '',
+    adds.length === 0 && updates.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;padding:12px 0;">All locations already exist in your collection.</p>' : '',
+  ].join('');
+
+  // Select-all wiring
+  const addsAll = document.getElementById('import-adds-all');
+  if (addsAll) addsAll.addEventListener('change', e => {
+    document.querySelectorAll('.import-add-cb').forEach(cb => { cb.checked = e.target.checked; });
   });
+  const updatesAll = document.getElementById('import-updates-all');
+  if (updatesAll) updatesAll.addEventListener('change', e => {
+    document.querySelectorAll('.import-update-cb').forEach(cb => { cb.checked = e.target.checked; });
+  });
+
+  // Confirm button label
+  const parts = [adds.length ? `Add ${adds.length}` : '', updates.length ? `update ${updates.length}` : ''].filter(Boolean);
+  document.getElementById('import-confirm-btn').textContent = parts.length ? parts.join(' + ') : 'Done';
+
+  shouldUseGoogle().then(e => { const l = document.getElementById('import-sync-label'); if (l) l.style.display = e ? 'flex' : 'none'; });
 }
 
 function cancelImport() {
   state.pendingImport = [];
+  state.pendingImportUpdates = [];
+  state._importPreClassified = false;
   document.getElementById('import-preview').classList.remove('active');
-  const skipBtn = document.getElementById('skip-dups-btn');
-  if (skipBtn) skipBtn.remove();
 }
 
 async function confirmImport() {
-  // Filter out unchecked rows (user deselected duplicates etc.)
-  const checkboxes = document.querySelectorAll('.import-row-cb');
+  // Filter unchecked adds (pre-classified uses .import-add-cb; restore uses .import-row-cb)
+  const addCbs = document.querySelectorAll('.import-add-cb');
+  const fallbackCbs = document.querySelectorAll('.import-row-cb');
+  const checkboxes = addCbs.length > 0 ? addCbs : fallbackCbs;
   if (checkboxes.length > 0) {
     const uncheckedIdxs = new Set();
     checkboxes.forEach(cb => { if (!cb.checked) uncheckedIdxs.add(parseInt(cb.dataset.idx)); });
@@ -11959,11 +12025,21 @@ async function confirmImport() {
       state.pendingImport = state.pendingImport.filter((_, i) => !uncheckedIdxs.has(i));
     }
   }
-  // Clean up dup markers
+  // Filter unchecked update rows (pre-classified path)
+  if (state._importPreClassified) {
+    const updateCbs = document.querySelectorAll('.import-update-cb');
+    if (updateCbs.length > 0) {
+      const uncheckedU = new Set();
+      updateCbs.forEach(cb => { if (!cb.checked) uncheckedU.add(parseInt(cb.dataset.uidx)); });
+      state.pendingImportUpdates = (state.pendingImportUpdates || []).filter((_, i) => !uncheckedU.has(i));
+    }
+  }
+  // Clean up dup markers (legacy)
   state.pendingImport.forEach(item => delete item._duplicate);
 
   const count = state.pendingImport.length;
-  if (count === 0) { showToast('No locations selected.', 'warn'); return; }
+  const updateCount = (state.pendingImportUpdates || []).length;
+  if (count === 0 && updateCount === 0) { showToast('No locations selected.', 'warn'); return; }
   const isFullRestore = state.pendingImport[0]?._isFullRestore;
   const autoApprove = document.getElementById('import-auto-approve')?.checked || false;
 
@@ -12014,14 +12090,33 @@ async function confirmImport() {
       return loc;
     });
 
-    // Smart dedup: check incoming locations against existing before committing
-    // Skip for full-restore backups where we want everything back verbatim.
-    if (!isFullRestore && toImport.length > 0) {
+    // Pre-classified path: apply visit-date updates directly (dedup done at preview time)
+    if (state._importPreClassified) {
+      const pendingUpdates = state.pendingImportUpdates || [];
+      for (const { existing, newVisits } of pendingUpdates) {
+        const loc = state.locations.find(l => l.id === existing.id);
+        if (loc && newVisits.length) {
+          const merged = [...(loc.visits || []), ...newVisits];
+          try { await api('PUT', `/locations/${loc.id}`, { visits: merged }); loc.visits = merged; } catch (_e) {}
+        }
+      }
+      if (toImport.length === 0) {
+        state.pendingImportUpdates = []; state._importPreClassified = false;
+        state.pendingImport = [];
+        document.getElementById('import-preview').classList.remove('active');
+        const msg = pendingUpdates.length
+          ? `Visit date${pendingUpdates.length > 1 ? 's' : ''} added to ${pendingUpdates.length} place${pendingUpdates.length > 1 ? 's' : ''}`
+          : 'All locations already exist — nothing imported.';
+        showToast(msg, pendingUpdates.length ? 'info' : 'warn');
+        if (pendingUpdates.length) { renderMarkers(); updateApprovalBadge(); }
+        return;
+      }
+    } else if (!isFullRestore && toImport.length > 0) {
+      // Fallback: legacy dedup modal (non-pre-classified imports)
       const _dupFlagged = _checkImportDups(toImport);
       if (_dupFlagged.length > 0) {
         const _dedupResult = await _showDedupModal(toImport, _dupFlagged);
-        if (_dedupResult === null) return; // user cancelled
-        // Apply "add visit date" choices — patch existing locations in-place
+        if (_dedupResult === null) return;
         for (const { existingId, visitDate } of (_dedupResult.updates || [])) {
           const _existing = state.locations.find(l => l.id === existingId);
           if (_existing && visitDate) {
@@ -12047,6 +12142,8 @@ async function confirmImport() {
     const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
     state.locations.push(...saved);
     state.pendingImport = [];
+    state.pendingImportUpdates = [];
+    state._importPreClassified = false;
     rebuildIndexes();
     document.getElementById('import-preview').classList.remove('active');
     renderMarkers();
@@ -12054,7 +12151,8 @@ async function confirmImport() {
     updateApprovalBadge();
     renderApproval();
     const pendingCount = saved.filter(l => l.needsApproval).length;
-    showToast(`${isFullRestore ? 'Restored' : 'Imported'} ${count} locations${pendingCount > 0 ? ' — review in approval queue' : ''}`);
+    const visitUpdateMsg = updateCount > 0 ? ` · updated ${updateCount} visit date${updateCount > 1 ? 's' : ''}` : '';
+    showToast(`${isFullRestore ? 'Restored' : 'Imported'} ${count} location${count !== 1 ? 's' : ''}${visitUpdateMsg}${pendingCount > 0 ? ' — review in approval queue' : ''}`);
 
     // Enrich uncategorized locations via OSM (opt-in, non-blocking)
     const osmEnrich = document.getElementById('import-osm-enrich')?.checked;
