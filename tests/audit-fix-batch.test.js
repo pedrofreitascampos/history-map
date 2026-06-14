@@ -53,26 +53,9 @@ describe('Chronology "Load more" registered in ACTIONS', () => {
   });
 });
 
-describe('Wishlist "Load more" registered in ACTIONS', () => {
-  test('renderWishlist registers _appendWishlistPage in ACTIONS before rendering', () => {
-    const fn = extractFunction('renderWishlist');
-    expect(fn).toMatch(/ACTIONS\._appendWishlistPage\s*=\s*_appendWishlistPage/);
-    expect(fn).toMatch(/typeof ACTIONS/);
-  });
-
-  test('ACTIONS registration appears before container.innerHTML = ""', () => {
-    const fn = extractFunction('renderWishlist');
-    const regIdx = fn.indexOf('ACTIONS._appendWishlistPage');
-    const clearIdx = fn.indexOf("container.innerHTML = ''");
-    expect(regIdx).toBeGreaterThan(-1);
-    expect(clearIdx).toBeGreaterThan(-1);
-    expect(regIdx).toBeLessThan(clearIdx);
-  });
-
-  test('_appendWishlistPage button uses setAttribute data-click (not .onclick)', () => {
-    const fn = extractFunction('renderWishlist');
-    expect(fn).toMatch(/setAttribute\(\s*['"]data-click['"]\s*,\s*['"]_appendWishlistPage['"]\s*\)/);
-    expect(fn).not.toMatch(/moreBtn\.onclick\s*=/);
+describe('Chronology "Load more" registered in ACTIONS', () => {
+  test('_appendChronoPage button uses setAttribute data-click (not .onclick)', () => {
+    expect(html).toMatch(/setAttribute\(\s*['"]data-click['"]\s*,\s*['"]_appendChronoPage['"]\s*\)/);
   });
 });
 
@@ -115,10 +98,10 @@ describe('Wider data-click sweep: selects and sliders', () => {
     expect(html).toMatch(/id="chrono-trip"[^>]*data-change="onChronoFilterChange"/);
   });
 
-  test('wishlist filter selects use data-change', () => {
-    expect(html).toMatch(/id="wishlist-sort"[^>]*data-change="onWishlistFilterChange"/);
-    expect(html).toMatch(/id="wishlist-tag"[^>]*data-change="onWishlistFilterChange"/);
-    expect(html).toMatch(/id="wishlist-cat"[^>]*data-change="onWishlistFilterChange"/);
+  test('plan view selects exist (wishlist tab replaced by plan tab)', () => {
+    expect(html).toContain('id="plan-status"');
+    expect(html).toContain('id="plan-min-rating"');
+    expect(html).toContain('id="plan-max-km"');
   });
 
   test('map filter selects use data-change', () => {
@@ -189,12 +172,12 @@ describe('getSearchProvider defaults to photon for keyless accounts', () => {
   });
 });
 
-// ── 9. wishlist-view in VIEW_HASHES ──────────────────────────────────────────
-describe('VIEW_HASHES includes wishlist-view', () => {
-  test("'wishlist-view' maps to a hash value", () => {
+// ── 9. plan-view in VIEW_HASHES ──────────────────────────────────────────────
+describe('VIEW_HASHES includes plan-view', () => {
+  test("'plan-view' maps to 'plan'", () => {
     const hashIdx = html.indexOf('VIEW_HASHES');
     const hashBlock = html.slice(hashIdx, hashIdx + 400);
-    expect(hashBlock).toMatch(/'wishlist-view'\s*:\s*'wishlist'/);
+    expect(hashBlock).toMatch(/'plan-view'\s*:\s*'plan'/);
   });
 });
 

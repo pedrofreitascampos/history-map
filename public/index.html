@@ -1633,8 +1633,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" data-view="chrono-view" data-click="switchView" data-arg0="chrono-view">
       📅 <span class="tab-label">Chronology</span>
     </button>
-    <button class="nav-tab" data-view="wishlist-view" data-click="switchView" data-arg0="wishlist-view">
-      🔖 <span class="tab-label">Wishlist</span>
+    <button class="nav-tab" data-view="plan-view" data-click="switchView" data-arg0="plan-view">
+      🗺️ <span class="tab-label">Plan</span>
     </button>
     <button class="nav-tab" data-view="trips-view" data-click="switchView" data-arg0="trips-view">
       🧳 <span class="tab-label">Trips</span>
@@ -1914,27 +1914,57 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 
   <!-- WISHLIST VIEW -->
-  <div class="view" id="wishlist-view">
-    <div class="chrono-header">
-      <h1>Wishlist</h1>
-      <div class="chrono-filters">
-        <select id="wishlist-sort" data-change="onWishlistFilterChange" title="Sort order">
-          <option value="strength">Sort: Strength</option>
-          <option value="rating">Sort: Rating</option>
-          <option value="name">Sort: Name</option>
-          <option value="recent">Sort: Recently added</option>
-        </select>
-        <select id="wishlist-tag" data-change="onWishlistFilterChange"><option value="">All Tags</option></select>
-        <select id="wishlist-cat" data-change="onWishlistFilterChange"><option value="">All Categories</option></select>
-        <input type="text" class="form-input" id="wishlist-search" placeholder="🔍 Search..." data-input="onWishlistFilterChange" style="flex:1;max-width:200px;min-width:120px;">
+  <div class="view" id="plan-view" style="overflow-y:auto;background:var(--bg-primary);padding:24px;">
+    <div style="max-width:720px;margin:0 auto;">
+      <h1 style="font-family:var(--font-display);font-size:28px;margin-bottom:4px;">🗺️ Plan a Day</h1>
+      <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">Set your preferences and get 3 ready-to-use itineraries.</p>
+
+      <div class="stats-panel" style="margin-bottom:24px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Places to consider</label>
+            <select id="plan-status" class="form-select">
+              <option value="bucket">Wishlist only</option>
+              <option value="any">All places (incl. visited)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Min rating</label>
+            <select id="plan-min-rating" class="form-select">
+              <option value="0">Any</option>
+              <option value="3">★★★ 3+</option>
+              <option value="4">★★★★ 4+</option>
+              <option value="5">★★★★★ 5 only</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Max distance between stops</label>
+            <select id="plan-max-km" class="form-select">
+              <option value="2">Walkable (≤ 2 km)</option>
+              <option value="5" selected>City (≤ 5 km)</option>
+              <option value="15">Regional (≤ 15 km)</option>
+              <option value="999">No limit</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Party</label>
+            <div id="plan-party-chips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin:16px 0 0;">
+          <label style="font-size:12px;font-weight:600;margin-bottom:8px;display:block;">Activity types <span style="font-weight:400;opacity:.6;">(none selected = all)</span></label>
+          <div id="plan-cat-chips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+
+        <button class="btn btn-primary" data-click="generateItineraries" style="width:100%;margin-top:16px;padding:10px;">✨ Generate 3 Itineraries</button>
       </div>
-      <div id="plan-day-bar" style="display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
-        <button id="plan-day-btn" data-click="planADay" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">🗺️ Plan a Day (0)</button>
-        <span style="font-size:12px;opacity:.65;">select 2+ places with coordinates</span>
-        <button data-click="clearWishSel" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.55;padding:2px 6px;" title="Clear selection">✕ clear</button>
+
+      <div id="plan-results" style="display:none;">
+        <h3 style="font-family:var(--font-display);font-size:18px;margin-bottom:16px;">Choose an itinerary</h3>
+        <div id="plan-cards" style="display:flex;flex-direction:column;gap:16px;"></div>
       </div>
     </div>
-    <div class="timeline" id="wishlist"></div>
   </div>
 
   <!-- TRIPS VIEW -->
@@ -3183,7 +3213,9 @@ function _idxRemoveTransit(t) {
 
 let map, markersLayer, heatLayer;
 let _nhLayer = null;
-let _wishSelIds = new Set();
+let _planCats = new Set();
+let _planParty = 'any';
+let _planItineraries = [];
 let chartRatings, chartActivity, chartDow, chartMonth;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3747,8 +3779,6 @@ document.addEventListener('keydown', e => {
   // Modals (close topmost)
   const yrOv = document.getElementById('year-review-overlay');
   if (yrOv && yrOv.style.display !== 'none') { closeYearReview(); return; }
-  const planDayOv = document.getElementById('plan-day-modal');
-  if (planDayOv && planDayOv.style.display !== 'none') { closePlanDayModal(); return; }
   const dedupOv = document.getElementById('dedup-modal');
   if (dedupOv && dedupOv.style.display !== 'none') { closeDedupModal(); return; }
   const shareLinkOv = document.getElementById('share-link-modal');
@@ -5121,7 +5151,7 @@ const VIEW_HASHES = {
   'map-view': 'map', 'stats-view': 'stats', 'chrono-view': 'chrono',
   'trips-view': 'trips', 'collections-view': 'collections',
   'regions-view': 'regions', 'bulk-view': 'bulk', 'import-view': 'import',
-  'transits-view': 'transits', 'wishlist-view': 'wishlist',
+  'transits-view': 'transits', 'plan-view': 'plan',
 };
 const HASH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_HASHES).map(([k, v]) => [v, k]));
 
@@ -5150,7 +5180,7 @@ function switchView(viewId, skipHash) {
   if (viewId === 'import-view') { renderApproval(); refreshWebImportEngineHint(); }
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
-  if (viewId === 'wishlist-view') renderWishlist();
+  if (viewId === 'plan-view') renderPlanView();
   if (viewId === 'collections-view') renderCollections();
   if (viewId === 'bulk-view') initBulkView();
   if (viewId === 'regions-view') renderRegionsMap();
@@ -7197,226 +7227,164 @@ function populateWishlistFilters() {
   }
 }
 
-function onWishlistFilterChange() { renderWishlist(); }
+function renderPlanView() {
+  // Category chips — only render once
+  const catsEl = document.getElementById('plan-cat-chips');
+  if (catsEl && !catsEl.children.length) {
+    catsEl.innerHTML = Object.entries(CATEGORIES).map(([key, c]) =>
+      `<button class="btn btn-secondary plan-cat-chip" style="padding:3px 10px;font-size:12px;"
+        data-click="togglePlanCat" data-arg0="${key}">${c.emoji} ${c.label}</button>`
+    ).join('');
+  }
+  // Party chips
+  const partyEl = document.getElementById('plan-party-chips');
+  if (partyEl && !partyEl.children.length) {
+    [['any','👤 Any'],['solo','🧍 Solo'],['couple','👫 Couple'],['family','👨‍👩‍👧 Family'],['group','👥 Group']].forEach(([val, label]) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-secondary plan-party-chip';
+      btn.style.cssText = 'padding:3px 10px;font-size:12px;';
+      btn.setAttribute('data-click', 'setPlanParty');
+      btn.setAttribute('data-arg0', val);
+      btn.textContent = label;
+      if (val === _planParty) btn.classList.add('active');
+      partyEl.appendChild(btn);
+    });
+  }
+  _syncPlanChips();
+}
 
-function renderWishlist() {
-  populateWishlistFilters();
-  const container = document.getElementById('wishlist');
-  if (!container) return;
+function _syncPlanChips() {
+  document.querySelectorAll('.plan-cat-chip').forEach(b =>
+    b.classList.toggle('active', _planCats.has(b.getAttribute('data-arg0')))
+  );
+  document.querySelectorAll('.plan-party-chip').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('data-arg0') === _planParty)
+  );
+}
 
-  const sortBy = (document.getElementById('wishlist-sort') || {}).value || 'strength';
-  const tagFilter = (document.getElementById('wishlist-tag') || {}).value || '';
-  const catFilter = (document.getElementById('wishlist-cat') || {}).value || '';
-  const searchRaw = (document.getElementById('wishlist-search') || {}).value || '';
-  const search = searchRaw.trim().toLowerCase();
+function togglePlanCat(cat) {
+  if (_planCats.has(cat)) _planCats.delete(cat); else _planCats.add(cat);
+  _syncPlanChips();
+}
 
-  let items = state.locations.filter(l => l.status === 'bucket' && !l.needsApproval);
-  if (catFilter) items = items.filter(l => l.category === catFilter);
-  if (tagFilter) items = items.filter(l => (l.tags || []).includes(tagFilter));
-  if (search) items = items.filter(l => {
-    const hay = [l.name, l.address, (l.notes || ''), ((l.tags || []).join(' '))].join(' ').toLowerCase();
-    return hay.includes(search);
+function setPlanParty(val) {
+  _planParty = val;
+  _syncPlanChips();
+}
+
+function _plannerPool() {
+  const statusFilter = document.getElementById('plan-status')?.value || 'bucket';
+  const minRating = parseInt(document.getElementById('plan-min-rating')?.value || '0');
+  return state.locations.filter(l => {
+    if (l.needsApproval || !Number.isFinite(l.lat) || !Number.isFinite(l.lng)) return false;
+    if (statusFilter === 'bucket' && l.status !== 'bucket') return false;
+    if (minRating > 0 && (l.myRating || 0) < minRating) return false;
+    if (_planCats.size > 0 && !_planCats.has(l.category)) return false;
+    return true;
   });
+}
 
-  // Effective rating for sort: same source the marker badge uses.
-  // Bucket → bucketStrength || googleRating; missing → 0 (sorts last).
-  const ratingOf = (l) => (l.bucketStrength || l.googleRating || 0);
-
-  if (sortBy === 'strength') {
-    items.sort((a, b) => (b.bucketStrength || 0) - (a.bucketStrength || 0)
-      || (a.name || '').localeCompare(b.name || ''));
-  } else if (sortBy === 'rating') {
-    items.sort((a, b) => ratingOf(b) - ratingOf(a) || (a.name || '').localeCompare(b.name || ''));
-  } else if (sortBy === 'name') {
-    items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  } else if (sortBy === 'recent') {
-    // _id is nedb-generated and lexicographically sorts by insertion order.
-    items.sort((a, b) => (b._id || b.id || '').localeCompare(a._id || a.id || ''));
+function _greedyRoute(pool, startLat, startLng, maxStops, maxKmBetween) {
+  const remaining = [...pool];
+  const route = [];
+  let curLat = startLat, curLng = startLng;
+  while (route.length < maxStops && remaining.length > 0) {
+    let bestIdx = -1, bestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = haversineKm(curLat, curLng, remaining[i].lat, remaining[i].lng);
+      if (d <= maxKmBetween && d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx === -1) break;
+    const [loc] = remaining.splice(bestIdx, 1);
+    route.push(loc);
+    curLat = loc.lat; curLng = loc.lng;
   }
+  return route;
+}
 
-  if (items.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⭐</div><h3>No Wishlist Items Yet</h3><p>Wishlist items are places you want to visit. Add one via the sidebar, import from a website, or narrate a trip.</p><div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"><button class="btn btn-primary" data-click="switchView" data-arg0="map-view" style="font-size:13px;padding:8px 18px;">🗺️ Go to Map</button><button class="btn btn-secondary" data-click="switchView" data-arg0="import-view" style="font-size:13px;padding:8px 18px;">📥 Import</button></div></div>`;
-    return;
-  }
+function generateItineraries() {
+  const pool = _plannerPool();
+  const maxKm = parseFloat(document.getElementById('plan-max-km')?.value || '5');
+  const center = map.getCenter();
+  if (pool.length < 2) { showToast('Not enough matching places — try relaxing the filters.', 'warn'); return; }
+  const poolSorted = [...pool].sort((a, b) =>
+    haversineKm(center.lat, center.lng, a.lat, a.lng) -
+    haversineKm(center.lat, center.lng, b.lat, b.lng)
+  );
+  const PACES = [
+    { label: 'Relaxed', stops: 3, emoji: '☕', desc: '3 stops · easy pace' },
+    { label: 'Balanced', stops: 5, emoji: '🚶', desc: '5 stops · comfortable day' },
+    { label: 'Packed',   stops: 7, emoji: '⚡', desc: '7 stops · full day out' },
+  ];
+  _planItineraries = PACES.map(pace => {
+    const route = _greedyRoute(poolSorted, center.lat, center.lng, pace.stops, maxKm);
+    let totalKm = 0;
+    for (let i = 1; i < route.length; i++)
+      totalKm += haversineKm(route[i-1].lat, route[i-1].lng, route[i].lat, route[i].lng);
+    return { ...pace, route, totalKm };
+  });
+  _renderPlanCards();
+}
 
-  const WISHLIST_PAGE = 100;
-  let _wishlistItems = items;
-  let _wishlistRendered = 0;
-
-  function _renderWishlistPage(from, to) {
-    let html = '';
-    for (let i = from; i < to; i++) {
-      const loc = _wishlistItems[i];
+function _renderPlanCards() {
+  const resultsEl = document.getElementById('plan-results');
+  const cardsEl = document.getElementById('plan-cards');
+  if (!resultsEl || !cardsEl) return;
+  cardsEl.innerHTML = _planItineraries.map((p, idx) => {
+    if (!p.route.length) return `<div class="stats-panel" style="opacity:.55;">
+      <h4>${p.emoji} ${p.label}</h4>
+      <p style="font-size:13px;color:var(--text-muted);">Not enough nearby places for ${p.stops} stops — try a wider distance or fewer category filters.</p></div>`;
+    const distStr = p.totalKm < 1 ? `${Math.round(p.totalKm * 1000)} m` : `${p.totalKm.toFixed(1)} km`;
+    const stops = p.route.map((loc, i) => {
       const cat = CATEGORIES[loc.category] || CATEGORIES.location;
-      const strength = Math.max(0, Math.min(5, loc.bucketStrength || 0));
-      const hearts = strength > 0
-        ? `<span class="ti-strength" style="color:#ec4899;">${'♥'.repeat(strength)}${'♡'.repeat(5 - strength)}</span>`
-        : '';
-      // Star badge (gold ≥4.5, silver ≥4.0) on whichever rating wins:
-      const rl = loc.bucketStrength || loc.googleRating || 0;
-      let badge = '';
-      if (typeof rl === 'number' && rl >= 4.5) badge = `<span class="ti-badge gold" aria-label="Top">★ ${rl.toFixed(1)}</span>`;
-      else if (typeof rl === 'number' && rl >= 4.0) badge = `<span class="ti-badge silver" aria-label="Highly rated">★ ${rl.toFixed(1)}</span>`;
-      else if (typeof rl === 'number' && rl > 0) badge = `<span class="ti-badge plain">${rl.toFixed(1)}</span>`;
-      const tagChips = (loc.tags || []).map(t => `<span class="ti-tag">${esc(t)}</span>`).join('');
-      const addr = loc.address ? `<span class="ti-addr">${esc(loc.address)}</span>` : '';
-      const isSel = typeof _wishSelIds !== 'undefined' && _wishSelIds.has(loc.id);
-      html += `<div class="timeline-item wishlist-item${isSel ? ' wish-selected' : ''}">
-        <div class="ti-top">
-          <button class="wish-sel-btn${isSel ? ' sel' : ''}" data-click="toggleWishSel" data-arg0="${esc(loc.id)}" title="Select for Plan a Day" aria-label="Select place">${isSel ? '☑' : '☐'}</button>
-          <span class="ti-emoji">${cat.emoji}</span>
-          <span class="ti-name">${esc(loc.name)}</span>
-          ${badge}
-        </div>
-        <div class="ti-bottom">
-          ${addr}
-          ${hearts}
-          ${tagChips}
-        </div>
-        <div class="ti-actions">
-          <button class="btn btn-secondary" data-click="showOnMapFromWishlist" data-arg0="${esc(loc.id)}" title="Show on map" style="font-size:12px;padding:5px 10px;">📍 Map</button>
-          <button class="btn btn-secondary" data-click="logTodayFromPopup" data-arg0="${esc(loc.id)}" title="Mark as Been and log a visit today" style="font-size:12px;padding:5px 10px;">✅ Been</button>
-          <button class="btn btn-secondary" data-click="openEditModal" data-arg0="${esc(loc.id)}" title="Edit" style="font-size:12px;padding:5px 10px;">✏️ Edit</button>
-          <button class="btn btn-secondary" data-click="deleteFromWishlist" data-arg0="${esc(loc.id)}" title="Remove" style="font-size:12px;padding:5px 10px;">🗑️</button>
-        </div>
+      return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;${i < p.route.length-1 ? 'border-bottom:1px solid var(--border);' : ''}">
+        <span style="color:var(--text-muted);font-size:12px;width:18px;text-align:right;">${i+1}.</span>
+        <span style="font-size:16px;">${cat.emoji}</span>
+        <span style="flex:1;font-size:13px;">${esc(loc.name)}</span>
+        ${loc.myRating ? `<span style="font-size:12px;color:var(--text-muted);">★${loc.myRating}</span>` : ''}
       </div>`;
-    }
-    return html;
-  }
-
-  function _appendWishlistPage() {
-    const moreBtn = document.getElementById('wishlist-load-more');
-    if (moreBtn) moreBtn.remove();
-    const nextEnd = Math.min(_wishlistRendered + WISHLIST_PAGE, _wishlistItems.length);
-    const frag = document.createElement('div');
-    frag.innerHTML = _renderWishlistPage(_wishlistRendered, nextEnd);
-    while (frag.firstChild) container.appendChild(frag.firstChild);
-    _wishlistRendered = nextEnd;
-    if (_wishlistRendered < _wishlistItems.length) {
-      const more = document.createElement('button');
-      more.id = 'wishlist-load-more';
-      more.className = 'btn btn-secondary';
-      more.style.cssText = 'display:block;margin:16px auto;padding:8px 24px;';
-      more.textContent = `Load more (${_wishlistItems.length - _wishlistRendered} remaining)`;
-      more.setAttribute('data-click', '_appendWishlistPage');
-      container.appendChild(more);
-    }
-  }
-
-  // Register under ACTIONS so data-click="_appendWishlistPage" can resolve
-  // the nested closure (window[name] would be undefined for inner functions).
-  // Guard for test sandboxes that run this function in isolation without ACTIONS.
-  if (typeof ACTIONS !== 'undefined') ACTIONS._appendWishlistPage = _appendWishlistPage;
-  container.innerHTML = '';
-  _appendWishlistPage();
-  if (typeof _updatePlanDayBtn !== 'undefined') _updatePlanDayBtn();
+    }).join('');
+    return `<div class="stats-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div><span style="font-size:20px;">${p.emoji}</span> <strong style="font-size:15px;">${p.label}</strong>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">${p.desc}</span></div>
+        <span style="font-size:12px;color:var(--text-muted);">${distStr} total</span>
+      </div>
+      ${stops}
+      <button class="btn btn-primary" style="width:100%;margin-top:14px;" data-click="usePlanItinerary" data-arg0="${idx}">Use this itinerary →</button>
+    </div>`;
+  }).join('');
+  resultsEl.style.display = '';
 }
 
-function toggleWishSel(id) {
-  if (_wishSelIds.has(id)) _wishSelIds.delete(id); else _wishSelIds.add(id);
-  const btn = document.querySelector(`.wish-sel-btn[data-arg0="${id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
-  if (btn) {
-    const s = _wishSelIds.has(id);
-    btn.classList.toggle('sel', s);
-    btn.textContent = s ? '☑' : '☐';
-    const item = btn.closest('.wishlist-item');
-    if (item) item.classList.toggle('wish-selected', s);
-  }
-  _updatePlanDayBtn();
-}
-function clearWishSel() {
-  _wishSelIds.clear();
-  document.querySelectorAll('.wish-sel-btn.sel').forEach(b => {
-    b.classList.remove('sel');
-    b.textContent = '☐';
-    const item = b.closest('.wishlist-item');
-    if (item) item.classList.remove('wish-selected');
-  });
-  _updatePlanDayBtn();
-}
-function _updatePlanDayBtn() {
-  const bar = document.getElementById('plan-day-bar');
-  if (!bar) return;
-  const n = _wishSelIds.size;
-  bar.style.display = n >= 1 ? 'flex' : 'none';
-  const btn = document.getElementById('plan-day-btn');
-  if (btn) btn.textContent = `🗺️ Plan a Day (${n})`;
-}
-function planADay() {
-  const locs = state.locations.filter(l => _wishSelIds.has(l.id) && Number.isFinite(l.lat) && Number.isFinite(l.lng));
-  if (locs.length < 2) { showToast('Select at least 2 places with coordinates'); return; }
+async function usePlanItinerary(idx) {
+  const plan = _planItineraries[parseInt(idx)];
+  if (!plan || !plan.route.length) return;
   const today = new Date().toISOString().slice(0, 10);
-  const nameEl = document.getElementById('plan-day-name');
-  if (nameEl) nameEl.value = `Day Trip — ${today}`;
-  const modal = document.getElementById('plan-day-modal');
-  if (modal) { modal.style.display = 'flex'; setTimeout(() => { if (nameEl) nameEl.select(); }, 50); }
-}
-function closePlanDayModal() {
-  const modal = document.getElementById('plan-day-modal');
-  if (modal) modal.style.display = 'none';
-}
-function _nearestNeighborOrder(matrix) {
-  const n = matrix.length;
-  if (n <= 1) return [0];
-  let startIdx = 0, minSum = Infinity;
-  for (let i = 0; i < n; i++) {
-    const s = matrix[i].reduce((acc, v, j) => j === i ? acc : acc + (v || 0), 0);
-    if (s < minSum) { minSum = s; startIdx = i; }
-  }
-  const visited = new Set([startIdx]);
-  const order = [startIdx];
-  while (order.length < n) {
-    const last = order[order.length - 1];
-    let next = -1, best = Infinity;
-    for (let j = 0; j < n; j++) {
-      if (!visited.has(j) && (matrix[last][j] || 0) < best) { best = matrix[last][j]; next = j; }
-    }
-    if (next === -1) break;
-    visited.add(next);
-    order.push(next);
-  }
-  return order;
-}
-async function confirmPlanADay() {
-  const nameEl = document.getElementById('plan-day-name');
-  const name = (nameEl ? nameEl.value : '').trim();
-  if (!name) { showToast('Enter a trip name'); return; }
-  closePlanDayModal();
-  showToast('Optimising route…');
-  const locs = state.locations.filter(l => _wishSelIds.has(l.id) && Number.isFinite(l.lat) && Number.isFinite(l.lng));
-  if (locs.length < 2) { showToast('Need at least 2 locations with coordinates'); return; }
-  let orderedLocs = locs;
-  try {
-    const coords = locs.map(l => `${l.lng},${l.lat}`).join(';');
-    const res = await fetch(`https://router.project-osrm.org/table/v1/walking/${coords}?annotations=duration`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.durations) { const order = _nearestNeighborOrder(data.durations); orderedLocs = order.map(i => locs[i]); }
-    }
-  } catch (_) { /* fallback to original order */ }
-  const color = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
-  const trip = mapId(await api('POST', '/trips', { name, color, startDate: '', endDate: '' }));
+  const name = `${plan.label} Day — ${today}`;
+  const color = `hsl(${Math.floor(Math.random() * 360)},60%,55%)`;
+  showToast('Creating trip…');
+  const trip = mapId(await api('POST', '/trips', { name, color, startDate: today, endDate: today }));
   const tripId = trip.id || trip._id;
-  await Promise.all(orderedLocs.map((loc, i) => api('PUT', '/locations/' + loc.id, { tripId, tripOrder: i })));
-  orderedLocs.forEach((loc, i) => {
+  await Promise.all(plan.route.map((loc, i) => api('PUT', '/locations/' + loc.id, { tripId, tripOrder: i })));
+  plan.route.forEach((loc, i) => {
     const sl = stateIndex.locationById.get(loc.id);
     if (sl) { sl.tripId = tripId; sl.tripOrder = i; }
   });
   if (!state.trips) state.trips = [];
   state.trips.push(trip);
-  _wishSelIds.clear();
-  showToast(`"${name}" created — ${orderedLocs.length} stops!`);
+  showToast(`"${name}" created — ${plan.route.length} stops!`);
   switchView('trips-view');
   const sel = document.getElementById('trip-selector');
   if (sel) {
     const opt = document.createElement('option');
-    opt.value = tripId;
-    opt.textContent = name;
+    opt.value = tripId; opt.textContent = name;
     sel.appendChild(opt);
     sel.value = tripId;
   }
   selectTrip(tripId);
 }
+
 
 async function shareTripLink() {
   const tripId = (document.getElementById('trip-selector') || {}).value;
@@ -13692,17 +13660,6 @@ async function _handlePhotoFiles(fileList) {
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-secondary" data-click="revokeShareLink" style="font-size:12px;margin-right:auto;">Revoke</button>
       <button class="btn btn-secondary" data-click="closeShareLinkModal">Close</button>
-    </div>
-  </div>
-</div>
-<div id="plan-day-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);">
-    <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🗺️ Name Your Day Trip</h3>
-    <p style="margin:0 0 16px;font-size:13px;opacity:.7;">Selected places will be sorted into the optimal walking order.</p>
-    <input id="plan-day-name" type="text" class="form-input" placeholder="Day Trip — 2026-06-12" style="width:100%;box-sizing:border-box;margin-bottom:16px;">
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn btn-secondary" data-click="closePlanDayModal">Cancel</button>
-      <button class="btn btn-primary" data-click="confirmPlanADay">Create Trip</button>
     </div>
   </div>
 </div>

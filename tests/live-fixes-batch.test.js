@@ -141,16 +141,8 @@ describe('Pagination buttons use data-click instead of .onclick=', () => {
     expect(html).toMatch(/setAttribute\(\s*['"]data-click['"]\s*,\s*['"]_appendChronoPage['"]\s*\)/);
   });
 
-  test('wishlist-load-more sets data-click="_appendWishlistPage"', () => {
-    expect(html).toMatch(/setAttribute\(\s*['"]data-click['"]\s*,\s*['"]_appendWishlistPage['"]\s*\)/);
-  });
-
   test('the old `more.onclick = _appendChronoPage` is gone', () => {
     expect(html).not.toMatch(/more\.onclick\s*=\s*_appendChronoPage/);
-  });
-
-  test('the old `more.onclick = _appendWishlistPage` is gone', () => {
-    expect(html).not.toMatch(/more\.onclick\s*=\s*_appendWishlistPage/);
   });
 });
 
