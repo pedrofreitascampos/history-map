@@ -103,6 +103,7 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: [
         "'self'",
+        "https://unpkg.com",           // SW cacheFirst needs fetch permission for CDN assets
         "https://api.rainviewer.com",  // dynamic overlay: weather radar metadata
         "https://nominatim.openstreetmap.org",
         "https://photon.komoot.io",
@@ -111,6 +112,7 @@ app.use(helmet({
         "https://accounts.google.com",
         "https://cdn.jsdelivr.net",
         "https://raw.githubusercontent.com",
+        "https://tiles.stadiamaps.com",
       ],
       frameSrc: ["https://accounts.google.com"],
       objectSrc: ["'none'"],
