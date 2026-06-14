@@ -2117,6 +2117,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
             </div>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
+            <strong style="color:var(--text-primary);">⭐ Google Maps Saved Places</strong>
+            <p style="color:var(--text-muted);margin-top:4px;">In Google Takeout select <strong>Maps (your places)</strong>. Inside the zip you'll find <code>Saved Places.json</code> and any named lists (e.g. <code>Want to go.json</code>). You can select multiple files at once — "Want to go" lists are imported as wishlist.</p>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" data-click="openFileDialog" data-target="google-saved-input" data-stop="1" style="font-size:12px;padding:6px 12px;">⭐ Import Saved Places JSON</button>
+              <span style="font-size:12px;color:var(--text-muted);">Or drag the .json files onto the drop zone above.</span>
+              <input type="file" id="google-saved-input" accept=".json,application/json" multiple style="display:none;" data-change="onGoogleSavedImport" data-arg0="this">
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📌 Mapstr</strong>
             <p style="color:var(--text-muted);margin-top:4px;">In the app: <strong>Profile → ⚙️ Settings → Manage your data → Export</strong>. You'll receive a CSV or GeoJSON file by email. Import it here — tags and names are preserved.</p>
           </div>
@@ -3707,6 +3716,8 @@ document.addEventListener('keydown', e => {
   if (yrOv && yrOv.style.display !== 'none') { closeYearReview(); return; }
   const planDayOv = document.getElementById('plan-day-modal');
   if (planDayOv && planDayOv.style.display !== 'none') { closePlanDayModal(); return; }
+  const dedupOv = document.getElementById('dedup-modal');
+  if (dedupOv && dedupOv.style.display !== 'none') { closeDedupModal(); return; }
   const shareLinkOv = document.getElementById('share-link-modal');
   if (shareLinkOv && shareLinkOv.style.display !== 'none') { closeShareLinkModal(); return; }
   const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
@@ -5868,6 +5879,12 @@ async function saveLocation() {
       _idxAddLoc(updated);
     } else {
       data.createdAt = new Date().toISOString().split('T')[0];
+      // Warn (non-blocking) if a similar place already exists nearby
+      const _dLat = Number(data.lat), _dLng = Number(data.lng);
+      if (Number.isFinite(_dLat) && Number.isFinite(_dLng)) {
+        const _near = _findDups({ name: data.name, lat: _dLat, lng: _dLng });
+        if (_near.length) showToast(`Similar place already nearby: "${_near[0].name}"`, 'warn');
+      }
       const saved = mapId(await api('POST', '/locations', data));
       state.locations.push(saved);
       _idxAddLoc(saved);
@@ -10674,6 +10691,30 @@ function onTimelineImport(el) {
   handleFiles(files);
 }
 
+async function onGoogleSavedImport(el) {
+  if (!el || !el.files || !el.files.length) return;
+  const files = Array.from(el.files);
+  el.value = '';
+  const all = [];
+  for (const file of files) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
+        showToast(`${file.name}: not a Google Saved Places file`, 'warn'); continue;
+      }
+      const nameLower = file.name.toLowerCase();
+      const status = (nameLower.includes('want') || nameLower.includes('wishlist') || nameLower.includes('to-go'))
+        ? 'bucket' : 'been';
+      all.push(...parseGoogleSavedPlaces(data, status));
+    } catch (e) { showToast(`Failed to parse ${file.name}: ${e.message}`, 'error'); }
+  }
+  if (all.length === 0) { showToast('No locations found in file(s)', 'warn'); return; }
+  state.pendingImport = all;
+  showImportPreview(all);
+  showToast(`Loaded ${all.length} place${all.length !== 1 ? 's' : ''} — review and import`);
+}
+
 async function handleFiles(files) {
   const fileList = [...files].filter(f => {
     const ext = f.name.split('.').pop().toLowerCase();
@@ -10763,8 +10804,11 @@ function parseJSON(content) {
     })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
   }
 
-  // 2. Google Takeout Saved Places (GeoJSON with google_maps_url)
-  if (data.type === 'FeatureCollection' && data.features?.[0]?.properties?.google_maps_url) {
+  // 2. Google Takeout Saved Places (GeoJSON) — old format: google_maps_url; new format: "Google Maps URL"
+  if (data.type === 'FeatureCollection' && (
+    data.features?.[0]?.properties?.google_maps_url ||
+    data.features?.[0]?.properties?.['Google Maps URL']
+  )) {
     return parseGoogleSavedPlaces(data);
   }
 
@@ -10840,24 +10884,44 @@ function extractPlaceId(url) {
 }
 
 // ── Google Takeout: Saved Places (GeoJSON) ──────────────
-function parseGoogleSavedPlaces(data) {
+// Handles both the old format (snake_case keys) and the current format
+// (title-case keys with a "Location" sub-object and "Geo Coordinates").
+function parseGoogleSavedPlaces(data, status = 'been') {
   return data.features.map(f => {
     const props = f.properties || {};
-    const loc = props.location || {};
+    const locNew = props.Location || {};      // current Takeout: "Location" (capital)
+    const locOld = props.location || {};      // older Takeout: "location" (lowercase)
     const coords = f.geometry?.coordinates || [];
-    const name = props.Title || loc.name || props.name || 'Unknown';
-    const address = loc.address || props.address || '';
-    const googleUrl = props.google_maps_url || '';
+
+    const name = props.Title || locNew.Name || locOld.name || props.name || 'Unknown';
+    const address = locNew.Address || locOld.address || props.address || '';
+
+    // Current format uses Geo Coordinates sub-object with string values
+    const geoCoords = locNew['Geo Coordinates'] || {};
+    const lat = Number.isFinite(parseFloat(geoCoords.Latitude))
+      ? parseFloat(geoCoords.Latitude)
+      : (coords[1] || 0);
+    const lng = Number.isFinite(parseFloat(geoCoords.Longitude))
+      ? parseFloat(geoCoords.Longitude)
+      : (coords[0] || 0);
+
+    const googleUrl = props['Google Maps URL'] || locNew['Google Maps URL'] || props.google_maps_url || '';
     const placeId = extractPlaceId(googleUrl);
+    const updatedAt = props.Updated || props.Published || '';
+    const createdAt = updatedAt ? updatedAt.split('T')[0] : '';
+
+    const website = locNew.Website || locOld.website || '';
+    const notes = props.Comment || (website ? `Website: ${website}` : '');
+
     const result = {
-      name, lat: coords[1] || 0, lng: coords[0] || 0,
+      name, lat, lng,
       category: inferCategory(name + ' ' + address),
-      address,
-      status: 'been',
-      notes: props.Comment || '',
+      address, status, notes,
+      visits: (status === 'been' && createdAt) ? [{ date: createdAt }] : [],
       _googleUrl: googleUrl,
     };
     if (placeId) result._googlePlaceId = placeId;
+    if (createdAt) result.createdAt = createdAt;
     return result;
   }).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
@@ -11736,6 +11800,18 @@ async function confirmImport() {
       return loc;
     });
 
+    // Smart dedup: check incoming locations against existing before committing
+    // Skip for full-restore backups where we want everything back verbatim.
+    if (!isFullRestore && toImport.length > 0) {
+      const _dupFlagged = _checkImportDups(toImport);
+      if (_dupFlagged.length > 0) {
+        const _filtered = await _showDedupModal(toImport, _dupFlagged);
+        if (_filtered === null) return; // user cancelled
+        toImport = _filtered;
+        if (toImport.length === 0) { showToast('All locations skipped — they already exist nearby.', 'warn'); return; }
+      }
+    }
+
     // Save immediately — don't block on enrichment
     const saved = mapIds(await api('POST', '/locations/bulk', { locations: toImport }));
     state.locations.push(...saved);
@@ -11950,6 +12026,83 @@ function dismissOnThisDay() {
   localStorage.setItem('hm_otd_dismissed', todayStr);
   const banner = document.getElementById('on-this-day-banner');
   if (banner) banner.style.display = 'none';
+}
+
+// ── Smart import deduplication ───────────────────────────────────────────────
+let _dedupCtx = null;
+
+function _levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({length: n + 1}, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const curr = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i-1] === b[j-1] ? prev[j-1] : 1 + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+function _levenshteinSim(a, b) {
+  const an = (a || '').toLowerCase().trim();
+  const bn = (b || '').toLowerCase().trim();
+  if (an === bn) return 1;
+  const maxLen = Math.max(an.length, bn.length);
+  if (!maxLen) return 1;
+  return 1 - _levenshtein(an, bn) / maxLen;
+}
+function _findDups(candidate, locs) {
+  const src = locs !== undefined ? locs : (typeof state !== 'undefined' ? state.locations : []);
+  if (!Number.isFinite(candidate.lat) || !Number.isFinite(candidate.lng)) return [];
+  return src.filter(loc => {
+    if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return false;
+    if (_haversineM(candidate.lat, candidate.lng, loc.lat, loc.lng) > 500) return false;
+    return _levenshteinSim(candidate.name, loc.name) >= 0.8;
+  });
+}
+function _checkImportDups(candidates) {
+  const flagged = [];
+  candidates.forEach((c, idx) => {
+    const matches = _findDups(c);
+    if (matches.length) flagged.push({ idx, candidate: c, matches });
+  });
+  return flagged;
+}
+function _showDedupModal(toImport, flagged) {
+  return new Promise(resolve => {
+    _dedupCtx = { toImport, flagged, resolve };
+    const n = flagged.length, total = toImport.length;
+    document.getElementById('dedup-summary').textContent =
+      `${n} of ${total} place${total !== 1 ? 's' : ''} look like ${n === 1 ? 'it' : 'they'} already exist nearby.`;
+    document.getElementById('dedup-list').innerHTML = flagged.map(({candidate, matches}) => {
+      const matchNames = matches.slice(0, 2).map(m => `"${esc(m.name)}"`).join(', ');
+      return `<div style="padding:6px 4px;border-bottom:1px solid var(--border);font-size:13px;">
+        <strong>${esc(candidate.name)}</strong><span style="opacity:.6;"> → matches ${matchNames}</span>
+      </div>`;
+    }).join('');
+    document.getElementById('dedup-modal').style.display = 'flex';
+  });
+}
+function closeDedupModal() {
+  if (_dedupCtx) { _dedupCtx.resolve(null); _dedupCtx = null; }
+  document.getElementById('dedup-modal').style.display = 'none';
+}
+function dedupSkip() {
+  if (!_dedupCtx) return;
+  const { toImport, flagged, resolve } = _dedupCtx;
+  const flaggedIdxs = new Set(flagged.map(f => f.idx));
+  _dedupCtx = null;
+  document.getElementById('dedup-modal').style.display = 'none';
+  resolve(toImport.filter((_, i) => !flaggedIdxs.has(i)));
+}
+function dedupImportAll() {
+  if (!_dedupCtx) return;
+  const { toImport, resolve } = _dedupCtx;
+  _dedupCtx = null;
+  document.getElementById('dedup-modal').style.display = 'none';
+  resolve(toImport);
 }
 
 // ── Neighborhood detector ───────────────────────────────────────────────────
@@ -13252,6 +13405,18 @@ async function _handlePhotoFiles(fileList) {
   _checkPhotoDistance(loc);
 }
 </script>
+<div id="dedup-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);max-height:90vh;display:flex;flex-direction:column;">
+    <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🔍 Possible Duplicates</h3>
+    <p id="dedup-summary" style="margin:0 0 12px;font-size:13px;opacity:.7;"></p>
+    <div id="dedup-list" style="overflow-y:auto;flex:1;min-height:60px;max-height:260px;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-secondary);margin-bottom:16px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button class="btn btn-secondary" data-click="closeDedupModal" style="font-size:13px;">Cancel</button>
+      <button class="btn btn-secondary" data-click="dedupImportAll" style="font-size:13px;">Import all anyway</button>
+      <button class="btn btn-primary" data-click="dedupSkip" style="font-size:13px;">Skip duplicates</button>
+    </div>
+  </div>
+</div>
 <div id="share-link-modal" style="display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.3);">
     <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🔗 Share Trip</h3>
