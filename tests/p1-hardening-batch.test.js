@@ -64,6 +64,18 @@ describe('S2 P1 hardening batch', () => {
     expect(connectDirective).toContain('photon.komoot.io');
   });
 
+  // ── SW CDN origins in connect-src ──
+  // The service worker cacheFirst() calls fetch() for CDN assets; those are
+  // governed by connect-src. Any origin missing here returns 503 on cold cache.
+  test('CSP connect-src covers all origins the SW caches (unpkg, jsdelivr, stadiamaps)', async () => {
+    const res = await request(app).get('/');
+    const csp = res.headers['content-security-policy'] || '';
+    const connectSrc = csp.split(';').find(d => d.trim().startsWith('connect-src')) || '';
+    expect(connectSrc).toContain('unpkg.com');
+    expect(connectSrc).toContain('cdn.jsdelivr.net');
+    expect(connectSrc).toContain('tiles.stadiamaps.com');
+  });
+
   // ── 1. Per-endpoint rate limits ──
   test('server/index.js mounts a dedicated rate limit on /api/trips/narrate', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'index.js'), 'utf-8');
