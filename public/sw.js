@@ -32,8 +32,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   const { origin, pathname } = url;
 
-  // Stadia map tiles → cache-first (view offline areas you've already loaded)
-  if (origin === 'https://tiles.stadiamaps.com') {
+  // CartoDB map tiles → cache-first (view offline areas you've already loaded)
+  if (origin.endsWith('.basemaps.cartocdn.com')) {
     e.respondWith(cacheTileFirst(e.request));
     return;
   }

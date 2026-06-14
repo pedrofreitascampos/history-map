@@ -73,7 +73,7 @@ describe('S2 P1 hardening batch', () => {
     const connectSrc = csp.split(';').find(d => d.trim().startsWith('connect-src')) || '';
     expect(connectSrc).toContain('unpkg.com');
     expect(connectSrc).toContain('cdn.jsdelivr.net');
-    expect(connectSrc).toContain('tiles.stadiamaps.com');
+    expect(connectSrc).toContain('basemaps.cartocdn.com');
   });
 
   // ── 1. Per-endpoint rate limits ──

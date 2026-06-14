@@ -86,8 +86,8 @@ describe('PWA service worker — event handlers', () => {
     expect(swJs).toMatch(/addEventListener\(['"]fetch['"]/);
   });
 
-  test('sw.js intercepts Stadia tile requests', () => {
-    expect(swJs).toContain('tiles.stadiamaps.com');
+  test('sw.js intercepts CartoDB tile requests', () => {
+    expect(swJs).toContain('basemaps.cartocdn.com');
   });
 
   test('sw.js has tile cache with MAX_TILES cap', () => {
