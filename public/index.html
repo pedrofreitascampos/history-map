@@ -1751,6 +1751,12 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
   <!-- FILTER SIDEBAR -->
   <aside id="sidebar">
+    <div id="region-filter-chip" style="display:none;padding:10px 16px 0;">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--accent);color:#000;border-radius:20px;font-size:12px;font-weight:500;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="region-filter-label"></span>
+        <button onclick="clearRegionFilter()" style="border:none;background:none;cursor:pointer;font-size:16px;padding:0;line-height:1;color:#000;" aria-label="Clear region filter">×</button>
+      </div>
+    </div>
     <div class="filter-section">
       <div style="display:flex;gap:6px;">
         <input type="text" class="form-input" id="map-search-input" placeholder="Search place"
@@ -3159,7 +3165,7 @@ let state = {
   trips: [],
   collections: [],
   transits: [],
-  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, minBucketStrength: 0, tags: new Set(), priceLevels: new Set() },
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, minBucketStrength: 0, tags: new Set(), priceLevels: new Set(), regionLocs: null, regionLabel: '' },
   editingId: null,
   modalPeople: [],
   modalVisits: [],
@@ -4296,6 +4302,7 @@ function getFilteredLocations() {
     state.filters.minRating,
     state.filters.minGoogleRating,
     state.filters.minBucketStrength,
+    state.filters.regionLabel || '',
     ...[...state.filters.categories].sort(),
     ...[...state.filters.tags].sort(),
     ...[...state.filters.priceLevels].sort(),
@@ -4304,6 +4311,10 @@ function getFilteredLocations() {
   _gflGen = stateIndex.generation;
   _gflFiltersKey = filtersKey;
   _gflCache = state.locations.filter(loc => {
+    if (state.filters.regionLocs) {
+      const id = loc.id || loc._id;
+      if (!id || !state.filters.regionLocs.has(id)) return false;
+    }
     if (state.filters.status !== 'all' && loc.status !== state.filters.status) return false;
     if (state.filters.categories.size > 0 && !state.filters.categories.has(loc.category)) return false;
     if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
@@ -10410,7 +10421,11 @@ function _renderRegionMode_region(geo, regionCounts) {
           `<strong>${esc(p.name)}</strong><br>${esc(p.country)}<br>${count} location${count > 1 ? 's' : ''}`,
           { sticky: true, direction: 'top' }
         );
-        layer.on('click', () => showRegionLocations(idx, p.name, p.country));
+        layer.on('click', () => {
+          const bounds = layer.getBounds();
+          if (bounds && bounds.isValid()) regionsMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 7 });
+          showRegionLocations(idx, p.name, p.country);
+        });
       }
     }
   }).addTo(regionsMap);
@@ -10428,13 +10443,14 @@ function _renderRegionMode_country(geo, regionCounts) {
     onEachFeature: function(feature, layer) {
       const country = feature.properties && feature.properties.country;
       if (!country) return;
+      const countryFeatures=geo.features.filter(f=>f.properties?.country===country);
       const count = countryCounts.get(country) || 0;
       if (count > 0) {
         layer.bindTooltip(
           `<strong>${esc(country)}</strong><br>${count} location${count > 1 ? 's' : ''}`,
           { sticky: true, direction: 'top' }
         );
-        layer.on('click', () => showCountryLocations(country, countryLocs.get(country) || []));
+        layer.on('click', ()=>{ regionsMap.fitBounds(L.geoJSON({type:'FeatureCollection',features:countryFeatures}).getBounds(),{padding:[30,30],maxZoom:7}); showCountryLocations(country,countryLocs.get(country)||[]); });
       }
     }
   }).addTo(regionsMap);
@@ -10502,33 +10518,69 @@ function _renderLocList(locs) {
   }).join('');
 }
 
+let _regionPopupData = null;
+
+function _updateRegionFilterChip() {
+  const chip = document.getElementById('region-filter-chip');
+  const labelEl = document.getElementById('region-filter-label');
+  const active = state.filters.regionLabel;
+  if (!chip) return;
+  chip.style.display = active ? '' : 'none';
+  if (labelEl) labelEl.textContent = active ? '📍 ' + active : '';
+}
+
+function filterAtlasByLocs(label, locs) {
+  if (!locs || locs.length === 0) return;
+  state.filters.regionLocs = new Set(locs.map(l => l.id || l._id).filter(Boolean));
+  state.filters.regionLabel = label;
+  _updateRegionFilterChip();
+  _renderMarkersPending = true;
+  switchView('map-view');
+}
+
+function _applyRegionPopupFilter() {
+  if (_regionPopupData) filterAtlasByLocs(_regionPopupData.label, _regionPopupData.locs);
+}
+
+function clearRegionFilter() {
+  state.filters.regionLocs = null;
+  state.filters.regionLabel = '';
+  _updateRegionFilterChip();
+  renderMarkers();
+}
+
 function showRegionLocations(idx, regionName, country) {
   const locs = _regionData?.regionLocs?.get(idx) || [];
   if (locs.length === 0) return;
+  _regionPopupData={label:regionName+', '+country,locs};
   L.popup({ maxWidth: 320, maxHeight: 300 })
     .setLatLng(regionsMap.getCenter())
     .setContent(`<div class="popup-inner">
       <h3>${esc(regionName)}</h3>
       <div class="popup-cat">${esc(country)} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
+      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
 
 function showCountryLocations(country, locs) {
   if (!locs || locs.length === 0) return;
+  _regionPopupData = { label: country, locs };
   L.popup({ maxWidth: 320, maxHeight: 300 })
     .setLatLng(regionsMap.getCenter())
     .setContent(`<div class="popup-inner">
       <h3>${esc(country)}</h3>
       <div class="popup-cat">${locs.length} place${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
+      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
 
 function showCityLocations(name, iso2, pop, locs) {
   if (!locs || locs.length === 0) return;
+  _regionPopupData = { label: name + ' (' + iso2 + ')', locs };
   const popStr = pop >= 1e6 ? (pop/1e6).toFixed(1) + 'M' : pop >= 1e3 ? Math.round(pop/1e3) + 'k' : String(pop);
   L.popup({ maxWidth: 320, maxHeight: 300 })
     .setLatLng([locs[0].lat, locs[0].lng])
@@ -10536,6 +10588,7 @@ function showCityLocations(name, iso2, pop, locs) {
       <h3>${esc(name)}</h3>
       <div class="popup-cat">${esc(iso2)} · pop ${popStr} · ${locs.length} visit${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
+      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
