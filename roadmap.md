@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-15:** 1524 jest (3 skip) · P2 polish batch complete.
+**2026-06-16:** 1548 jest (3 skip) · Regions filter + drill-down zoom shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Regions filter** | **2026-06-16** | **+24 (1548)** | **🗺️ View on Atlas button in all 3 region popups · sidebar filter chip (📍 label + × dismiss) · filterAtlasByLocs / clearRegionFilter · drill-down fitBounds zoom on region/country click · state.filters.regionLocs fast-exit** |
 | **P2 polish batch** | **2026-06-15** | **+27 (1524)** | **Stale search fix · npm audit fix (0 vulns) · .env.example · prefers-color-scheme auto-detect · Stats KPI ribbon + 4 tabs (Overview/Countries/Categories/Timing) · switchStatsTab + Chart.js resize** |
 | **Dynamic overlays Tier 2+** | **2026-06-15** | **+19 (1497)** | **🌍 USGS earthquakes M2.5+ (circles by magnitude) · 🛸 ISS live position (10s auto-update) · 2 new toolbar buttons · CSP whitelisted** |
 | **Replay export** | **2026-06-15** | **+22 (1478)** | **🎥 Export clip button · canvas captureStream + MediaRecorder → .webm · dark lat/lng grid visualization · no external libs** |
@@ -62,7 +63,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 - Category colors not part of theme swap (Volcano: red accent + red marker collide).
 - ~~Stats view = 800 px scroll dump — needs KPI ribbon + tab-within-stats.~~ ✅
 - Trips view: 50/50 split hardcoded; no drag-to-reorder stops; no full-screen planning map.
-- Regions view: filter map by region click + drill-down zoom (popups ✅, filtering ✗).
+- ~~Regions view: filter map by region click + drill-down zoom (popups ✅, filtering ✗).~~ ✅
 - ~~`#map-search-results` persists stale text after sidebar blur.~~ ✅
 - Wishlist: actions row always visible (hover/focus only); no `+ Add` in header when list has items.
 - Two 🏛️ categories (Monument + Museum) — emoji collision.
