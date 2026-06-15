@@ -2008,11 +2008,19 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           </div>
         </div>
 
-        <div class="form-group" style="margin:16px 0 0;">
-          <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Starting from</label>
-          <select id="plan-start" class="form-select">
-            <option value="">📍 Current map center</option>
-          </select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0 0;">
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Starting from</label>
+            <select id="plan-start" class="form-select" style="width:100%;max-width:100%;">
+              <option value="">📍 Current map center</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Destination <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+            <select id="plan-end" class="form-select" style="width:100%;max-width:100%;">
+              <option value="">— Open itinerary</option>
+            </select>
+          </div>
         </div>
 
         <div class="form-group" style="margin:16px 0 0;">
@@ -7678,20 +7686,26 @@ function renderPlanView() {
     });
   }
   _syncPlanChips();
-  // Populate start selector with current locations (re-run each time so new places appear)
+  // Populate start + end selectors (re-run each time so new places appear)
+  const locOpts = state.locations
+    .filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lng) && !l.needsApproval)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map(l => {
+      const region = l.address ? ' — ' + l.address.split(',').pop().trim() : '';
+      return `<option value="${esc(l.id)}">${esc(l.name)}${esc(region)}</option>`;
+    })
+    .join('');
   const startEl = document.getElementById('plan-start');
   if (startEl) {
     const prev = startEl.value;
-    startEl.innerHTML = '<option value="">📍 Current map center</option>' +
-      state.locations
-        .filter(l => Number.isFinite(l.lat) && Number.isFinite(l.lng) && !l.needsApproval)
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-        .map(l => {
-          const region = l.address ? ' — ' + l.address.split(',').pop().trim() : '';
-          return `<option value="${esc(l.id)}">${esc(l.name)}${esc(region)}</option>`;
-        })
-        .join('');
+    startEl.innerHTML = '<option value="">📍 Current map center</option>' + locOpts;
     if (prev) startEl.value = prev;
+  }
+  const endEl = document.getElementById('plan-end');
+  if (endEl) {
+    const prev = endEl.value;
+    endEl.innerHTML = '<option value="">— Open itinerary</option>' + locOpts;
+    if (prev) endEl.value = prev;
   }
 }
 
@@ -7748,12 +7762,18 @@ function generateItineraries() {
   const pool = _plannerPool();
   const maxKm = parseFloat(document.getElementById('plan-max-km')?.value || '5');
   const startId = document.getElementById('plan-start')?.value;
+  const endId = document.getElementById('plan-end')?.value;
   const startLoc = startId ? stateIndex.locationById.get(startId) : null;
+  const endLoc = endId ? stateIndex.locationById.get(endId) : null;
   const mapCenter = map.getCenter();
   const startLat = startLoc ? startLoc.lat : mapCenter.lat;
   const startLng = startLoc ? startLoc.lng : mapCenter.lng;
   if (pool.length < 2) { showToast('Not enough matching places — try relaxing the filters.', 'warn'); return; }
-  const poolSorted = [...pool].sort((a, b) =>
+  // Exclude start/end locations from the intermediate pool to avoid duplicates
+  const poolFiltered = pool.filter(l =>
+    (!startLoc || l.id !== startLoc.id) && (!endLoc || l.id !== endLoc.id)
+  );
+  const poolSorted = [...poolFiltered].sort((a, b) =>
     haversineKm(startLat, startLng, a.lat, a.lng) -
     haversineKm(startLat, startLng, b.lat, b.lng)
   );
@@ -7763,7 +7783,9 @@ function generateItineraries() {
     { label: 'Packed',   stops: 7, emoji: '⚡', desc: '7 stops · full day out' },
   ];
   _planItineraries = PACES.map(pace => {
-    const route = _greedyRoute(poolSorted, startLat, startLng, pace.stops, maxKm);
+    const midStops = endLoc ? Math.max(0, pace.stops - 1) : pace.stops;
+    const route = _greedyRoute(poolSorted, startLat, startLng, midStops, maxKm);
+    if (endLoc) route.push(endLoc);
     let totalKm = 0;
     for (let i = 1; i < route.length; i++)
       totalKm += haversineKm(route[i-1].lat, route[i-1].lng, route[i].lat, route[i].lng);
