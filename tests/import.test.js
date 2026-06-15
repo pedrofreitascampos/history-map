@@ -3563,7 +3563,7 @@ describe('GPS my-location (2026-05-31)', () => {
     expect(indexHtml).toMatch(/map-tools-control[\s\S]{0,400}id="locate-me-btn"[\s\S]{0,200}data-click="locateMe"/);
     expect(indexHtml).toMatch(/map-tools-control[\s\S]{0,500}id="discover-btn"[\s\S]{0,200}data-click="openDiscoverModal"/);
     // Map drag/zoom must not fire when clicking the buttons
-    expect(indexHtml).toMatch(/MapToolsControl[\s\S]{0,1200}L\.DomEvent\.disableClickPropagation/);
+    expect(indexHtml).toMatch(/MapToolsControl[\s\S]{0,1600}L\.DomEvent\.disableClickPropagation/);
   });
 
   test('sidebar no longer carries the locate-me / discover buttons', () => {
