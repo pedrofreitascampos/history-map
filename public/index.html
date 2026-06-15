@@ -1961,7 +1961,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           Realistic road routes
         </label>
         <span title="Fetches each ground leg from OSRM at play time. Adds 1–3s per leg and may rate-limit on long replays." style="color:var(--text-muted);font-size:12px;">⚠ slower, network</span>
-        <span id="replay-route-status" style="margin-left:auto;color:var(--text-muted);font-size:12px;"></span>
+        <span id="replay-route-status" style="color:var(--text-muted);font-size:12px;"></span>
+        <button id="replay-export-btn" class="btn btn-secondary" data-click="exportReplayClip" style="margin-left:auto;font-size:12px;padding:4px 10px;" title="Export replay as a .webm video clip">⬇ Export clip</button>
       </div>
     </div>
     <div id="people-legend"></div>
@@ -7862,6 +7863,69 @@ const replayState = {
 };
 const REPLAY_BUCKET_OPACITY = [0.2, 0.5, 0.9];
 const REPLAY_LINE_COLOR = '#ffc144';
+let _exportRecorder = null;
+let _exportChunks = [];
+
+function exportReplayClip() {
+  if (_exportRecorder && _exportRecorder.state === 'recording') return;
+  const visitFrames = replayState.frames.filter(f => f.kind === 'visit' && f.lat && f.lng);
+  if (visitFrames.length === 0) { alert('No visit frames to export. Play the replay first.'); return; }
+  const W = 800, H = 500, ACCENT = '#6366f1', BG = '#0f172a';
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  function project(lat, lng) { return { x: ((lng + 180) / 360) * W, y: ((90 - lat) / 180) * H }; }
+  function drawBase() {
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5;
+    for (let lat = -90; lat <= 90; lat += 30) { const y = project(lat, 0).y; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    for (let lng = -180; lng <= 180; lng += 30) { const x = project(0, lng).x; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+    ctx.fillText('Oikumene', W - 8, H - 8);
+  }
+  const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) ? 'video/webm;codecs=vp9' : 'video/webm';
+  const stream = canvas.captureStream(15);
+  _exportRecorder = new MediaRecorder(stream, { mimeType });
+  _exportChunks = [];
+  _exportRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) _exportChunks.push(e.data); };
+  _exportRecorder.onstop = () => {
+    const blob = new Blob(_exportChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'oikumene-replay.webm';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const btn = document.getElementById('replay-export-btn');
+    if (btn) { btn.textContent = '⬇ Export clip'; btn.disabled = false; }
+    _exportRecorder = null;
+  };
+  _exportRecorder.start(100);
+  const btn = document.getElementById('replay-export-btn');
+  if (btn) { btn.textContent = '⏺ Recording…'; btn.disabled = true; }
+  const visited = [];
+  function renderExportFrame(idx) {
+    if (idx >= visitFrames.length) { setTimeout(() => { if (_exportRecorder) _exportRecorder.stop(); }, 900); return; }
+    drawBase();
+    visited.forEach((v, i) => {
+      const p = project(v.lat, v.lng); const age = visited.length - i;
+      ctx.globalAlpha = Math.max(0.2, 1 - age * 0.025);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fillStyle = ACCENT; ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+    const f = visitFrames[idx]; visited.push(f);
+    const p = project(f.lat, f.lng);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fillStyle = ACCENT; ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2); ctx.strokeStyle = ACCENT; ctx.globalAlpha = 0.4; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(f.date || '', 10, 22);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '10px sans-serif';
+    ctx.textAlign = p.x > W * 0.6 ? 'right' : 'left';
+    ctx.fillText(f.name || '', p.x + (p.x > W * 0.6 ? -10 : 10), p.y - 8);
+    const exportBtn = document.getElementById('replay-export-btn');
+    if (exportBtn) exportBtn.textContent = `⏺ ${idx + 1}/${visitFrames.length}`;
+    setTimeout(() => renderExportFrame(idx + 1), 80);
+  }
+  renderExportFrame(0);
+}
 
 function toggleReplay() {
   const panel = document.getElementById('replay-panel');
