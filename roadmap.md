@@ -39,7 +39,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 ~~11. **💱 Currency overlay for Regions** — local symbol + FX rate per country.~~ ✅
 ~~12. **🕸️ Graph view on Atlas** — node-link over dark basemap, directed edges between consecutive visits.~~ ✅
 ~~13. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip.~~ ✅
-14. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost planner.
+~~14. **🌉 Bifrost ↔ Oikumene bridge** — superseded by built-in Plan view.~~ ⛔ dropped
 15. **🌐 Dynamic overlays Tier 2+** — USGS earthquakes, FlightRadar live, ISS, wind/jet-stream, marine AIS.
 
 ### Longer-term / blocked
