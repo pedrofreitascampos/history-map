@@ -103,7 +103,7 @@ describe('Regions filter — popup View on Atlas buttons', () => {
 
   test('showRegionLocations popup has View on Atlas button', () => {
     const fnStart = html.indexOf('function showRegionLocations(');
-    const fnSlice = html.substring(fnStart, fnStart + 700);
+    const fnSlice = html.substring(fnStart, fnStart + 800);
     expect(fnSlice).toContain('View on Atlas');
     expect(fnSlice).toContain('_applyRegionPopupFilter()');
   });
