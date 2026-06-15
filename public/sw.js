@@ -59,6 +59,12 @@ self.addEventListener('fetch', e => {
     return;
   }
 
+  // Share target: serve app shell, frontend parses URL params
+  if (url.pathname === '/share-target') {
+    e.respondWith(fetch(e.request).catch(() => caches.match('/')));
+    return;
+  }
+
   // App shell (HTML, static files, manifest, icons) → network-first with cache fallback
   e.respondWith(networkFirst(e.request, SHELL_CACHE));
 });

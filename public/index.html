@@ -2200,6 +2200,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div id="bulk-list" style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow-y:auto;flex:1;min-height:0;"></div>
   </div>
 
+  <!-- Google Maps share-target (Android / PWA: install Oikumene + tap Share from Google Maps; Desktop: use bookmarklet in import guide) -->
+  <a id="gmaps-bookmarklet" href="#" style="display:none;pointer-events:none;" aria-hidden="true" tabindex="-1"></a>
+
   <!-- IMPORT VIEW -->
   <div class="view" id="import-view">
     <div class="import-header">
@@ -2262,6 +2265,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">🗺️ My Maps</strong>
             <p style="color:var(--text-muted);margin-top:4px;">Open your My Map → ⋮ menu → <strong>Export to KML</strong>. Import the <code>.kml</code> file. Folder names become categories.</p>
+          </div>
+          <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);margin-bottom:8px;">
+            <strong style="color:var(--text-primary);">🔗 Direct from Google Maps</strong>
+            <p style="font-size:12px;color:var(--text-muted);margin:6px 0 8px;">Two ways to add places directly from Google Maps without any export:</p>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div>
+                <span style="font-size:12px;font-weight:600;">📱 Android / PWA</span>
+                <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;">Install Oikumene (Add to Home Screen), then use the Share button in Google Maps → choose <em>Oikumene</em>.</p>
+              </div>
+              <div>
+                <span style="font-size:12px;font-weight:600;">🖥️ Desktop bookmarklet</span>
+                <p style="font-size:12px;color:var(--text-muted);margin:4px 0 6px;">Drag this link to your bookmarks bar, then click it on any Google Maps place page:</p>
+                <a class="gmaps-bm-visible" href="#" style="display:inline-block;padding:5px 12px;background:var(--accent);color:#000;border-radius:var(--radius);font-size:12px;font-weight:600;text-decoration:none;" title="Drag to bookmarks bar">📌 Add to Oikumene</a>
+              </div>
+            </div>
           </div>
           <div style="padding:10px;border-radius:var(--radius);background:var(--bg-tertiary);">
             <strong style="color:var(--text-primary);">📅 Timeline (place visits)</strong>
@@ -5569,6 +5587,48 @@ function populateModalTrips() {
   const sel = document.getElementById('loc-trip');
   sel.innerHTML = '<option value="">No trip</option>' +
     state.trips.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+}
+
+function _parseGoogleMapsCoords(url) {
+  const m = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
+}
+
+async function _handleGoogleMapsShare(title, url) {
+  const coords = _parseGoogleMapsCoords(url);
+  openAddModal(coords ? coords.lat : null, coords ? coords.lng : null);
+  if (title) document.getElementById('loc-name').value = title;
+  if (!coords && title) {
+    const geo = await geocodeNarratedStop(title);
+    if (geo) {
+      document.getElementById('loc-lat').value = geo.lat;
+      document.getElementById('loc-lng').value = geo.lng;
+      if (geo.address) document.getElementById('loc-address').value = geo.address;
+      const r = document.getElementById('loc-coords-row');
+      const b = document.getElementById('loc-coords-toggle');
+      if (r) r.style.display = '';
+      if (b) b.setAttribute('aria-expanded', 'true');
+    }
+  }
+}
+
+function _initGoogleMapsShareTarget() {
+  const sp = new URLSearchParams(location.search);
+  const sharedUrl = sp.get('url') || sp.get('bm-url');
+  const rawTitle = sp.get('title') || sp.get('bm-title') || '';
+  const sharedTitle = rawTitle.replace(/\s*[-–—]\s*Google Maps\s*$/i, '').trim();
+  if (!sharedUrl) return;
+  history.replaceState(null, '', '/');
+  const bm = document.getElementById('gmaps-bookmarklet');
+  if (bm) _setBookmarkletHref(bm);
+  setTimeout(() => _handleGoogleMapsShare(sharedTitle, sharedUrl), 600);
+}
+
+function _setBookmarkletHref(el) {
+  const origin = window.location.origin;
+  const code = '(function(){var t=document.title.replace(/\\s*[-\\u2013\\u2014]\\s*Google Maps\\s*$/i,"").trim();var u=location.href;window.open("' + origin + '/?bm-title="+encodeURIComponent(t)+"&bm-url="+encodeURIComponent(u));})()';
+  el.href = 'javascript:' + code;
+  document.querySelectorAll('.gmaps-bm-visible').forEach(function(a) { a.href = 'javascript:' + code; });
 }
 
 function openAddModal(lat, lng) {
@@ -13315,6 +13375,13 @@ async function startApp(username) {
   // Restore view from URL hash
   const hashView = HASH_TO_VIEW[location.hash.slice(1)];
   if (hashView) switchView(hashView, true);
+
+  // Handle PWA share-target and desktop bookmarklet
+  _initGoogleMapsShareTarget();
+
+  // Set bookmarklet href once DOM is ready
+  const _bm = document.getElementById('gmaps-bookmarklet');
+  if (_bm) _setBookmarkletHref(_bm);
 
   // Listen for back/forward navigation
   window.addEventListener('hashchange', () => {
