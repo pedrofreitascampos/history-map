@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1573 jest (3 skip) · Google Maps share-target + bookmarklet shipped.
+**2026-06-16:** 1573 jest (3 skip) · Museum emoji 🏛️→🏺 (collision fix).
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
@@ -66,8 +66,8 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 - Trips view: 50/50 split hardcoded; no drag-to-reorder stops; no full-screen planning map.
 - ~~Regions view: filter map by region click + drill-down zoom (popups ✅, filtering ✗).~~ ✅
 - ~~`#map-search-results` persists stale text after sidebar blur.~~ ✅
-- Wishlist: actions row always visible (hover/focus only); no `+ Add` in header when list has items.
-- Two 🏛️ categories (Monument + Museum) — emoji collision.
+- ~~Wishlist: actions row always visible (hover/focus only); no `+ Add` in header when list has items.~~ ⛔ stale — Wishlist tab removed (Plan view replaced it 2026-06-14)
+- ~~Two 🏛️ categories (Monument + Museum) — emoji collision.~~ ✅ Museum → 🏺
 
 ## ⛔ Blocked / Dropped
 
