@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1548 jest (3 skip) · Regions filter + drill-down zoom shipped.
+**2026-06-16:** 1573 jest (3 skip) · Google Maps share-target + bookmarklet shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Google Maps share-target** | **2026-06-16** | **+25 (1573)** | **manifest share_target (GET /share-target) · sw.js offline fallback · _parseGoogleMapsCoords · _handleGoogleMapsShare + geocode fallback · _initGoogleMapsShareTarget (URLSearchParams) · _setBookmarkletHref · import guide: Android PWA + drag-to-bookmark link** |
 | **Regions filter** | **2026-06-16** | **+24 (1548)** | **🗺️ View on Atlas button in all 3 region popups · sidebar filter chip (📍 label + × dismiss) · filterAtlasByLocs / clearRegionFilter · drill-down fitBounds zoom on region/country click · state.filters.regionLocs fast-exit** |
 | **P2 polish batch** | **2026-06-15** | **+27 (1524)** | **Stale search fix · npm audit fix (0 vulns) · .env.example · prefers-color-scheme auto-detect · Stats KPI ribbon + 4 tabs (Overview/Countries/Categories/Timing) · switchStatsTab + Chart.js resize** |
 | **Dynamic overlays Tier 2+** | **2026-06-15** | **+19 (1497)** | **🌍 USGS earthquakes M2.5+ (circles by magnitude) · 🛸 ISS live position (10s auto-update) · 2 new toolbar buttons · CSP whitelisted** |
@@ -47,7 +48,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ### Longer-term / blocked
 
-- **Direct share-from-Google-Maps** — Mobile PWA share-target (SW ✅ now unblocked — add `share_target` to manifest + `POST /api/import/google-maps-link`) + Desktop bookmarklet (`javascript:` on `google.com/maps/...` → `#add?url=<encoded>`).
+- ~~**Direct share-from-Google-Maps** — Mobile PWA share-target + Desktop bookmarklet.~~ ✅
 - **Bootstrap preset collections** — UNESCO (~1200), National Parks, Airports, Stadiums, Wonders. Open design Q: in `state.locations` vs overlay layer.
 - **Google Data Portability API OAuth** — blocked on Google restricted-scope verification.
 - **Strict `style-src` CSP** — Leaflet injects nonceless inline styles; gap accepted until replacement.
