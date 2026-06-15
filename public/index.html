@@ -958,6 +958,24 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .achievement-desc { font-size: 12px; color: var(--text-muted); line-height: 1.3; }
 .achievement-progress { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 4px; }
 
+/* Stats tabs */
+.stats-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  margin-bottom: 24px; overflow-x: auto; scrollbar-width: none;
+}
+.stats-tabs::-webkit-scrollbar { display: none; }
+.stats-tab {
+  padding: 9px 18px; font-size: 13px; font-weight: 500;
+  border: none; background: none; color: var(--text-muted);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: color 0.15s, border-bottom-color 0.15s;
+  white-space: nowrap; flex-shrink: 0;
+}
+.stats-tab:hover { color: var(--text-primary); }
+.stats-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.stats-tab-panel { display: none; }
+.stats-tab-panel.active { display: block; }
+
 .top-rated-list { display: flex; flex-direction: column; gap: 6px; }
 .top-rated-item {
   display: flex; align-items: center; gap: 10px;
@@ -1739,7 +1757,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
           aria-label="Search for a place"
           style="flex:1;font-size:12px;padding:6px 10px;"
           data-keydown="enterKey" data-arg0="mapSearch" data-prevent="1"
-          data-input="liveSearchInput" data-livesearch-source="map-search">
+          data-input="liveSearchInput" data-livesearch-source="map-search"
+          data-focusout="clearMapSearch">
         <button class="add-small-btn" data-click="mapSearch" title="Search" aria-label="Search"
           style="border-style:solid;padding:4px 10px;font-size:14px;line-height:1;">🔍</button>
       </div>
@@ -1858,69 +1877,82 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="stats-header">
       <h1>Your Journey in Numbers</h1>
       <p>A snapshot of everywhere you've been and everywhere you dream of going.</p>
-      <button class="btn btn-secondary" data-click="showYearReview" style="margin-top:12px;font-size:13px;padding:6px 14px;">🎁 Year in Review</button>
     </div>
 
     <div class="stats-top-row stagger" id="stats-top-cards"></div>
 
-    <h3 style="font-family:var(--font-display);margin-bottom:16px;">Per Category</h3>
-    <div class="category-stats-grid stagger" id="category-stats"></div>
-
-    <h3 style="font-family:var(--font-display);margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">🌍 Countries Visited <span id="countries-count" style="font-family:var(--font-body); font-size:14px; color:var(--text-muted); font-weight:400;"></span><button id="stats-currency-toggle" class="btn btn-secondary" data-click="toggleStatsCurrency" style="font-size:12px;padding:4px 10px;margin-left:auto;" title="Show local currency and live exchange rate per country">💱 Rates</button></h3>
-    <div class="flags-grid stagger" id="countries-flags"></div>
-
-    <div class="stats-grid">
-      <div class="stats-panel">
-        <h3>Rating Distribution</h3>
-        <canvas id="chart-ratings"></canvas>
-      </div>
-      <div class="stats-panel">
-        <h3>Activity Over Time</h3>
-        <canvas id="chart-activity"></canvas>
-      </div>
-      <div class="stats-panel">
-        <h3>🏨 Nights by Place</h3>
-        <div id="nights-list" class="top-rated-list"></div>
-      </div>
-      <div class="stats-panel">
-        <h3>Most Traveled With</h3>
-        <div id="people-leaderboard" class="people-leaderboard"></div>
-      </div>
+    <div class="stats-tabs" role="tablist">
+      <button class="stats-tab active" role="tab" data-click="switchStatsTab" data-arg0="overview">Overview</button>
+      <button class="stats-tab" role="tab" data-click="switchStatsTab" data-arg0="countries">🌍 Countries</button>
+      <button class="stats-tab" role="tab" data-click="switchStatsTab" data-arg0="categories">📊 Categories</button>
+      <button class="stats-tab" role="tab" data-click="switchStatsTab" data-arg0="timing">⏱️ Timing</button>
     </div>
 
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-      <h3 style="font-family:var(--font-display);margin:0;">⏱️ When Do You Visit?</h3>
-      <select id="timing-cat-filter" class="form-select" style="font-size:12px;padding:4px 8px;width:auto;" data-change="onTimingCatFilter" data-arg0="this">
-        <option value="">All categories</option>
-      </select>
-    </div>
-    <div class="stats-panel" style="grid-column:1/-1;margin-bottom:24px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-        <div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Day of week</div>
-          <canvas id="chart-dow"></canvas>
+    <div class="stats-tab-panel active" id="stats-tab-overview">
+      <div class="stats-grid">
+        <div class="stats-panel">
+          <h3>Rating Distribution</h3>
+          <canvas id="chart-ratings"></canvas>
         </div>
-        <div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Month of year</div>
-          <canvas id="chart-month"></canvas>
+        <div class="stats-panel">
+          <h3>Activity Over Time</h3>
+          <canvas id="chart-activity"></canvas>
+        </div>
+        <div class="stats-panel">
+          <h3>🏨 Nights by Place</h3>
+          <div id="nights-list" class="top-rated-list"></div>
+        </div>
+        <div class="stats-panel">
+          <h3>Most Traveled With</h3>
+          <div id="people-leaderboard" class="people-leaderboard"></div>
         </div>
       </div>
+      <div id="stats-cost-section" style="display:none;margin-bottom:24px;">
+        <h3 style="font-family:var(--font-display);margin-bottom:16px;">💰 Spend by Year</h3>
+        <div id="stats-cost-list" class="top-rated-list"></div>
+      </div>
+      <h3 style="font-family:var(--font-display);margin-bottom:16px;">🏆 Achievements</h3>
+      <div class="category-stats-grid stagger" id="achievements-grid"></div>
+      <div id="stats-transits" style="margin-top:24px;"></div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-secondary" data-click="showYearReview" style="font-size:13px;padding:6px 14px;">🎁 Year in Review</button>
+      </div>
     </div>
 
-    <div id="stats-cost-section" style="display:none;margin-bottom:24px;">
-      <h3 style="font-family:var(--font-display);margin-bottom:16px;">💰 Spend by Year</h3>
-      <div id="stats-cost-list" class="top-rated-list"></div>
+    <div class="stats-tab-panel" id="stats-tab-countries">
+      <h3 style="font-family:var(--font-display);margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">Countries Visited <span id="countries-count" style="font-family:var(--font-body);font-size:14px;color:var(--text-muted);font-weight:400;"></span><button id="stats-currency-toggle" class="btn btn-secondary" data-click="toggleStatsCurrency" style="font-size:12px;padding:4px 10px;margin-left:auto;" title="Show local currency and live exchange rate per country">💱 Rates</button></h3>
+      <div class="flags-grid stagger" id="countries-flags"></div>
     </div>
 
-    <h3 style="font-family:var(--font-display);margin-bottom:16px;">🏆 Achievements</h3>
-    <div class="category-stats-grid stagger" id="achievements-grid"></div>
-
-    <div id="stats-collections-section" style="display:none;">
-      <h3 style="font-family:var(--font-display);margin-bottom:16px;">Collections Progress</h3>
-      <div class="category-stats-grid" id="stats-collections"></div>
+    <div class="stats-tab-panel" id="stats-tab-categories">
+      <h3 style="font-family:var(--font-display);margin-bottom:16px;">Per Category</h3>
+      <div class="category-stats-grid stagger" id="category-stats"></div>
+      <div id="stats-collections-section" style="display:none;">
+        <h3 style="font-family:var(--font-display);margin-bottom:16px;">Collections Progress</h3>
+        <div class="category-stats-grid" id="stats-collections"></div>
+      </div>
     </div>
 
-    <div id="stats-transits" style="margin-top:24px;"></div>
+    <div class="stats-tab-panel" id="stats-tab-timing">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <h3 style="font-family:var(--font-display);margin:0;">When Do You Visit?</h3>
+        <select id="timing-cat-filter" class="form-select" style="font-size:12px;padding:4px 8px;width:auto;" data-change="onTimingCatFilter" data-arg0="this">
+          <option value="">All categories</option>
+        </select>
+      </div>
+      <div class="stats-panel" style="grid-column:1/-1;margin-bottom:24px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Day of week</div>
+            <canvas id="chart-dow"></canvas>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">Month of year</div>
+            <canvas id="chart-month"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CHRONOLOGY VIEW -->
@@ -3045,7 +3077,7 @@ function _delegate(eventName, dataKey) {
 
 // Wire all event types we use. focusin/focusout instead of focus/blur because
 // the latter don't bubble; change/input/keydown/submit/drop/etc do bubble.
-['click','change','input','mouseover','mouseout','keydown','submit','drop','dragover','dragenter','dragleave','focusin'].forEach(evt => {
+['click','change','input','mouseover','mouseout','keydown','submit','drop','dragover','dragenter','dragleave','focusin','focusout'].forEach(evt => {
   _delegate(evt, evt);
 });
 
@@ -5252,6 +5284,11 @@ async function mapSearch() {
   } catch { resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--danger);">Search failed.</span>'; }
 }
 
+function clearMapSearch() {
+  const results = document.getElementById('map-search-results');
+  if (results) results.innerHTML = '';
+}
+
 function flyToSearchResult(idx) {
   const r = state._mapSearchResults?.[idx];
   if (!r) return;
@@ -7029,6 +7066,18 @@ function renderStats() {
         </div>
       `;
     }
+  }
+}
+
+function switchStatsTab(tabId) {
+  document.querySelectorAll('.stats-tab').forEach(t => t.classList.toggle('active', t.dataset.arg0 === tabId));
+  document.querySelectorAll('.stats-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'stats-tab-' + tabId));
+  if (tabId === 'timing') {
+    if (chartDow) chartDow.resize(); else renderTimingCharts('');
+    if (chartMonth) chartMonth.resize();
+  } else if (tabId === 'overview') {
+    if (chartRatings) chartRatings.resize();
+    if (chartActivity) chartActivity.resize();
   }
 }
 
@@ -12713,7 +12762,9 @@ const THEMES = {
   },
 };
 const THEME_ORDER = ['midnight','parchment','ocean','forest','volcano','aurora'];
-let currentTheme = localStorage.getItem('hm_theme') || 'midnight';
+const _savedTheme = localStorage.getItem('hm_theme');
+const _prefersLight = !_savedTheme && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+let currentTheme = _savedTheme || (_prefersLight ? 'parchment' : 'midnight');
 
 function applyTheme(name) {
   const theme = THEMES[name] || THEMES.midnight;
@@ -13143,6 +13194,13 @@ async function startApp(username) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('display-username').textContent = username;
   applyTheme(localStorage.getItem('hm_theme') || 'midnight');
+  if (!_savedTheme && window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+      if (!localStorage.getItem('hm_theme')) {
+        applyTheme(e.matches ? 'parchment' : 'midnight');
+      }
+    });
+  }
 
   // Restore marker-size preference
   const savedSizeMode = localStorage.getItem('markerSizeMode');

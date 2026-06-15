@@ -2666,8 +2666,9 @@ describe('renderMarkers incremental diff (source invariants)', () => {
 
 // Source-grep invariants for the stats render path
 describe('Countries-visited stats section (source invariants)', () => {
-  test('stats-view has the #countries-flags container right after #category-stats', () => {
-    expect(indexHtml).toMatch(/id="category-stats"[\s\S]{0,800}id="countries-flags"/);
+  test('stats-view has both #category-stats and #countries-flags containers', () => {
+    expect(indexHtml).toContain('id="category-stats"');
+    expect(indexHtml).toContain('id="countries-flags"');
   });
 
   test('renderStats writes into #countries-flags and #countries-count', () => {
