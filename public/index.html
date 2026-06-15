@@ -192,6 +192,8 @@ body {
 #iso-panel { position:absolute;top:60px;right:10px;z-index:1000;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px 14px;width:220px;box-shadow:0 2px 10px rgba(0,0,0,.3); }
 #iso-panel label { font-size:12px;display:block;margin-bottom:4px;color:var(--text-secondary); }
 #iso-status { font-size:12px;color:var(--text-muted);margin:6px 0 0;min-height:14px; }
+#graph-panel { position:absolute;top:60px;right:10px;z-index:1000;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px 14px;min-width:180px;box-shadow:0 2px 10px rgba(0,0,0,.3); }
+#graph-status { font-size:12px;color:var(--text-muted);margin-top:6px;min-height:14px; }
 .yr-card { background:var(--bg-secondary);border:1px solid var(--border-strong);border-radius:20px;padding:48px 40px;text-align:center;max-width:480px;width:100%;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px; }
 .yr-eyebrow { font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-muted); }
 .yr-year { font-family:var(--font-display);font-size:72px;font-weight:700;color:var(--accent);line-height:1; }
@@ -1718,6 +1720,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="add-small-btn" style="font-size:12px;padding:6px 10px;" data-click="clearIsochrones">Clear</button>
       </div>
       <p id="iso-status"></p>
+    </div>
+    <div id="graph-panel" style="display:none;" role="dialog" aria-label="Graph view">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <strong style="font-size:13px;">🕸️ Graph view</strong>
+        <button type="button" data-click="toggleGraphMode" aria-label="Close" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;color:var(--text-muted);">×</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">Directed edges between consecutive visit dates on dark basemap.</p>
+      <div id="graph-status"></div>
     </div>
   </div>
 
@@ -3262,6 +3272,9 @@ let _planItineraries = [];
 let _isoLayers = [];
 let _isoMode = 'pedestrian';
 let _isoTimes = new Set([15, 30]);
+let _graphMode = false;
+let _graphLayers = [];
+let _graphPrevTile = null;
 let chartRatings, chartActivity, chartDow, chartMonth;
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -3538,7 +3551,8 @@ function initMap() {
         '<button type="button" id="locate-me-btn" data-click="locateMe" title="Pan map to my current GPS location" aria-label="My location">📍</button>' +
         '<button type="button" id="discover-btn" data-click="openDiscoverModal" title="Discover top-rated places nearby" aria-label="Discover">✨</button>' +
         '<button type="button" id="overlay-rainviewer-btn" data-click="toggleOverlay" data-arg0="rainviewer" title="Toggle live weather radar (RainViewer)" aria-label="Toggle weather overlay">🌧️</button>' +
-        '<button type="button" id="iso-btn" data-click="toggleIsoPanel" title="Travel-time rings from map center" aria-label="Travel rings">🎯</button>';
+        '<button type="button" id="iso-btn" data-click="toggleIsoPanel" title="Travel-time rings from map center" aria-label="Travel rings">🎯</button>' +
+        '<button type="button" id="graph-btn" data-click="toggleGraphMode" title="Graph view — directed edges between visits" aria-label="Graph view">🕸️</button>';
       // Stop click bubble so map drag/zoom doesn't fire when clicking the buttons.
       L.DomEvent.disableClickPropagation(div);
       return div;
@@ -4681,6 +4695,107 @@ function clearIsochrones() {
   _isoLayers = [];
   const statusEl = document.getElementById('iso-status');
   if (statusEl) statusEl.textContent = '';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* GRAPH VIEW — node-link over dark basemap                               */
+/* ═══════════════════════════════════════════════════════════════════════ */
+function _buildGraphSequence() {
+  const visits = [];
+  state.locations.forEach(loc => {
+    if (loc.status !== 'been' || !loc.lat || !loc.lng || loc.needsApproval) return;
+    if (loc.visits && loc.visits.length > 0) {
+      loc.visits.forEach(v => { if (v.date) visits.push({ lat: loc.lat, lng: loc.lng, date: v.date, name: loc.name }); });
+    } else if (loc.createdAt) {
+      visits.push({ lat: loc.lat, lng: loc.lng, date: loc.createdAt, name: loc.name });
+    }
+  });
+  return visits.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function _getActiveTileKey() {
+  for (const k of Object.keys(_tileLayers)) { if (map.hasLayer(_tileLayers[k])) return k; }
+  return 'streets';
+}
+
+function toggleGraphMode() {
+  if (_graphMode) {
+    _graphMode = false;
+    clearGraph();
+    const btn = document.getElementById('graph-btn');
+    if (btn) btn.classList.remove('active');
+    document.getElementById('graph-panel').style.display = 'none';
+    Object.values(_tileLayers).forEach(l => { try { map.removeLayer(l); } catch (_e) {} });
+    if (_graphPrevTile && _tileLayers[_graphPrevTile]) _tileLayers[_graphPrevTile].addTo(map);
+    _graphPrevTile = null;
+  } else {
+    _graphMode = true;
+    _graphPrevTile = _getActiveTileKey();
+    Object.values(_tileLayers).forEach(l => { try { map.removeLayer(l); } catch (_e) {} });
+    _tileLayers.dark.addTo(map);
+    document.getElementById('graph-panel').style.display = 'block';
+    const btn = document.getElementById('graph-btn');
+    if (btn) btn.classList.add('active');
+    drawGraph();
+  }
+}
+
+function drawGraph() {
+  clearGraph();
+  const statusEl = document.getElementById('graph-status');
+  const visits = _buildGraphSequence();
+  if (visits.length === 0) { if (statusEl) statusEl.textContent = 'No visited locations yet.'; return; }
+
+  // Inject SVG arrowhead marker into Leaflet overlay pane
+  const svgEl = document.querySelector('.leaflet-overlay-pane svg');
+  if (svgEl && !svgEl.querySelector('#graph-arrow')) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const defs = document.createElementNS(ns, 'defs');
+    const marker = document.createElementNS(ns, 'marker');
+    marker.id = 'graph-arrow';
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '8');
+    marker.setAttribute('refX', '6');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    const arrowPath = document.createElementNS(ns, 'path');
+    arrowPath.setAttribute('d', 'M0,0 L0,6 L8,3 z');
+    arrowPath.setAttribute('fill', '#6366f1');
+    arrowPath.setAttribute('opacity', '0.8');
+    marker.appendChild(arrowPath);
+    defs.appendChild(marker);
+    svgEl.insertBefore(defs, svgEl.firstChild);
+  }
+
+  let edgeCount = 0;
+  for (let i = 1; i < visits.length; i++) {
+    const from = visits[i - 1], to = visits[i];
+    if (Math.abs(from.lat - to.lat) < 0.0001 && Math.abs(from.lng - to.lng) < 0.0001) continue;
+    const line = L.polyline([[from.lat, from.lng], [to.lat, to.lng]], { color: '#6366f1', weight: 2, opacity: 0.6 }).addTo(map);
+    if (line._path) line._path.setAttribute('marker-end', 'url(#graph-arrow)');
+    _graphLayers.push(line);
+    edgeCount++;
+  }
+
+  const seen = new Set();
+  let nodeCount = 0;
+  visits.forEach(v => {
+    const key = v.lat.toFixed(4) + ',' + v.lng.toFixed(4);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const node = L.circleMarker([v.lat, v.lng], { radius: 5, fillColor: '#6366f1', color: '#fff', weight: 1.5, fillOpacity: 0.9 }).bindTooltip(v.name).addTo(map);
+    _graphLayers.push(node);
+    nodeCount++;
+  });
+
+  if (statusEl) statusEl.textContent = nodeCount + ' nodes · ' + edgeCount + ' edges';
+}
+
+function clearGraph() {
+  _graphLayers.forEach(l => { try { map.removeLayer(l); } catch (_e) {} });
+  _graphLayers = [];
+  const svgEl = document.querySelector('.leaflet-overlay-pane svg');
+  if (svgEl) { const d = svgEl.querySelector('#graph-arrow'); if (d && d.parentNode) d.parentNode.remove(); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
