@@ -4,10 +4,11 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-15:** 1456 jest (3 skip) · Graph view shipped.
+**2026-06-15:** 1478 jest (3 skip) · Replay export shipped.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Replay export** | **2026-06-15** | **+22 (1478)** | **🎥 Export clip button · canvas captureStream + MediaRecorder → .webm · dark lat/lng grid visualization · no external libs** |
 | **Graph view** | **2026-06-15** | **+28 (1456)** | **🕸️ Graph toggle · dark basemap switch · _buildGraphSequence · SVG marker-end arrowheads · node dedup · toggleGraphMode/drawGraph/clearGraph** |
 | **Currency overlay** | **2026-06-15** | **+27 (1428)** | **💱 Rates toggle · COUNTRY_CURRENCY table (~100 countries) · _getFxRates (1hr cache) · _renderCountryFlags extracted · open.er-api.com CSP whitelisted** |
 | **People lens** | **2026-06-15** | **+18 (1401)** | **👥 People toggle · colored left-lane per person · legend chips · #chrono-person filter · _buildPeopleColorMap · 8-color palette** |
@@ -37,7 +38,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 ~~10. **👥 People lens in Chronology** — toggle showing each person as a colored lane.~~ ✅
 ~~11. **💱 Currency overlay for Regions** — local symbol + FX rate per country.~~ ✅
 ~~12. **🕸️ Graph view on Atlas** — node-link over dark basemap, directed edges between consecutive visits.~~ ✅
-13. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip.
+~~13. **🎥 Replay export to GIF/MP4** — "Record" button → shareable clip.~~ ✅
 14. **🌉 Bifrost ↔ Oikumene bridge** — bidirectional location/trip exchange with the Bifrost planner.
 15. **🌐 Dynamic overlays Tier 2+** — USGS earthquakes, FlightRadar live, ISS, wind/jet-stream, marine AIS.
 
