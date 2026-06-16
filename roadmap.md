@@ -17,15 +17,15 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [x] **Username case-bypass** — lowercase normalization at register/login/SSO/admin-reset.
 - [x] **`share.html` Leaflet SRI** — integrity hash added.
 
-### Quick wins (perf + hygiene, ~½ day)
-- [ ] `<link rel=preconnect>` for unpkg/jsdelivr/fonts (saves 200–400ms/origin cold). *(fonts already have display=swap; Chart/JSZip/exifr already deferred — auditor over-reported.)*
-- [ ] `Cache-Control: immutable` for `admin1.json` (3.4 MB) + `cities.json` (4.4 MB) — currently re-fetched + re-parsed every Regions view.
-- [ ] Memoize `computeStats()` (`index.html:6787`) with the generation-counter guard.
-- [ ] `runBackup` `fs.writeFileSync` → `await fs.promises.writeFile` (`index.js:1748`) — unblocks event loop.
-- [ ] Add `/healthz` route (Render probes `/` today, paying nonce+template+gzip).
-- [ ] `defer` Leaflet trio (lines 18–20) — **verify inline script doesn't touch `L` at top level first.**
-- [ ] Drop SW `/api/*` caching (`sw.js:57`) — cross-user leak on shared device; near-zero offline value.
-- [ ] Delete dead `scripts/convert-inline-handlers.js`.
+### Quick wins (perf + hygiene) — ✅ MOSTLY DONE 2026-06-16 (commit 691e7ed)
+- [x] `<link rel=preconnect>` for unpkg/jsdelivr/fonts. *(fonts already had display=swap; Chart/JSZip/exifr already deferred — auditor over-reported.)*
+- [x] `Cache-Control: max-age=7d` for `admin1.json` (3.4 MB) + `cities.json` (4.4 MB).
+- [x] `runBackup` `fs.writeFileSync` → `await fs.promises.writeFile`.
+- [x] `/healthz` route added.
+- [x] `defer` Leaflet trio — verified safe (`L` only touched at runtime; initMap runs on DOMContentLoaded). Inverted the stale "stays blocking" guard.
+- [x] Drop SW `/api/*` caching (cross-user leak); bumped CACHE_VER v1→v2.
+- [x] Delete dead `scripts/convert-inline-handlers.js`.
+- [ ] **Still TODO:** memoize `computeStats()` (`index.html:6787`) with the generation-counter guard — deferred (needs careful read of the function; lower risk to do separately).
 
 ### Next sprint (system + a11y + code)
 - [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
