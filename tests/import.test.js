@@ -3254,7 +3254,7 @@ describe('Sidebar live autocomplete (2026-05-31)', () => {
   });
 
   test('_runLiveSearch uses getSearchProvider() to branch between providers', () => {
-    expect(indexHtml).toMatch(/function _runLiveSearch[\s\S]{0,3000}getSearchProvider\(\)[\s\S]{0,2000}nominatim\.openstreetmap\.org/);
+    expect(indexHtml).toMatch(/function _runLiveSearch[\s\S]{0,3000}getSearchProvider\(\)[\s\S]{0,2000}\/api\/geocode/);
   });
 
   test('results render with + Add and 📍 (go) buttons wired via dispatcher', () => {
@@ -3317,7 +3317,7 @@ describe('Search provider selector + 3-way typeahead (2026-05-31)', () => {
     expect(fn).toMatch(/provider\s*===\s*'google'/);
     expect(fn).toMatch(/provider\s*===\s*'photon'/);
     expect(fn).toMatch(/photon\.komoot\.io/);
-    expect(fn).toMatch(/nominatim\.openstreetmap\.org/);
+    expect(fn).toMatch(/\/api\/geocode/);
   });
 
   test('Google path uses Autocomplete (not Text Search) with sessionToken', () => {
@@ -3360,10 +3360,9 @@ describe('Three-provider sync — modal + bulk + settings (2026-05-31)', () => {
 
   test('syncNominatimFromEditModal uses reverse when coords present, forward otherwise', () => {
     const fn = extractFunction('syncNominatimFromEditModal');
-    expect(fn).toMatch(/nominatim\.openstreetmap\.org/);
+    expect(fn).toMatch(/\/api\/geocode\/reverse/);
     expect(fn).toMatch(/_nominatimSyncedAt/);
-    expect(fn).toMatch(/\/reverse\?format=json/);
-    expect(fn).toMatch(/\/search\?format=json/);
+    expect(fn).toMatch(/\/api\/geocode\?q=/);
   });
 
   test('modal sync functions route through showEnrichmentConfirm (user confirms overwrites)', () => {

@@ -5327,7 +5327,7 @@ async function mapSearch() {
       }));
     } else {
       // Nominatim fallback
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&limit=5`);
       const results = await res.json();
       if (results.length === 0) {
         resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No results.</span>';
@@ -5443,7 +5443,7 @@ async function _runLiveSearch(source) {
       });
     } else {
       // Nominatim
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=10`;
+      const url = `/api/geocode?q=${encodeURIComponent(q)}&limit=10`;
       const r = await fetch(url, { signal: _liveSearchAbort.signal });
       if (!r.ok) throw new Error('Nominatim ' + r.status);
       const json = await r.json();
@@ -5975,7 +5975,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function searchLocation(query) {
   const resultsDiv = document.getElementById('loc-search-results');
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&limit=6`);
     const data = await res.json();
     if (!data.length) {
       resultsDiv.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--text-muted);">No results found</div>';
@@ -9940,9 +9940,7 @@ async function searchForCollection(colId) {
     resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Searching...</span>';
     statusEl.textContent = '';
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(queries[0])}&format=json&limit=5&addressdetails=1`, {
-        headers: { 'Accept-Language': 'en' }
-      });
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(queries[0])}&limit=5`);
       const results = await res.json();
       if (results.length === 0) {
         resultsDiv.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No results found.</span>';
@@ -9977,9 +9975,7 @@ async function searchForCollection(colId) {
     for (let i = 0; i < queries.length; i++) {
       statusEl.textContent = `Geocoding ${i + 1}/${queries.length}...`;
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(queries[i])}&format=json&limit=1&addressdetails=1`, {
-          headers: { 'Accept-Language': 'en' }
-        });
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(queries[i])}&limit=1`);
         const results = await res.json();
         if (results.length > 0) {
           const r = results[0];
@@ -11185,9 +11181,9 @@ async function syncNominatimFromEditModal() {
     const name = (document.getElementById('loc-name')?.value || loc.name || '').trim();
     let url;
     if (Number.isFinite(latVal) && Number.isFinite(lngVal)) {
-      url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latVal}&lon=${lngVal}&addressdetails=1`;
+      url = `/api/geocode/reverse?lat=${latVal}&lon=${lngVal}`;
     } else if (name) {
-      url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(name)}&limit=1&addressdetails=1`;
+      url = `/api/geocode?q=${encodeURIComponent(name)}&limit=1`;
     } else {
       showToast('Need coords or a name first.', 'warn');
       return;
@@ -11377,7 +11373,7 @@ async function geocodeNarratedStop(name) {
     }
   } catch { /* fall through to nominatim */ }
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`);
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}&limit=1`);
     if (r.ok) {
       const json = await r.json();
       const it = Array.isArray(json) ? json[0] : null;
@@ -12095,7 +12091,7 @@ async function geocodeCSVResults(results) {
   const toGeocode = results.filter(r => r._needsGeocode);
 
   const tasks = toGeocode.map(r => ({
-    url: `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.name)}&format=json&limit=1`,
+    url: `/api/geocode?q=${encodeURIComponent(r.name)}&limit=1`,
     onResult(data) {
       if (data[0]) {
         r.lat = parseFloat(data[0].lat);
@@ -12240,7 +12236,7 @@ async function enrichInBackground(locations, { onProgress } = {}) {
   if (toEnrich.length === 0) return 0;
 
   const tasks = toEnrich.map(loc => ({
-    url: `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+    url: `/api/geocode/reverse?lat=${loc.lat}&lon=${loc.lng}`,
     async onResult(data) {
       if (!data) return false;
       const osmCat = osmToCategory(data.class, data.type);
@@ -12385,7 +12381,7 @@ async function runFillMissing() {
   if (doCoords && gaps.missingCoords.length > 0) {
     progressEl.textContent = `Geocoding ${gaps.missingCoords.length} name${gaps.missingCoords.length !== 1 ? 's' : ''}…`;
     const tasks = gaps.missingCoords.map(loc => ({
-      url: `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(loc.name)}&format=json&limit=1&addressdetails=1`,
+      url: `/api/geocode?q=${encodeURIComponent(loc.name)}&limit=1`,
       async onResult(data) {
         if (!data || !data[0]) return false;
         const r = data[0];
@@ -12414,7 +12410,7 @@ async function runFillMissing() {
   if (reverseTargets.size > 0) {
     progressEl.textContent = `Reverse-geocoding ${reverseTargets.size} location${reverseTargets.size !== 1 ? 's' : ''}…`;
     const tasks = [...reverseTargets.values()].map(loc => ({
-      url: `https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lng}&format=json&zoom=18`,
+      url: `/api/geocode/reverse?lat=${loc.lat}&lon=${loc.lng}`,
       async onResult(data) {
         if (!data) return false;
         const updates = {};

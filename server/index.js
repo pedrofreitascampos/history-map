@@ -1304,6 +1304,62 @@ function simplifyGeometry(geom, precision) {
   return { type: geom.type, coordinates: round(geom.coordinates) };
 }
 
+// ── Nominatim proxy + throttle (1 req/s per ToS) ─────────
+const _geocodeCache = new Map(); // url → { ts, data }
+const GEOCODE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 h
+const GEOCODE_CACHE_MAX = 1000;
+let _nominatimChain = Promise.resolve();
+let _nominatimLastCall = 0;
+
+function _proxyNominatim(url) {
+  const cached = _geocodeCache.get(url);
+  if (cached && Date.now() - cached.ts < GEOCODE_CACHE_TTL) return Promise.resolve(cached.data);
+
+  let resolve, reject;
+  const p = new Promise((res, rej) => { resolve = res; reject = rej; });
+  _nominatimChain = _nominatimChain.then(async () => {
+    const wait = Math.max(0, _nominatimLastCall + 1050 - Date.now());
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    _nominatimLastCall = Date.now();
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Oikumene/1.0 (open-source history map)', 'Accept-Language': 'en' },
+      });
+      if (!res.ok) throw new Error('Nominatim ' + res.status);
+      const data = await res.json();
+      if (_geocodeCache.size >= GEOCODE_CACHE_MAX) _geocodeCache.delete(_geocodeCache.keys().next().value);
+      _geocodeCache.set(url, { ts: Date.now(), data });
+      resolve(data);
+    } catch (err) { reject(err); }
+  }).catch(() => {});
+  return p;
+}
+
+app.get('/api/geocode', auth, async (req, res) => {
+  const { q, limit = '5' } = req.query;
+  if (!q || typeof q !== 'string' || !q.trim()) return res.status(400).json({ error: 'q required' });
+  const safeLimit = Math.min(parseInt(limit, 10) || 5, 10);
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q.trim())}&format=json&limit=${safeLimit}&addressdetails=1`;
+  try {
+    res.json(await _proxyNominatim(url));
+  } catch (err) {
+    log('error', 'geocode_proxy_failed', { q: q.slice(0, 80), error: err.message });
+    res.status(502).json({ error: 'Geocoding unavailable' });
+  }
+});
+
+app.get('/api/geocode/reverse', auth, async (req, res) => {
+  const { lat, lon } = req.query;
+  if (!lat || !lon) return res.status(400).json({ error: 'lat and lon required' });
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&format=json&zoom=18&addressdetails=1`;
+  try {
+    res.json(await _proxyNominatim(url));
+  } catch (err) {
+    log('error', 'geocode_reverse_proxy_failed', { lat, lon, error: err.message });
+    res.status(502).json({ error: 'Geocoding unavailable' });
+  }
+});
+
 // ── User settings (API keys etc.) ────────────────────────
 app.get('/api/settings', auth, async (req, res) => {
   const user = await db.users.findOne({ _id: req.user.id });

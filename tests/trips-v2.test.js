@@ -121,7 +121,7 @@ describe('geocodeNarratedStop', () => {
       category: 'location',
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][0]).toContain('nominatim.openstreetmap.org');
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/geocode');
   });
 
   test('Photon error falls through to Nominatim', async () => {
