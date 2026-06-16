@@ -330,6 +330,18 @@ async function auth(req, res, next) {
   }
 }
 
+// Express 4 does not forward async route rejections to error middleware
+// automatically. Patch app.{get,post,put,delete,patch} once so any async
+// handler that throws/rejects calls next(err) → the terminal error handler
+// below. Already-try/catch'd routes are unaffected: their catch fires first.
+['get', 'post', 'put', 'delete', 'patch'].forEach(m => {
+  const orig = app[m].bind(app);
+  app[m] = (...args) => orig(...args.map(fn =>
+    typeof fn !== 'function' ? fn :
+    (req, res, next) => { const r = fn(req, res, next); if (r?.catch) r.catch(next); }
+  ));
+});
+
 // ── Auth routes ──────────────────────────────────────────
 app.post('/api/auth/register', async (req, res) => {
   try {
