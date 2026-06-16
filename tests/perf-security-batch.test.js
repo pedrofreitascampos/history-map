@@ -312,3 +312,33 @@ describe('sanitizeNotes shared helper', () => {
     expect(fnSlice).toContain("sanitizeNotes(v)");
   });
 });
+
+// ── 19. Touch targets ─────────────────────────────────────────────────────────
+describe('Touch targets ≥ 44px', () => {
+  test('leaflet zoom controls are 44px', () => {
+    const idx = html.indexOf('.leaflet-control-zoom a {');
+    const block = html.slice(idx, idx + 280);
+    expect(block).toContain('width: 44px !important');
+    expect(block).toContain('height: 44px !important');
+    expect(block).toContain('line-height: 44px !important');
+  });
+
+  test('map-tools-control buttons are 44px', () => {
+    const idx = html.indexOf('.map-tools-control button {');
+    const block = html.slice(idx, idx + 200);
+    expect(block).toContain('width: 44px');
+    expect(block).toContain('height: 44px');
+  });
+
+  test('people-tag remove button min target is 44px', () => {
+    expect(html).toContain('.people-tag .remove-tag { min-width: 44px; min-height: 44px;');
+  });
+
+  test('marker-rating font-size is 12px (was 9px)', () => {
+    // Standalone rule (not compound selectors that contain .marker-rating)
+    const re = /^\.marker-rating \{[^}]+font-size:\s*12px/m;
+    expect(html).toMatch(re);
+    const re9 = /^\.marker-rating \{[^}]+font-size:\s*9px/m;
+    expect(html).not.toMatch(re9);
+  });
+});

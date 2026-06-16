@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1633 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs.
+**2026-06-16:** 1637 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs · Touch targets 44px.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -33,7 +33,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [x] **async-route wrapper** — one-time method patch before first route; all 28 previously-unprotected handlers now call `next(err)` on rejection.
 - [x] **ARIA tabs + dialogs** — `role="tablist"/"tab"` + `aria-selected` on nav + stats tabs; `switchView`/`switchStatsTab` keep them in sync; `_trapFocus` helper + `role="dialog"` + `aria-modal` + focus restore + Escape on all 3 overlays.
 - [ ] Per-theme category colors (`--cat-*` not in THEMES → Parchment fails WCAG AA; Volcano accent ≡ restaurant red).
-- [ ] Touch targets: map-tools/zoom 36px & tag-remove × 24px → 44px; 9px marker fonts → 11px.
+- [x] **Touch targets** — leaflet zoom + map-tools 36→44px; `.people-tag .remove-tag` 24→44px; `.marker-rating` 9→12px (meets 12px a11y floor).
 - [ ] Encrypt per-user API keys at rest (`index.js:1259`); shared env-key usage admin-only.
 - [x] **`onclick=` → `data-click`** — all 5 removed (clearRegionFilter chip, 3× Leaflet popups, share-link-url); `ACTIONS.selectInput` added.
 - [x] **`sanitizeNotes` extraction** — shared helper; `sanitizeTripUpdate` and `sanitizeTransitUpdate` now strip `<script>`/`javascript:` from notes (was location-only).
