@@ -133,6 +133,33 @@ describe('Stats tabs — switchStatsTab function', () => {
   });
 });
 
+describe('computeStats() memoization', () => {
+  test('_statsCache and _statsCacheGen variables declared', () => {
+    expect(html).toContain('let _statsCache = null');
+    expect(html).toContain('let _statsCacheGen = -1');
+  });
+
+  test('computeStats() checks generation before recomputing', () => {
+    const fnStart = html.indexOf('function computeStats()');
+    const fnSlice = html.substring(fnStart, fnStart + 200);
+    expect(fnSlice).toMatch(/_statsCacheGen === stateIndex\.generation/);
+    expect(fnSlice).toContain('return _statsCache');
+  });
+
+  test('computeStats() writes _statsCache before returning', () => {
+    const fnStart = html.indexOf('function computeStats()');
+    const fnEnd = html.indexOf('\n}', fnStart + 100);
+    const fnSlice = html.substring(fnStart, fnEnd + 2);
+    expect(fnSlice).toContain('_statsCache = s');
+  });
+
+  test('computeStats() stamps the generation after miss', () => {
+    const fnStart = html.indexOf('function computeStats()');
+    const fnSlice = html.substring(fnStart, fnStart + 200);
+    expect(fnSlice).toContain('_statsCacheGen = stateIndex.generation');
+  });
+});
+
 describe('Stats tabs — CSS', () => {
   test('.stats-tabs CSS exists', () => {
     expect(html).toContain('.stats-tabs');

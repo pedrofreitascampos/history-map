@@ -6794,7 +6794,12 @@ async function bulkApprove() {
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* STATISTICS                                                            */
 /* ═══════════════════════════════════════════════════════════════════════ */
+let _statsCache = null;
+let _statsCacheGen = -1;
+
 function computeStats() {
+  if (_statsCacheGen === stateIndex.generation) return _statsCache;
+  _statsCacheGen = stateIndex.generation;
   const s = {
     been: 0, bucket: 0, countries: new Set(), people: new Set(),
     ratingSum: 0, ratingCount: 0, peopleCounts: {},
@@ -6835,6 +6840,7 @@ function computeStats() {
       if (isBeen) s.byCol[colId].visited++;
     }
   }
+  _statsCache = s;
   return s;
 }
 
