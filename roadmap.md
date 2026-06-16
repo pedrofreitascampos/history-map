@@ -10,12 +10,12 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 Five parallel auditors; findings validated against source. Sequencing:
 
-### This week (security + durability)
-- [ ] **render.yaml is STALE** — declares `plan: free` + no `disk:` block; does NOT match live deploy (user confirmed NOT free tier). Durability = persistent disk mounted at `/data` (`db.js:5`), not plan tier. **Action: confirm dashboard disk mount, then sync render.yaml to reality.** (NOT the "existential data loss" the auditors claimed — that was a wrong inference from the stale file.)
-- [ ] **Durable JWT revocation** — `revokedJtis` is in-memory (`index.js:219`); restart un-revokes every logged-out 30-day token. Persist to NeDB, load on startup, keep 6h prune.
-- [ ] **`/api/places/bulk-sync` cost cap** — only under global 200/min → up to ~10k Google Places calls/min on a shared key (`index.js:1584`). Add dedicated `rateLimit({max:5/min})`.
-- [ ] **Username case-bypass** — register allowlist-checks `.toLowerCase()` (`index.js:305`) but reads/inserts raw case (`:310/:317`) → `PEDRO@…` creates a distinct account. Normalize lowercase at register + login + SSO.
-- [ ] **`share.html` Leaflet missing SRI** (`share.html:46`) — every other CDN script is hashed.
+### This week (security + durability) — ✅ DONE 2026-06-16 (commit b380182)
+- [x] **Data durability confirmed safe** — user confirmed a persistent disk IS mounted at `/data`; data survives deploys/restarts. The "existential data loss" framing was a wrong inference from a stale `render.yaml`. render.yaml synced (plan→starter, disk block added, dashboard noted as source of truth).
+- [x] **Durable JWT revocation** — `revokedJtis` now NeDB-backed (`db.revokedTokens`), loaded on startup, persisted on logout, pruned.
+- [x] **`/api/places/bulk-sync` cost cap** — dedicated `rateLimit({max:5/min})` added.
+- [x] **Username case-bypass** — lowercase normalization at register/login/SSO/admin-reset.
+- [x] **`share.html` Leaflet SRI** — integrity hash added.
 
 ### Quick wins (perf + hygiene, ~½ day)
 - [ ] `<link rel=preconnect>` for unpkg/jsdelivr/fonts (saves 200–400ms/origin cold). *(fonts already have display=swap; Chart/JSZip/exifr already deferred — auditor over-reported.)*

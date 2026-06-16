@@ -22,10 +22,14 @@ beforeAll(async () => {
   await db.revokedTokens.remove({}, { multi: true });
 });
 
-afterAll(() => {
-  const files = fs.readdirSync(testDataDir);
-  files.forEach(f => fs.unlinkSync(path.join(testDataDir, f)));
-  fs.rmdirSync(testDataDir);
+afterAll(async () => {
+  // Let any fire-and-forget NeDB writes (e.g. the revoke upsert) flush before
+  // we yank the directory, then clean up defensively.
+  await new Promise(r => setTimeout(r, 200));
+  try {
+    for (const f of fs.readdirSync(testDataDir)) fs.unlinkSync(path.join(testDataDir, f));
+    fs.rmdirSync(testDataDir);
+  } catch (_) { /* best-effort cleanup */ }
 });
 
 async function pollFor(fn, timeoutMs = 1500, stepMs = 25) {
@@ -93,6 +97,15 @@ describe('Durable JWT revocation', () => {
     expect(persisted).not.toBeNull();
     expect(persisted[0].jti).toBeTruthy();
     expect(typeof persisted[0].exp).toBe('number');
+  });
+});
+
+describe('Health endpoint', () => {
+  test('GET /healthz → 200 { ok: true, uptime }', async () => {
+    const res = await request(app).get('/healthz');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(typeof res.body.uptime).toBe('number');
   });
 });
 

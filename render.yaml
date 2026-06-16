@@ -1,10 +1,20 @@
+# NOTE: the live deployment is managed via the Render DASHBOARD, which is the
+# source of truth — this file is documentation, not an applied blueprint.
+# The live service runs on a PAID plan with a PERSISTENT DISK mounted at /data
+# (where server/db.js writes the NeDB files), so data survives deploys and
+# restarts. The values below (plan/disk size) are representative; correct them
+# to match the dashboard if you ever adopt this as an IaC blueprint.
 services:
   - type: web
     name: history-map
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm ci
     startCommand: node server/index.js
+    disk:
+      name: oikumene-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: JWT_SECRET
         generateValue: true

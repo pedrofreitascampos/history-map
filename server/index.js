@@ -204,6 +204,19 @@ app.get('/s/:token', (req, res) => {
   res.type('html').send(getShareTemplate().replace(/__CSP_NONCE__/g, res.locals.cspNonce));
 });
 
+// Large reference datasets (admin1 boundaries ~3.4 MB, world cities ~4.4 MB)
+// change only on deploy. express.static sends ETag/Last-Modified but no
+// max-age, so the browser revalidates (a round-trip) on every Regions view.
+// A 7-day max-age skips that round-trip while staying fresh enough for
+// reference data; not `immutable` since the URLs are unversioned and a deploy
+// can update them. The SW also caches these (cache version bumps per deploy).
+['/admin1.json', '/cities.json'].forEach((f) => {
+  app.get(f, (req, res) => {
+    res.set('Cache-Control', 'public, max-age=604800');
+    res.sendFile(path.join(__dirname, '..', 'public', f));
+  });
+});
+
 // Static files (excluding index.html — see above)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 
@@ -1781,7 +1794,7 @@ async function runBackup() {
         locations, trips, collections, transits,
       };
 
-      fs.writeFileSync(backupFile, JSON.stringify(backup));
+      await fs.promises.writeFile(backupFile, JSON.stringify(backup));
       log('info', 'backup_created', { username, locations: locations.length, trips: trips.length, collections: collections.length, transits: transits.length });
 
       // Prune old backups for this user
@@ -1827,6 +1840,11 @@ app.use((err, req, res, next) => {
   log('error', 'unhandled_route_error', { method: req.method, path: req.path, error: err.message });
   res.status(500).json({ error: 'Internal server error' });
 });
+
+// Lightweight health check — Render (and any uptime monitor) can probe this
+// instead of `/`, which would otherwise pay CSP-nonce generation + template
+// replace + gzip on every probe. Not under /api, so no rate limit applies.
+app.get('/healthz', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 // ── Catch-all for SPA ────────────────────────────────────
 // MUST be the last route — anything defined after this is dead code.

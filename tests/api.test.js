@@ -1248,8 +1248,10 @@ describe('Frontend correctness fixes', () => {
     // resource. Google fonts + accounts.google.com rotate, so they're exempt.
     const head = html.slice(0, html.indexOf('</head>'));
     const tags = [...head.matchAll(/<(script|link)\b[^>]*\b(src|href)="(https:\/\/[^"]+)"[^>]*>/g)];
-    const pinned = tags.filter(([, , , url]) =>
-      !/fonts\.googleapis\.com|accounts\.google\.com/.test(url)
+    const pinned = tags.filter(([tag, , , url]) =>
+      !/fonts\.googleapis\.com|accounts\.google\.com/.test(url) &&
+      // Connection hints (preconnect/dns-prefetch) load no bytes — SRI N/A.
+      !/rel="(preconnect|dns-prefetch)"/.test(tag)
     );
     expect(pinned.length).toBeGreaterThanOrEqual(9);
     pinned.forEach(([tag]) => {

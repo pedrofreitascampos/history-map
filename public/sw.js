@@ -1,10 +1,9 @@
 // Oikumene Service Worker — offline tile cache + app shell
 // Bump CACHE_VER to force cache replacement on next deploy.
-const CACHE_VER = 'v1';
+const CACHE_VER = 'v2';
 const SHELL_CACHE = 'oikumene-shell-' + CACHE_VER;
 const TILE_CACHE  = 'oikumene-tiles-' + CACHE_VER;
-const API_CACHE   = 'oikumene-api-'   + CACHE_VER;
-const ALL_CACHES  = [SHELL_CACHE, TILE_CACHE, API_CACHE];
+const ALL_CACHES  = [SHELL_CACHE, TILE_CACHE];
 
 // Tile cache cap: ~200 tiles ≈ 2–4 MB (Stadia tiles average ~15 KB each).
 const MAX_TILES = 200;
@@ -50,14 +49,11 @@ self.addEventListener('fetch', e => {
   // Share pages are dynamic (CSP nonce per request) — network only
   if (pathname.startsWith('/s/')) return;
 
-  // Auth endpoints — always network (never cache tokens)
-  if (pathname.startsWith('/api/auth')) return;
-
-  // Other API GET requests → network-first, stale cache as offline fallback
-  if (pathname.startsWith('/api/')) {
-    e.respondWith(networkFirst(e.request, API_CACHE));
-    return;
-  }
+  // All API GETs → network only, never cached. The Cache API key ignores
+  // cookies, so a cached /api/locations could be served to a DIFFERENT user
+  // who later signs in on the same device and hits an offline fallback. For a
+  // personal travel map the offline-read value is negligible vs. that leak.
+  if (pathname.startsWith('/api/')) return;
 
   // Share target: serve app shell, frontend parses URL params
   if (url.pathname === '/share-target') {

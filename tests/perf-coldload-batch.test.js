@@ -164,21 +164,24 @@ describe('S2 perf cold-load batch', () => {
       });
     });
 
-    const criticalCdn = [
+    // Audit 2026-06-16: Leaflet + plugins are now DEFERRED. Verified safe —
+    // `L` is only touched at runtime: every initMap()/L.* call sits inside a
+    // function, and the only startApp() invocations are in doAuth(),
+    // handleGoogleCredential(), and the DOMContentLoaded boot handler. Deferred
+    // scripts execute before DOMContentLoaded fires, so `L` is always ready.
+    // (Plugins still load after leaflet.js because defer preserves order.)
+    const deferredLeaflet = [
       'unpkg.com/leaflet@1.9.4',
       'unpkg.com/leaflet.markercluster',
       'unpkg.com/leaflet.heat',
     ];
 
-    criticalCdn.forEach(host => {
-      test(`<script src="…${host.split('/').pop()}…"> stays blocking (no defer)`, () => {
+    deferredLeaflet.forEach(host => {
+      test(`<script src="…${host.split('/').pop()}…"> is deferred`, () => {
         const re = new RegExp(`<script[^>]*${host.replace(/[.\/@]/g, '\\$&')}[^>]*></script>`);
         const m = html.match(re);
         expect(m).toBeTruthy();
-        // Leaflet + plugins must be available synchronously when initMap()
-        // runs at startup. Asserting no `defer` here protects against
-        // accidental "let's defer everything" regressions.
-        expect(m[0]).not.toContain('defer');
+        expect(m[0]).toContain('defer');
       });
     });
   });

@@ -99,11 +99,14 @@ describe('PWA service worker — event handlers', () => {
     expect(swJs).toMatch(/request\.method.*!==.*GET|method.*GET.*return/);
   });
 
-  test('sw.js never caches /api/auth endpoints', () => {
-    expect(swJs).toContain('/api/auth');
-    const authIdx = swJs.indexOf('/api/auth');
-    const block = swJs.slice(authIdx - 30, authIdx + 60);
-    expect(block).toMatch(/return|skip/i);
+  test('sw.js never caches any /api/ request (network-only — no cross-user leak)', () => {
+    const idx = swJs.indexOf("pathname.startsWith('/api/')");
+    expect(idx).toBeGreaterThan(-1);
+    // The /api/ branch must bail to network (return) without caching.
+    const block = swJs.slice(idx, idx + 40);
+    expect(block).toMatch(/return\s*;/);
+    // And there must be no API cache bucket anymore.
+    expect(swJs).not.toContain('API_CACHE');
   });
 
   test('sw.js skips /s/ share pages (dynamic nonce per request)', () => {
