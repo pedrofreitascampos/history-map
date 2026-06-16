@@ -634,29 +634,9 @@ function sanitizeLocationUpdate(updates) {
         .slice(0, 100);
     }
   }
-  // notes — free-text rendered via esc() everywhere today, but the web-import
-  // snippet flow lands attacker-controllable text here (server/import-adapters/
-  // llm.js → public/index.html:12133 concat into notes). Defense-in-depth: cap
-  // length and strip <script>/<iframe> blocks + javascript:/vbscript: URI
-  // schemes server-side so a future render-path regression can't weaponise
-  // stored notes. Cybersec MED-3 closeout.
   if (updates.notes !== undefined) {
-    if (typeof updates.notes !== 'string') {
-      delete updates.notes;
-    } else {
-      let n = updates.notes;
-      // Loop until stable so nested/split patterns like <scr<script>ipt> can't survive one pass
-      let prev;
-      do {
-        prev = n;
-        n = n.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
-        n = n.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
-        n = n.replace(/<\/?(?:script|iframe)\b[^>]*>/gi, '');
-        n = n.replace(/javascript:/gi, '').replace(/vbscript:/gi, '');
-      } while (n !== prev);
-      if (n.length > 10000) n = n.slice(0, 10000);
-      updates.notes = n;
-    }
+    if (typeof updates.notes !== 'string') delete updates.notes;
+    else updates.notes = sanitizeNotes(updates.notes);
   }
   return updates;
 }
@@ -708,6 +688,23 @@ app.get('/api/trips', auth, async (req, res) => {
 
 // Allowlist + cap for trip writes. Color must be a CSS-safe hex (#RRGGBB / #RGB)
 // or a short keyword so it can't break out of an inline style attribute.
+// Shared notes sanitizer — strip <script>/<iframe> blocks and javascript:/vbscript:
+// URIs, loop until stable, then cap at 10 000 chars. Applied to every entity
+// with a free-text notes field so a render-path regression can't weaponise stored text.
+function sanitizeNotes(str) {
+  if (typeof str !== 'string') return '';
+  let n = str;
+  let prev;
+  do {
+    prev = n;
+    n = n.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+    n = n.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '');
+    n = n.replace(/<\/?(?:script|iframe)\b[^>]*>/gi, '');
+    n = n.replace(/javascript:/gi, '').replace(/vbscript:/gi, '');
+  } while (n !== prev);
+  return n.length > 10000 ? n.slice(0, 10000) : n;
+}
+
 const TRIP_FIELDS = ['name', 'color', 'startDate', 'endDate', 'notes'];
 const COLOR_RE = /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]{1,20}$/;
 function sanitizeTripUpdate(body) {
@@ -715,6 +712,7 @@ function sanitizeTripUpdate(body) {
   for (const k of TRIP_FIELDS) {
     if (body[k] === undefined) continue;
     if (k === 'color' && typeof body[k] === 'string' && !COLOR_RE.test(body[k])) continue;
+    if (k === 'notes') { out[k] = sanitizeNotes(body[k]); continue; }
     if (typeof body[k] === 'string' && body[k].length > 2000) continue;
     out[k] = body[k];
   }
@@ -1173,6 +1171,7 @@ function sanitizeTransitUpdate(body) {
   }
   for (const k of TRANSIT_STRING_FIELDS) {
     const v = body[k];
+    if (k === 'notes') { if (typeof v === 'string') out[k] = sanitizeNotes(v); continue; }
     if (typeof v === 'string' && v.length > 0 && v.length <= 5000) out[k] = v;
   }
   return out;

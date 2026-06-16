@@ -252,3 +252,63 @@ describe('Express terminal error middleware', () => {
     expect(block).toMatch(/Internal server error/);
   });
 });
+
+// ── 18. onclick= elimination + sanitizeNotes extraction ──────────────────────
+describe('onclick= elimination (CSP script-src-attr: none)', () => {
+  test('no inline onclick= attributes remain in index.html', () => {
+    // Strip JS comments first so comment-mentions don't trigger.
+    const stripped = html.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(stripped).not.toMatch(/\bonclick=/);
+  });
+
+  test('selectInput ACTIONS entry replaces onclick="this.select()"', () => {
+    expect(html).toContain('selectInput: (el) =>');
+    expect(html).toContain('data-click="selectInput"');
+  });
+
+  test('clearRegionFilter chip uses data-click not onclick', () => {
+    const chipIdx = html.indexOf('id="region-filter-chip"');
+    const chipSlice = html.slice(chipIdx, chipIdx + 500);
+    expect(chipSlice).toContain('data-click="clearRegionFilter"');
+    expect(chipSlice).not.toContain('onclick=');
+  });
+
+  test('View on Atlas popups use data-click not onclick', () => {
+    expect(html).toContain('data-click="_applyRegionPopupFilter"');
+    expect(html).not.toContain('onclick="_applyRegionPopupFilter"');
+  });
+});
+
+describe('sanitizeNotes shared helper', () => {
+  test('sanitizeNotes function is defined in server/index.js', () => {
+    expect(serverSrc).toContain('function sanitizeNotes(');
+  });
+
+  test('sanitizeNotes strips <script> blocks', () => {
+    const fnStart = serverSrc.indexOf('function sanitizeNotes(');
+    const fnSlice = serverSrc.slice(fnStart, fnStart + 600);
+    expect(fnSlice).toMatch(/replace.*<script/);
+    expect(fnSlice).toContain('javascript:');
+  });
+
+  test('sanitizeLocationUpdate delegates notes to sanitizeNotes', () => {
+    const fnStart = serverSrc.indexOf('function sanitizeLocationUpdate(');
+    const fnEnd = serverSrc.indexOf('\nfunction ', fnStart + 10);
+    const fnSlice = serverSrc.slice(fnStart, fnEnd);
+    expect(fnSlice).toContain('sanitizeNotes(updates.notes)');
+  });
+
+  test('sanitizeTripUpdate applies sanitizeNotes to notes field', () => {
+    const fnStart = serverSrc.indexOf('function sanitizeTripUpdate(');
+    const fnEnd = serverSrc.indexOf('\nfunction ', fnStart + 10);
+    const fnSlice = serverSrc.slice(fnStart, fnEnd);
+    expect(fnSlice).toContain("sanitizeNotes(body[k])");
+  });
+
+  test('sanitizeTransitUpdate applies sanitizeNotes to notes field', () => {
+    const fnStart = serverSrc.indexOf('function sanitizeTransitUpdate(');
+    const fnEnd = serverSrc.indexOf('\nfunction ', fnStart + 10);
+    const fnSlice = serverSrc.slice(fnStart, fnEnd);
+    expect(fnSlice).toContain("sanitizeNotes(v)");
+  });
+});

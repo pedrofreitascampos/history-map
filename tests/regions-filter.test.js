@@ -90,7 +90,7 @@ describe('Regions filter — sidebar chip', () => {
   test('clear button calls clearRegionFilter', () => {
     const chipStart = html.indexOf('id="region-filter-chip"');
     const chipSlice = html.substring(chipStart, chipStart + 500);
-    expect(chipSlice).toContain('clearRegionFilter()');
+    expect(chipSlice).toContain('data-click="clearRegionFilter"');
   });
 });
 
@@ -105,7 +105,7 @@ describe('Regions filter — popup View on Atlas buttons', () => {
     const fnStart = html.indexOf('function showRegionLocations(');
     const fnSlice = html.substring(fnStart, fnStart + 800);
     expect(fnSlice).toContain('View on Atlas');
-    expect(fnSlice).toContain('_applyRegionPopupFilter()');
+    expect(fnSlice).toContain('data-click="_applyRegionPopupFilter"');
   });
 
   test('showCountryLocations sets _regionPopupData', () => {
@@ -118,7 +118,7 @@ describe('Regions filter — popup View on Atlas buttons', () => {
     const fnStart = html.indexOf('function showCountryLocations(');
     const fnSlice = html.substring(fnStart, fnStart + 700);
     expect(fnSlice).toContain('View on Atlas');
-    expect(fnSlice).toContain('_applyRegionPopupFilter()');
+    expect(fnSlice).toContain('data-click="_applyRegionPopupFilter"');
   });
 
   test('showCityLocations sets _regionPopupData', () => {
@@ -131,7 +131,7 @@ describe('Regions filter — popup View on Atlas buttons', () => {
     const fnStart = html.indexOf('function showCityLocations(');
     const fnSlice = html.substring(fnStart, fnStart + 800);
     expect(fnSlice).toContain('View on Atlas');
-    expect(fnSlice).toContain('_applyRegionPopupFilter()');
+    expect(fnSlice).toContain('data-click="_applyRegionPopupFilter"');
   });
 });
 

@@ -1764,7 +1764,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div id="region-filter-chip" style="display:none;padding:10px 16px 0;">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--accent);color:#000;border-radius:20px;font-size:12px;font-weight:500;">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="region-filter-label"></span>
-        <button onclick="clearRegionFilter()" style="border:none;background:none;cursor:pointer;font-size:16px;padding:0;line-height:1;color:#000;" aria-label="Clear region filter">×</button>
+        <button data-click="clearRegionFilter" style="border:none;background:none;cursor:pointer;font-size:16px;padding:0;line-height:1;color:#000;" aria-label="Clear region filter">×</button>
       </div>
     </div>
     <div class="filter-section">
@@ -3031,6 +3031,8 @@ const ACTIONS = {
     if (!Number.isFinite(val)) return;
     handleHeartKey(e, val);
   },
+  // Select all text in an input/textarea on click (replaces onclick="this.select()").
+  selectInput: (el) => { el.select(); },
 };
 
 function _readPositionalArgs(el) {
@@ -10635,7 +10637,7 @@ function showRegionLocations(idx, regionName, country) {
       <h3>${esc(regionName)}</h3>
       <div class="popup-cat">${esc(country)} · ${locs.length} place${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
-      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
+      <button class="btn btn-secondary" data-click="_applyRegionPopupFilter" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
@@ -10649,7 +10651,7 @@ function showCountryLocations(country, locs) {
       <h3>${esc(country)}</h3>
       <div class="popup-cat">${locs.length} place${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
-      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
+      <button class="btn btn-secondary" data-click="_applyRegionPopupFilter" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
@@ -10664,7 +10666,7 @@ function showCityLocations(name, iso2, pop, locs) {
       <h3>${esc(name)}</h3>
       <div class="popup-cat">${esc(iso2)} · pop ${popStr} · ${locs.length} visit${locs.length > 1 ? 's' : ''}</div>
       <div style="margin-top:8px;">${_renderLocList(locs)}</div>
-      <button class="btn btn-secondary" onclick="_applyRegionPopupFilter()" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
+      <button class="btn btn-secondary" data-click="_applyRegionPopupFilter" style="margin-top:10px;width:100%;font-size:12px;padding:5px 10px;">🗺️ View on Atlas</button>
     </div>`)
     .openOn(regionsMap);
 }
@@ -14478,7 +14480,7 @@ async function _handlePhotoFiles(fileList) {
     <h3 style="margin:0 0 6px;font-family:var(--font-display);font-size:18px;">🔗 Share Trip</h3>
     <p style="margin:0 0 16px;font-size:13px;opacity:.7;">Anyone with this link can view the trip — no account needed.</p>
     <div style="display:flex;gap:8px;margin-bottom:16px;">
-      <input id="share-link-url" type="text" readonly class="form-input" style="flex:1;font-size:12px;cursor:pointer;" onclick="this.select()">
+      <input id="share-link-url" type="text" readonly class="form-input" style="flex:1;font-size:12px;cursor:pointer;" data-click="selectInput">
       <button class="btn btn-primary" data-click="copyShareLink" style="padding:6px 14px;font-size:13px;white-space:nowrap;">Copy</button>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
