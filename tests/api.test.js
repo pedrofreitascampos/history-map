@@ -1263,7 +1263,7 @@ describe('Frontend correctness fixes', () => {
   test('transit map re-tiles on theme switch (applyTheme touches _transitBaseTile)', () => {
     // Init-once singleton would otherwise leave a stale dark tile when the
     // user switches to parchment mid-session.
-    expect(html).toMatch(/function applyTheme[\s\S]{0,2000}_transitBaseTile/);
+    expect(html).toMatch(/function applyTheme[\s\S]{0,3000}_transitBaseTile/);
     expect(html).toMatch(/_transitBaseTile\s*=\s*L\.tileLayer\(currentBaseTileUrl\(\)/);
   });
 

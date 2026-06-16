@@ -12881,6 +12881,12 @@ const THEMES = {
       '--border':'rgba(0,0,0,0.1)','--border-strong':'rgba(0,0,0,0.2)',
       '--accent':'#b8860b','--accent-dim':'rgba(184,134,11,0.12)','--accent-glow':'rgba(184,134,11,0.3)',
       '--overlay-base':'rgba(0,0,0,0.04)','--overlay-hover':'rgba(0,0,0,0.06)','--overlay-strong':'rgba(0,0,0,0.12)',
+      // WCAG AA–compliant category colors for light (cream) background
+      '--cat-restaurant':'#dc2626','--cat-hotel':'#7c3aed','--cat-bar':'#ea580c',
+      '--cat-club':'#a21caf','--cat-monument':'#b45309','--cat-unesco':'#92400e',
+      '--cat-park':'#15803d','--cat-stadium':'#1d4ed8','--cat-event':'#be185d',
+      '--cat-location':'#475569','--cat-airport':'#0369a1','--cat-entertainment':'#6d28d9',
+      '--cat-shopping':'#9f1239','--cat-cafe':'#78350f',
     }
   },
   ocean: {
@@ -12911,6 +12917,7 @@ const THEMES = {
       '--text-primary':'#f0e0e0','--text-secondary':'#c67a7a','--text-muted':'#8c4a4a',
       '--border':'rgba(239,68,68,0.12)','--border-strong':'rgba(239,68,68,0.25)',
       '--accent':'#f87171','--accent-dim':'rgba(248,113,113,0.12)','--accent-glow':'rgba(248,113,113,0.3)',
+      '--cat-restaurant':'#f97316', // accent is #f87171 (red) — use orange so restaurant ≠ accent
     }
   },
   aurora: {
@@ -12933,9 +12940,19 @@ function applyTheme(name) {
   const theme = THEMES[name] || THEMES.midnight;
   const allVars = ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-card','--bg-glass',
     '--text-primary','--text-secondary','--text-muted','--border','--border-strong',
-    '--accent','--accent-dim','--accent-glow'];
+    '--accent','--accent-dim','--accent-glow',
+    '--cat-restaurant','--cat-hotel','--cat-bar','--cat-club','--cat-monument','--cat-unesco',
+    '--cat-park','--cat-stadium','--cat-event','--cat-location','--cat-airport',
+    '--cat-entertainment','--cat-shopping','--cat-cafe'];
   allVars.forEach(v => document.body.style.removeProperty(v));
   Object.entries(theme.vars).forEach(([k,v]) => document.body.style.setProperty(k, v));
+  // Sync COLOR_HEX so Leaflet markers reflect the active theme's category colors.
+  const cs = getComputedStyle(document.body);
+  ['restaurant','hotel','bar','club','monument','unesco','park','stadium','event',
+   'location','airport','entertainment','shopping','cafe'].forEach(n => {
+    const val = cs.getPropertyValue(`--cat-${n}`).trim();
+    if (val) COLOR_HEX[`var(--cat-${n})`] = val;
+  });
   document.documentElement.setAttribute('data-theme', name === 'parchment' ? 'light' : 'dark');
   const toggleBtn = document.getElementById('theme-toggle');
   toggleBtn.textContent = theme.icon;
