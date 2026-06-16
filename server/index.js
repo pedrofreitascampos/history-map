@@ -38,6 +38,33 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'producti
 if (!JWT_SECRET) { console.error('FATAL: JWT_SECRET env var required in production'); process.exit(1); }
 const GOOGLE_PLACES_KEY = process.env.GOOGLE_PLACES_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+// ── API-key encryption (AES-256-GCM) ─────────────────────
+// JWT_SECRET is already a high-entropy random value, so a single SHA-256
+// extraction step is sufficient to derive the 256-bit wrapping key.
+const _apiKeyEncKey = crypto.createHash('sha256')
+  .update('oikumene:api-key-enc-v1:' + (process.env.JWT_SECRET || 'dev-fallback'))
+  .digest();
+
+function _encryptApiKey(plaintext) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', _apiKeyEncKey, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return 'enc:' + [iv.toString('hex'), enc.toString('hex'), cipher.getAuthTag().toString('hex')].join(':');
+}
+
+function _decryptApiKey(stored) {
+  if (!stored) return null;
+  if (!stored.startsWith('enc:')) return stored; // legacy plaintext — migrate on next save
+  try {
+    const parts = stored.slice(4).split(':');
+    if (parts.length !== 3) return null;
+    const [ivHex, encHex, tagHex] = parts;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', _apiKeyEncKey, Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+    return decipher.update(Buffer.from(encHex, 'hex')).toString('utf8') + decipher.final('utf8');
+  } catch { return null; }
+}
 // Comma-separated list of allowed emails. Empty = anyone can register/sign in.
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 // First email in allowlist is considered admin
@@ -1363,9 +1390,11 @@ app.get('/api/geocode/reverse', auth, async (req, res) => {
 // ── User settings (API keys etc.) ────────────────────────
 app.get('/api/settings', auth, async (req, res) => {
   const user = await db.users.findOne({ _id: req.user.id });
+  const gKey = _decryptApiKey(user?.googlePlacesKey);
+  const aKey = _decryptApiKey(user?.anthropicKey);
   res.json({
-    googlePlacesKey: user?.googlePlacesKey ? '••••' + user.googlePlacesKey.slice(-4) : null,
-    anthropicKey: user?.anthropicKey ? '••••' + user.anthropicKey.slice(-4) : null,
+    googlePlacesKey: gKey ? '••••' + gKey.slice(-4) : null,
+    anthropicKey: aKey ? '••••' + aKey.slice(-4) : null,
   });
 });
 
@@ -1377,8 +1406,8 @@ app.put('/api/settings', auth, async (req, res) => {
     }
   }
   const updates = {};
-  if (googlePlacesKey !== undefined) updates.googlePlacesKey = googlePlacesKey || null;
-  if (anthropicKey !== undefined) updates.anthropicKey = anthropicKey || null;
+  if (googlePlacesKey !== undefined) updates.googlePlacesKey = googlePlacesKey ? _encryptApiKey(googlePlacesKey) : null;
+  if (anthropicKey !== undefined) updates.anthropicKey = anthropicKey ? _encryptApiKey(anthropicKey) : null;
   await db.users.update({ _id: req.user.id }, { $set: updates });
   audit('settings_update', { fields: Object.keys(updates) }, req);
   res.json({ ok: true });
@@ -1433,13 +1462,23 @@ app.get('/api/my-backup/:filename', auth, (req, res) => {
 // ── Google Places API (New) — proxied, key never in URL ──
 async function getPlacesKey(userId) {
   const user = await db.users.findOne({ _id: userId });
-  return user?.googlePlacesKey || GOOGLE_PLACES_KEY || '';
+  const userKey = _decryptApiKey(user?.googlePlacesKey);
+  if (userKey) return userKey;
+  // Shared env key: accessible to all in single-user mode (no ADMIN_EMAIL configured);
+  // restricted to admin only in multi-user mode.
+  const canUseEnv = !ADMIN_EMAIL || user?.username?.toLowerCase() === ADMIN_EMAIL;
+  return (canUseEnv && GOOGLE_PLACES_KEY) ? GOOGLE_PLACES_KEY : '';
 }
 
 // ── Anthropic API — key per user, env fallback ────────────
 async function getAnthropicKey(userId) {
   const user = await db.users.findOne({ _id: userId });
-  return user?.anthropicKey || ANTHROPIC_API_KEY || '';
+  const userKey = _decryptApiKey(user?.anthropicKey);
+  if (userKey) return userKey;
+  // Shared env key: accessible to all in single-user mode (no ADMIN_EMAIL configured);
+  // restricted to admin only in multi-user mode.
+  const canUseEnv = !ADMIN_EMAIL || user?.username?.toLowerCase() === ADMIN_EMAIL;
+  return (canUseEnv && ANTHROPIC_API_KEY) ? ANTHROPIC_API_KEY : '';
 }
 
 // Price level enum → integer (Places API New returns string enums)

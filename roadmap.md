@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-17:** 1667 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs · Touch targets 44px · Offsite S3/R2 backup · Nominatim proxy + throttle · Per-theme category colors.
+**2026-06-17:** 1683 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs · Touch targets 44px · Offsite S3/R2 backup · Nominatim proxy + throttle · Per-theme category colors · API key encryption.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -34,7 +34,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [x] **ARIA tabs + dialogs** — `role="tablist"/"tab"` + `aria-selected` on nav + stats tabs; `switchView`/`switchStatsTab` keep them in sync; `_trapFocus` helper + `role="dialog"` + `aria-modal` + focus restore + Escape on all 3 overlays.
 - [x] **Per-theme category colors** — Parchment gets 14 WCAG AA–compliant dark `--cat-*` overrides; Volcano gets `--cat-restaurant:#f97316` (orange) to avoid accent `#f87171` collision; `applyTheme` resets all `--cat-*` on switch and syncs `COLOR_HEX` for Leaflet markers.
 - [x] **Touch targets** — leaflet zoom + map-tools 36→44px; `.people-tag .remove-tag` 24→44px; `.marker-rating` 9→12px (meets 12px a11y floor).
-- [ ] Encrypt per-user API keys at rest (`index.js:1259`); shared env-key usage admin-only.
+- [x] **Encrypt per-user API keys at rest** — AES-256-GCM (`enc:iv:enc:tag` format); wrapping key derived via SHA-256 from `JWT_SECRET`; lazy plaintext migration (legacy values pass through until next save); shared env key restricted to admin in multi-user mode, open in single-user mode (`!ADMIN_EMAIL`).
 - [x] **`onclick=` → `data-click`** — all 5 removed (clearRegionFilter chip, 3× Leaflet popups, share-link-url); `ACTIONS.selectInput` added.
 - [x] **`sanitizeNotes` extraction** — shared helper; `sanitizeTripUpdate` and `sanitizeTransitUpdate` now strip `<script>`/`javascript:` from notes (was location-only).
 - [x] `_idxAddLoc`/`_idxRemoveLoc` — already in sync with `rebuildIndexes`; roadmap item was stale.
