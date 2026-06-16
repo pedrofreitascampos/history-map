@@ -212,26 +212,49 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 // attacker a long-lived full-account token; revocation cuts that window).
 const JWT_EXPIRY = '30d';
 
-// In-memory revocation list keyed by jti → exp (seconds). Cleared on restart,
-// which is fine: tokens signed under the prior process were anyway tied to a
-// secret that may rotate. Pruned every 6h so the set can't grow unbounded
-// over a long uptime.
+// Revocation list keyed by jti → exp (seconds). Backed by NeDB (db.revokedTokens)
+// so an explicit logout survives a process recycle — JWT_SECRET is stable across
+// restarts (Render env var), so without durable revocation a logged-out 30-day
+// token would become valid again on the next restart. The in-memory Map is the
+// hot-path cache; NeDB is the durable backing store. Pruned every 6h.
 const revokedJtis = new Map();
 function isRevoked(jti) {
   if (!jti) return false;
   const exp = revokedJtis.get(jti);
   if (!exp) return false;
-  if (Date.now() >= exp * 1000) { revokedJtis.delete(jti); return false; }
+  if (Date.now() >= exp * 1000) { revokedJtis.delete(jti); db.revokedTokens.remove({ jti }, {}).catch(() => {}); return false; }
   return true;
 }
 function revokeJti(jti, exp) {
   if (!jti || !exp) return;
   revokedJtis.set(jti, exp);
+  // Fire-and-forget durable write — don't block the logout response on disk I/O.
+  db.revokedTokens.update({ jti }, { jti, exp }, { upsert: true }).catch((err) => {
+    log('warn', 'revoke_persist_failed', { error: err.message });
+  });
 }
 function pruneRevoked() {
   const nowSec = Math.floor(Date.now() / 1000);
   for (const [jti, exp] of revokedJtis) if (exp <= nowSec) revokedJtis.delete(jti);
+  db.revokedTokens.remove({ exp: { $lte: nowSec } }, { multi: true }).catch(() => {});
 }
+// Load the durable revocation list into the hot-path Map at startup, dropping
+// any already-expired entries. Best-effort: a token that slips through during
+// the brief load window would be caught on the next request once loaded.
+async function loadRevokedJtis() {
+  try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const rows = await db.revokedTokens.find({});
+    for (const r of rows) {
+      if (r.exp > nowSec) revokedJtis.set(r.jti, r.exp);
+      else db.revokedTokens.remove({ jti: r.jti }, {}).catch(() => {});
+    }
+    log('info', 'revoked_jtis_loaded', { count: revokedJtis.size });
+  } catch (err) {
+    log('warn', 'revoked_jtis_load_failed', { error: err.message });
+  }
+}
+loadRevokedJtis();
 if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'test') {
   setInterval(pruneRevoked, 6 * 60 * 60 * 1000).unref();
 }
@@ -297,12 +320,17 @@ async function auth(req, res, next) {
 // ── Auth routes ──────────────────────────────────────────
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    let { username } = req.body;
+    const { password } = req.body;
     if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
       return res.status(400).json({ error: 'Username and password required' });
     }
+    // Normalize to lowercase so the allowlist check, the uniqueness check, and
+    // storage all agree — otherwise `PEDRO@…` passes the lowercased allowlist
+    // test but is stored/looked-up raw, creating a distinct case-variant account.
+    username = username.trim().toLowerCase();
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username.toLowerCase())) {
+    if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(username)) {
       audit('register_blocked', { username, reason: 'not_in_allowlist' }, req);
       return res.status(403).json({ error: 'Registration is restricted. Contact the admin.' });
     }
@@ -326,11 +354,13 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    let { username } = req.body;
+    const { password } = req.body;
     if (typeof username !== 'string' || typeof password !== 'string') {
       audit('login_failed', { reason: 'invalid_input' }, req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    username = username.trim().toLowerCase();
     const user = await db.users.findOne({ username });
     if (!user || !(await bcrypt.compare(password, user.password))) {
       audit('login_failed', { username, reason: 'invalid_credentials' }, req);
@@ -374,7 +404,7 @@ app.post('/api/auth/google', async (req, res) => {
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
     if (!payload.email_verified) return res.status(403).json({ error: 'Email not verified' });
-    const email = payload.email;
+    const email = (payload.email || '').toLowerCase();
     const googleId = payload.sub;
 
     // Find or create user by Google ID
@@ -452,10 +482,12 @@ app.post('/api/admin/merge-accounts', auth, requireAdmin, async (req, res) => {
 // ── Reset password (admin only) ───────────────────────────
 app.post('/api/admin/reset-password', auth, requireAdmin, async (req, res) => {
   try {
-    const { username, newPassword } = req.body;
+    let { username } = req.body;
+    const { newPassword } = req.body;
     if (typeof username !== 'string' || typeof newPassword !== 'string' || !username || !newPassword) {
       return res.status(400).json({ error: 'username and newPassword required' });
     }
+    username = username.trim().toLowerCase();
     const user = await db.users.findOne({ username });
     if (!user) return res.status(404).json({ error: `User "${username}" not found` });
     const hash = await bcrypt.hash(newPassword, 10);
@@ -1581,6 +1613,10 @@ app.post('/api/places/sync', auth, async (req, res) => {
 // Bulk sync — accepts array of { id, name, lat, lng }
 // Skips locations that already have googleRating (already synced)
 // Adds _googleSyncedAt timestamp so we don't re-sync
+// Per-endpoint rate limit for bulk-sync — each request hits Google Places up
+// to 50× (~$0.032/call). Global 200/min would allow ~10k calls/min on a shared
+// key. Cap at 5 batches/min/user = 250 syncs/min — generous for real use.
+app.use('/api/places/bulk-sync', rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 5 }));
 app.post('/api/places/bulk-sync', auth, async (req, res) => {
   const placesKey = await getPlacesKey(req.user.id);
   if (!placesKey) return res.status(501).json({ error: 'Google Places API not configured' });

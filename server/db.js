@@ -12,6 +12,10 @@ const transits = Datastore.create({ filename: path.join(dataDir, 'transits.db'),
 
 const auditLog = Datastore.create({ filename: path.join(dataDir, 'audit.db'), autoload: true });
 
+// Durable JWT revocation list — survives restarts so an explicit logout can't
+// be undone by a process recycle while the token's 30-day TTL is still live.
+const revokedTokens = Datastore.create({ filename: path.join(dataDir, 'revoked-tokens.db'), autoload: true });
+
 users.ensureIndex({ fieldName: 'username', unique: true });
 users.ensureIndex({ fieldName: 'googleId', sparse: true });
 locations.ensureIndex({ fieldName: 'userId' });
@@ -19,5 +23,6 @@ trips.ensureIndex({ fieldName: 'userId' });
 collections.ensureIndex({ fieldName: 'userId' });
 transits.ensureIndex({ fieldName: 'userId' });
 auditLog.ensureIndex({ fieldName: 'timestamp' });
+revokedTokens.ensureIndex({ fieldName: 'jti', unique: true });
 
-module.exports = { users, locations, trips, collections, transits, auditLog };
+module.exports = { users, locations, trips, collections, transits, auditLog, revokedTokens };

@@ -214,7 +214,7 @@ describe('Google SSO: rejects unverified emails', () => {
   test('email_verified check appears before email is used', () => {
     const googleRouteIdx = serverSrc.indexOf("app.post('/api/auth/google'");
     const verifiedIdx = serverSrc.indexOf('email_verified', googleRouteIdx);
-    const emailIdx = serverSrc.indexOf('const email = payload.email', googleRouteIdx);
+    const emailIdx = serverSrc.indexOf('const email = (payload.email', googleRouteIdx);
     expect(verifiedIdx).toBeGreaterThan(-1);
     expect(emailIdx).toBeGreaterThan(verifiedIdx);
   });

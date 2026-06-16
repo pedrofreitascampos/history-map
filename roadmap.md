@@ -4,7 +4,47 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1573 jest (3 skip) · Museum emoji 🏛️→🏺 (collision fix).
+**2026-06-16:** 1578 jest (3 skip) · Museum emoji 🏛️→🏺 (collision fix) · **5-dimension audit done — see below.**
+
+## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
+
+Five parallel auditors; findings validated against source. Sequencing:
+
+### This week (security + durability)
+- [ ] **render.yaml is STALE** — declares `plan: free` + no `disk:` block; does NOT match live deploy (user confirmed NOT free tier). Durability = persistent disk mounted at `/data` (`db.js:5`), not plan tier. **Action: confirm dashboard disk mount, then sync render.yaml to reality.** (NOT the "existential data loss" the auditors claimed — that was a wrong inference from the stale file.)
+- [ ] **Durable JWT revocation** — `revokedJtis` is in-memory (`index.js:219`); restart un-revokes every logged-out 30-day token. Persist to NeDB, load on startup, keep 6h prune.
+- [ ] **`/api/places/bulk-sync` cost cap** — only under global 200/min → up to ~10k Google Places calls/min on a shared key (`index.js:1584`). Add dedicated `rateLimit({max:5/min})`.
+- [ ] **Username case-bypass** — register allowlist-checks `.toLowerCase()` (`index.js:305`) but reads/inserts raw case (`:310/:317`) → `PEDRO@…` creates a distinct account. Normalize lowercase at register + login + SSO.
+- [ ] **`share.html` Leaflet missing SRI** (`share.html:46`) — every other CDN script is hashed.
+
+### Quick wins (perf + hygiene, ~½ day)
+- [ ] `<link rel=preconnect>` for unpkg/jsdelivr/fonts (saves 200–400ms/origin cold). *(fonts already have display=swap; Chart/JSZip/exifr already deferred — auditor over-reported.)*
+- [ ] `Cache-Control: immutable` for `admin1.json` (3.4 MB) + `cities.json` (4.4 MB) — currently re-fetched + re-parsed every Regions view.
+- [ ] Memoize `computeStats()` (`index.html:6787`) with the generation-counter guard.
+- [ ] `runBackup` `fs.writeFileSync` → `await fs.promises.writeFile` (`index.js:1748`) — unblocks event loop.
+- [ ] Add `/healthz` route (Render probes `/` today, paying nonce+template+gzip).
+- [ ] `defer` Leaflet trio (lines 18–20) — **verify inline script doesn't touch `L` at top level first.**
+- [ ] Drop SW `/api/*` caching (`sw.js:57`) — cross-user leak on shared device; near-zero offline value.
+- [ ] Delete dead `scripts/convert-inline-handlers.js`.
+
+### Next sprint (system + a11y + code)
+- [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
+- [ ] Proxy + throttle geocoding (Nominatim 1 req/s fair-use; bulk import risks IP ban — standing concern).
+- [ ] async-route wrapper on all routes (28/44 lack try/catch → unhandled-rejection crash class).
+- [ ] ARIA: `switchView`/`switchStatsTab` set `aria-current`/`aria-selected`; dynamic confirm/prompt overlays need `role=dialog`+`aria-modal`+focus-trap.
+- [ ] Per-theme category colors (`--cat-*` not in THEMES → Parchment fails WCAG AA; Volcano accent ≡ restaurant red).
+- [ ] Touch targets: map-tools/zoom 36px & tag-remove × 24px → 44px; 9px marker fonts → 11px.
+- [ ] Encrypt per-user API keys at rest (`index.js:1259`); shared env-key usage admin-only.
+- [ ] Extract shared sanitizer primitives (4× duplication); migrate 4 leftover `onclick=` to data-click.
+- [ ] `_idxAddLoc` set `l._region` + bump `stateIndex.generation` (diverges from rebuildIndexes).
+
+### Design discussion (don't ship unilaterally)
+- Nav 10→~6 tabs + overflow (NOTE: prior nav-collapse was user-rejected 2026-06-12).
+- Merge Regions into Map as a choropleth layer; rename "Plan" (its HTML comment still says WISHLIST VIEW); Map=Plan=🗺️ collision.
+- More emoji/color collisions: festival≡event color, museum(🏺)≡show(🎭) color.
+
+### Cool ideas (delight ÷ effort)
+- "On This Day" → one-tap Replay · Year-in-Review shareable card (reuse WebM export path) · collection completion rings · isochrone wishlist scoring (Valhalla already in CSP) · `?` keyboard-shortcut overlay + ⌘K quick-add · LLM trip-journal from visits · per-category marker style.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
