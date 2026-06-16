@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1578 jest (3 skip) · Museum emoji 🏛️→🏺 (collision fix) · **5-dimension audit done — see below.**
+**2026-06-16:** 1602 jest (3 skip) · Audit batches shipped (security + perf) · `computeStats()` memoized.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -25,7 +25,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [x] `defer` Leaflet trio — verified safe (`L` only touched at runtime; initMap runs on DOMContentLoaded). Inverted the stale "stays blocking" guard.
 - [x] Drop SW `/api/*` caching (cross-user leak); bumped CACHE_VER v1→v2.
 - [x] Delete dead `scripts/convert-inline-handlers.js`.
-- [ ] **Still TODO:** memoize `computeStats()` (`index.html:6787`) with the generation-counter guard — deferred (needs careful read of the function; lower risk to do separately).
+- [x] **Memoize `computeStats()`** — `_statsCache`/`_statsCacheGen` guard; O(1) on repeat Stats tab switches (same pattern as `getFilteredLocations`).
 
 ### Next sprint (system + a11y + code)
 - [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
