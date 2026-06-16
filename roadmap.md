@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1620 jest (3 skip) · Audit batches · `computeStats()` memoized · async-route safety · `onclick=` eliminated · `sanitizeNotes` extracted.
+**2026-06-16:** 1633 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -31,7 +31,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
 - [ ] Proxy + throttle geocoding (Nominatim 1 req/s fair-use; bulk import risks IP ban — standing concern).
 - [x] **async-route wrapper** — one-time method patch before first route; all 28 previously-unprotected handlers now call `next(err)` on rejection.
-- [ ] ARIA: `switchView`/`switchStatsTab` set `aria-current`/`aria-selected`; dynamic confirm/prompt overlays need `role=dialog`+`aria-modal`+focus-trap.
+- [x] **ARIA tabs + dialogs** — `role="tablist"/"tab"` + `aria-selected` on nav + stats tabs; `switchView`/`switchStatsTab` keep them in sync; `_trapFocus` helper + `role="dialog"` + `aria-modal` + focus restore + Escape on all 3 overlays.
 - [ ] Per-theme category colors (`--cat-*` not in THEMES → Parchment fails WCAG AA; Volcano accent ≡ restaurant red).
 - [ ] Touch targets: map-tools/zoom 36px & tag-remove × 24px → 44px; 9px marker fonts → 11px.
 - [ ] Encrypt per-user API keys at rest (`index.js:1259`); shared env-key usage admin-only.
