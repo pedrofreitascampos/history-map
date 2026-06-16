@@ -126,10 +126,94 @@ describe('Stats tabs — switchStatsTab function', () => {
 
   test('switchStatsTab handles overview tab resize', () => {
     const fnStart = html.indexOf('function switchStatsTab(');
-    const fnSlice = html.substring(fnStart, fnStart + 600);
+    const fnSlice = html.substring(fnStart, fnStart + 800);
     expect(fnSlice).toContain("'overview'");
     expect(fnSlice).toContain('chartRatings');
     expect(fnSlice).toContain('chartActivity');
+  });
+});
+
+describe('ARIA — nav tabs', () => {
+  test('nav has role="tablist" and aria-label', () => {
+    expect(html).toMatch(/class="nav-tabs"\s+role="tablist"/);
+    expect(html).toContain('aria-label="Views"');
+  });
+
+  test('every nav-tab button has role="tab"', () => {
+    const matches = html.match(/class="nav-tab[^"]*"\s+role="tab"/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(10);
+  });
+
+  test('initial Map tab has aria-selected="true", others have false', () => {
+    const mapBtn = html.match(/class="nav-tab active"[^>]*>/)?.[0] || '';
+    expect(mapBtn).toContain('aria-selected="true"');
+    // Count false — should be at least 9
+    const falseCount = (html.match(/aria-selected="false"/g) || []).length;
+    expect(falseCount).toBeGreaterThanOrEqual(9);
+  });
+
+  test('switchView sets aria-selected on the active tab', () => {
+    const fnStart = html.indexOf('function switchView(');
+    const fnSlice = html.substring(fnStart, fnStart + 600);
+    expect(fnSlice).toContain('aria-selected');
+    expect(fnSlice).toContain("setAttribute('aria-selected', 'true')");
+  });
+});
+
+describe('ARIA — stats tabs', () => {
+  test('stats-tabs div has aria-label', () => {
+    expect(html).toContain('aria-label="Statistics views"');
+  });
+
+  test('initial Overview stats-tab has aria-selected="true"', () => {
+    expect(html).toMatch(/class="stats-tab active"\s+role="tab"\s+aria-selected="true"/);
+  });
+
+  test('switchStatsTab sets aria-selected', () => {
+    const fnStart = html.indexOf('function switchStatsTab(');
+    const fnSlice = html.substring(fnStart, fnStart + 400);
+    expect(fnSlice).toContain("setAttribute('aria-selected'");
+  });
+});
+
+describe('ARIA — dialog overlays', () => {
+  test('_trapFocus helper is defined', () => {
+    expect(html).toContain('function _trapFocus(');
+  });
+
+  test('showConfirm box has role="dialog" and aria-modal="true"', () => {
+    const fnStart = html.indexOf('function showConfirm(');
+    const fnSlice = html.substring(fnStart, fnStart + 500);
+    expect(fnSlice).toContain('role="dialog"');
+    expect(fnSlice).toContain('aria-modal="true"');
+    expect(fnSlice).toContain('aria-labelledby=');
+  });
+
+  test('showPrompt box has role="dialog" and aria-modal="true"', () => {
+    const fnStart = html.indexOf('function showPrompt(');
+    const fnSlice = html.substring(fnStart, fnStart + 500);
+    expect(fnSlice).toContain('role="dialog"');
+    expect(fnSlice).toContain('aria-modal="true"');
+  });
+
+  test('showMultiPrompt box has role="dialog" and aria-modal="true"', () => {
+    const fnStart = html.indexOf('function showMultiPrompt(');
+    const fnSlice = html.substring(fnStart, fnStart + 1500);
+    expect(fnSlice).toContain('role="dialog"');
+    expect(fnSlice).toContain('aria-modal="true"');
+  });
+
+  test('showConfirm restores focus on close', () => {
+    const fnStart = html.indexOf('function showConfirm(');
+    const fnSlice = html.substring(fnStart, fnStart + 1200);
+    expect(fnSlice).toContain('prevFocus');
+    expect(fnSlice).toContain('prevFocus?.focus()');
+  });
+
+  test('showConfirm closes on Escape', () => {
+    const fnStart = html.indexOf('function showConfirm(');
+    const fnSlice = html.substring(fnStart, fnStart + 2000);
+    expect(fnSlice).toContain("'Escape'");
   });
 });
 

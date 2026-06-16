@@ -2794,7 +2794,7 @@ describe('Edit modal declutter — Light + cut Lat/Lng + cut Visits list (2026-0
 // `onConfirm is not a function`. These tests pin the dual-mode contract.
 const describeDom = JSDOM ? describe : describe.skip;
 describeDom('showConfirm contract (regression)', () => {
-  const src = extractFunction('showConfirm');
+  const src = extractFunction('_trapFocus') + '\n' + extractFunction('showConfirm');
 
   function mount(onConfirm) {
     const dom = new JSDOM('<!DOCTYPE html><body></body>');
