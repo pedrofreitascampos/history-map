@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1602 jest (3 skip) · Audit batches shipped (security + perf) · `computeStats()` memoized.
+**2026-06-16:** 1611 jest (3 skip) · Audit batches shipped · `computeStats()` memoized · async-route safety patch.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -30,7 +30,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 ### Next sprint (system + a11y + code)
 - [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
 - [ ] Proxy + throttle geocoding (Nominatim 1 req/s fair-use; bulk import risks IP ban — standing concern).
-- [ ] async-route wrapper on all routes (28/44 lack try/catch → unhandled-rejection crash class).
+- [x] **async-route wrapper** — one-time method patch before first route; all 28 previously-unprotected handlers now call `next(err)` on rejection.
 - [ ] ARIA: `switchView`/`switchStatsTab` set `aria-current`/`aria-selected`; dynamic confirm/prompt overlays need `role=dialog`+`aria-modal`+focus-trap.
 - [ ] Per-theme category colors (`--cat-*` not in THEMES → Parchment fails WCAG AA; Volcano accent ≡ restaurant red).
 - [ ] Touch targets: map-tools/zoom 36px & tag-remove × 24px → 44px; 9px marker fonts → 11px.
