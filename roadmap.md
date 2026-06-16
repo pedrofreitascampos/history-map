@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1611 jest (3 skip) · Audit batches shipped · `computeStats()` memoized · async-route safety patch.
+**2026-06-16:** 1620 jest (3 skip) · Audit batches · `computeStats()` memoized · async-route safety · `onclick=` eliminated · `sanitizeNotes` extracted.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -35,8 +35,9 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [ ] Per-theme category colors (`--cat-*` not in THEMES → Parchment fails WCAG AA; Volcano accent ≡ restaurant red).
 - [ ] Touch targets: map-tools/zoom 36px & tag-remove × 24px → 44px; 9px marker fonts → 11px.
 - [ ] Encrypt per-user API keys at rest (`index.js:1259`); shared env-key usage admin-only.
-- [ ] Extract shared sanitizer primitives (4× duplication); migrate 4 leftover `onclick=` to data-click.
-- [ ] `_idxAddLoc` set `l._region` + bump `stateIndex.generation` (diverges from rebuildIndexes).
+- [x] **`onclick=` → `data-click`** — all 5 removed (clearRegionFilter chip, 3× Leaflet popups, share-link-url); `ACTIONS.selectInput` added.
+- [x] **`sanitizeNotes` extraction** — shared helper; `sanitizeTripUpdate` and `sanitizeTransitUpdate` now strip `<script>`/`javascript:` from notes (was location-only).
+- [x] `_idxAddLoc`/`_idxRemoveLoc` — already in sync with `rebuildIndexes`; roadmap item was stale.
 
 ### Design discussion (don't ship unilaterally)
 - Nav 10→~6 tabs + overflow (NOTE: prior nav-collapse was user-rejected 2026-06-12).
