@@ -4,7 +4,7 @@ Per-batch session log + full commit detail → `~/.claude/projects/C--Users-pedr
 
 ## Status
 
-**2026-06-16:** 1637 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs · Touch targets 44px.
+**2026-06-16:** 1648 jest (3 skip) · Audit batches · async-route safety · `onclick=` eliminated · `sanitizeNotes` · ARIA tabs + dialogs · Touch targets 44px · Offsite S3/R2 backup.
 
 ## 🔍 Audit 2026-06-16 (security · code · system · UI/UX · perf)
 
@@ -28,7 +28,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 - [x] **Memoize `computeStats()`** — `_statsCache`/`_statsCacheGen` guard; O(1) on repeat Stats tab switches (same pattern as `getFilteredLocations`).
 
 ### Next sprint (system + a11y + code)
-- [ ] Offsite backups: mirror `runBackup()` to R2/S3 (survives any infra loss).
+- [x] **Offsite backups** — `_uploadBackupToS3` fires after every local write; env-gated (`BACKUP_S3_BUCKET/ACCESS_KEY/SECRET_KEY`); soft-failure (`.catch` → log, never blocks); R2-compatible (`forcePathStyle`, `region=auto`); `.env.example` updated.
 - [ ] Proxy + throttle geocoding (Nominatim 1 req/s fair-use; bulk import risks IP ban — standing concern).
 - [x] **async-route wrapper** — one-time method patch before first route; all 28 previously-unprotected handlers now call `next(err)` on rejection.
 - [x] **ARIA tabs + dialogs** — `role="tablist"/"tab"` + `aria-selected` on nav + stats tabs; `switchView`/`switchStatsTab` keep them in sync; `_trapFocus` helper + `role="dialog"` + `aria-modal` + focus restore + Escape on all 3 overlays.

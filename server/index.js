@@ -11,6 +11,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const { OAuth2Client } = require('google-auth-library');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const db = require('./db');
 
 const app = express();
@@ -1778,6 +1779,30 @@ app.post('/api/places/discover', auth, async (req, res) => {
 const BACKUP_DIR = path.join(process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..', 'data')), 'backups');
 const MAX_BACKUPS_PER_USER = 7; // Keep last 7 daily backups
 
+// Optional offsite S3/R2 mirror — enabled only when all three env vars are set.
+const _s3Bucket = process.env.BACKUP_S3_BUCKET;
+const _s3Client = (_s3Bucket && process.env.BACKUP_S3_ACCESS_KEY && process.env.BACKUP_S3_SECRET_KEY)
+  ? new S3Client({
+      region: process.env.BACKUP_S3_REGION || 'auto',
+      endpoint: process.env.BACKUP_S3_ENDPOINT || undefined,
+      forcePathStyle: !!process.env.BACKUP_S3_ENDPOINT,
+      credentials: {
+        accessKeyId: process.env.BACKUP_S3_ACCESS_KEY,
+        secretAccessKey: process.env.BACKUP_S3_SECRET_KEY,
+      },
+    })
+  : null;
+
+async function _uploadBackupToS3(key, jsonString) {
+  if (!_s3Client) return;
+  await _s3Client.send(new PutObjectCommand({
+    Bucket: _s3Bucket,
+    Key: key,
+    Body: jsonString,
+    ContentType: 'application/json',
+  }));
+}
+
 async function runBackup() {
   try {
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -1805,8 +1830,17 @@ async function runBackup() {
         locations, trips, collections, transits,
       };
 
-      await fs.promises.writeFile(backupFile, JSON.stringify(backup));
+      const backupJson = JSON.stringify(backup);
+      await fs.promises.writeFile(backupFile, backupJson);
       log('info', 'backup_created', { username, locations: locations.length, trips: trips.length, collections: collections.length, transits: transits.length });
+
+      // Mirror to S3/R2 when configured — soft failure so local backup always wins.
+      if (_s3Client) {
+        const s3Key = `oikumene/${date}/${userId}_${date}.json`;
+        _uploadBackupToS3(s3Key, backupJson)
+          .then(() => log('info', 'backup_s3_uploaded', { username, key: s3Key }))
+          .catch(err => log('error', 'backup_s3_failed', { username, error: err.message }));
+      }
 
       // Prune old backups for this user
       const userBackups = fs.readdirSync(BACKUP_DIR)
