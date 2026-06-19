@@ -3962,6 +3962,8 @@ document.addEventListener('keydown', e => {
   if (dedupOv && dedupOv.style.display !== 'none') { closeDedupModal(); return; }
   const shareLinkOv = document.getElementById('share-link-modal');
   if (shareLinkOv && shareLinkOv.style.display !== 'none') { closeShareLinkModal(); return; }
+  const jOv = document.getElementById('journal-modal');
+  if (jOv && jOv.classList.contains('open')) { closeJournalModal(); return; }
   const qaOv2 = document.getElementById('quick-add-modal');
   if (qaOv2 && qaOv2.classList.contains('open')) { closeQuickAddModal(); return; }
   const modals = ['shortcuts-modal', 'fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
@@ -9488,6 +9490,7 @@ function renderTripDetail(trip, tripLocs) {
         <h3 style="font-family:var(--font-display);font-size:18px;margin:0;">${esc(trip.name)}</h3>
         <div style="font-size:12px;color:var(--text-muted);">${dates.map(d => formatDate(d)).join(' → ') || 'No dates set'}${duration ? ' · ' + duration : ''}</div>
       </div>
+      <button class="btn btn-secondary" data-click="generateTripJournal" data-arg0="${trip.id}" style="font-size:12px;padding:4px 10px;" title="Generate AI travel journal" id="journal-gen-btn">✍️</button>
       <button class="btn btn-danger" data-click="deleteTrip" data-arg0="${trip.id}" style="font-size:12px;padding:4px 10px;" title="Delete trip">🗑️</button>
     </div>
 
@@ -11431,6 +11434,55 @@ function quickAddPick(el) {
   openAddModal(parseFloat(r.lat).toFixed(6), parseFloat(r.lon).toFixed(6));
   document.getElementById('loc-name').value = (r.name || r.display_name || '').split(',')[0].trim();
   document.getElementById('loc-address').value = r.display_name || '';
+}
+
+/* ── Trip journal (AI prose generation) ── */
+async function generateTripJournal(tripId) {
+  const trip = stateIndex.tripById.get(tripId);
+  if (!trip) return;
+  let tripLocs = [...(stateIndex.locationsByTrip.get(tripId) || [])];
+  tripLocs = sortTripLocations(tripLocs);
+  if (!tripLocs.length) { showToast('No stops in this trip to journal', 'error'); return; }
+
+  const stops = tripLocs.map(loc => ({
+    name: loc.name,
+    category: loc.category || null,
+    visitDate: (loc.visits || []).map(v => v.date).filter(Boolean).sort()[0] || null,
+    myRating: loc.myRating || null,
+    notes: loc.notes ? loc.notes.slice(0, 200) : null,
+  }));
+
+  const btn = document.getElementById('journal-gen-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    const data = await api('POST', `/trips/${tripId}/journal`, { stops });
+    openJournalModal(trip.name, data.journal);
+  } catch (err) {
+    showToast(err.message || 'Journal generation failed', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✍️'; }
+  }
+}
+
+function openJournalModal(tripName, text) {
+  document.getElementById('journal-modal-title').textContent = `✍️ ${tripName}`;
+  document.getElementById('journal-modal-body').textContent = text;
+  const m = document.getElementById('journal-modal');
+  _lastFocusedElement = document.activeElement;
+  m.classList.add('open');
+  setTimeout(() => { const b = m.querySelector('button'); if (b) b.focus(); }, 50);
+}
+
+function closeJournalModal() {
+  document.getElementById('journal-modal').classList.remove('open');
+  restoreFocus();
+}
+
+function copyJournalText() {
+  const text = document.getElementById('journal-modal-body').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Copied to clipboard!', 'success'))
+    .catch(() => showToast('Copy failed', 'error'));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -14671,6 +14723,21 @@ async function _handlePhotoFiles(fileList) {
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-secondary" data-click="revokeShareLink" style="font-size:12px;margin-right:auto;">Revoke</button>
       <button class="btn btn-secondary" data-click="closeShareLinkModal">Close</button>
+    </div>
+  </div>
+</div>
+<div id="journal-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="journal-modal-title">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 class="modal-title" id="journal-modal-title" style="font-size:16px;"></h3>
+      <button class="modal-close" data-click="closeJournalModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:16px 24px;">
+      <p id="journal-modal-body" style="font-size:14px;line-height:1.75;white-space:pre-wrap;color:var(--text-primary);margin:0;"></p>
+    </div>
+    <div class="modal-footer" style="padding:12px 24px 20px;display:flex;gap:8px;">
+      <button class="btn btn-secondary" style="flex:1;" data-click="copyJournalText">📋 Copy</button>
+      <button class="btn btn-secondary" style="flex:1;" data-click="closeJournalModal">Close</button>
     </div>
   </div>
 </div>

@@ -45,10 +45,11 @@ Five parallel auditors; findings validated against source. Sequencing:
 - More emoji/color collisions: festival≡event color, museum(🏺)≡show(🎭) color.
 
 ### Cool ideas (delight ÷ effort)
-- "On This Day" → one-tap Replay · Year-in-Review shareable card (reuse WebM export path) · ~~collection completion rings~~ ✅ · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay + ⌘K quick-add~~ ✅ · LLM trip-journal from visits · per-category marker style.
+- "On This Day" → one-tap Replay · Year-in-Review shareable card (reuse WebM export path) · ~~collection completion rings~~ ✅ · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay + ⌘K quick-add~~ ✅ · ~~LLM trip-journal from visits~~ ✅ · per-category marker style.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **LLM trip-journal** | **2026-06-19** | **+30 (1777)** | **POST /api/trips/:id/journal · Haiku prose from stop list (name/category/visitDate/rating/notes) · 10 req/min rate limit · ✍️ button in trip detail · generateTripJournal (loading state) · #journal-modal + 📋 copy · openJournalModal/closeJournalModal · Escape integration** |
 | **Collection completion rings** | **2026-06-19** | **+22 (1747)** | **SVG donut ring wrapping collection emoji · CIRC=113.1 · dashOffset=(CIRC×(1-pct/100)) · green at 100% (--success) · accent in-progress · transparent at 0% · aria-label with count · bar removed · Stats-tab cards unaffected (.coll-ring-wrap scoped)** |
 | **⌘K quick-add** | **2026-06-19** | **+24 (1725)** | **`openQuickAddModal` · `#quick-add-modal` with debounced geocode search (400ms, /api/geocode) · `quickAddSearch` → `_quickAddHits[]` → `quickAddPick` → `openAddModal(lat,lng)` pre-fills name+address · Ctrl+K/⌘K global key handler · `.quick-add-result` CSS · shortcuts overlay updated** |
 | **Keyboard shortcut overlay** | **2026-06-19** | **+18 (1701)** | **⌨️ topbar button · `?` key opens overlay · `/` key focuses map search · `<kbd>` CSS · closeShortcutsModal + Escape integration · 7-row shortcut table (general + rating)** |

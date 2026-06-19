@@ -138,7 +138,7 @@ describe('Quick-add — keyboard handler', () => {
 describe('Quick-add — Escape integration', () => {
   test('Escape closes quick-add-modal via closeQuickAddModal', () => {
     const escIdx = html.indexOf("e.key !== 'Escape'");
-    const slice = html.slice(escIdx, escIdx + 1200);
+    const slice = html.slice(escIdx, escIdx + 1600);
     expect(slice).toContain('quick-add-modal');
     expect(slice).toContain('closeQuickAddModal()');
   });

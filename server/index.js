@@ -911,6 +911,67 @@ app.post('/api/trips/narrate', auth, async (req, res) => {
   }
 });
 
+// ── Trip journal (structure → prose) ─────────────────────
+app.use('/api/trips/:id/journal', rateLimit({ windowMs: 60 * 1000, max: isTest ? 10000 : 10 }));
+app.post('/api/trips/:id/journal', auth, async (req, res) => {
+  const trip = await db.trips.findOne({ _id: req.params.id, userId: req.user.id });
+  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+
+  const apiKey = await getAnthropicKey(req.user.id);
+  if (!apiKey) return res.status(501).json({ error: 'Anthropic API not configured. Add your key in Account settings.' });
+
+  const { stops } = req.body || {};
+  if (!Array.isArray(stops) || !stops.length) return res.status(400).json({ error: 'No stops provided' });
+  if (stops.length > 100) return res.status(400).json({ error: 'Too many stops (max 100)' });
+
+  let Anthropic;
+  try { Anthropic = require('@anthropic-ai/sdk'); }
+  catch { return res.status(500).json({ error: 'Anthropic SDK not installed on server' }); }
+
+  const tripInfo = [
+    `Trip: ${trip.name}`,
+    trip.startDate ? `Dates: ${trip.startDate}${trip.endDate ? ' to ' + trip.endDate : ''}` : '',
+  ].filter(Boolean).join('\n');
+
+  const stopText = stops.map((s, i) => {
+    const parts = [`${i + 1}. ${s.name}`];
+    if (s.category) parts.push(`(${s.category})`);
+    if (s.visitDate) parts.push(`visited ${s.visitDate}`);
+    if (s.myRating) parts.push(`rated ${s.myRating}/5`);
+    if (s.notes) parts.push(`— "${String(s.notes).slice(0, 200)}"`);
+    return parts.join(' ');
+  }).join('\n');
+
+  const client = new Anthropic.default({ apiKey });
+  const _t0 = Date.now();
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: 'You are a travel writer. Write vivid, personal travel journal entries in first person, past tense. Be evocative and specific about each place. Keep it between 150-250 words. No headers or bullet points — flowing prose only.',
+      messages: [{ role: 'user', content: `Write a travel journal entry for this trip:\n\n${tripInfo}\n\nStops:\n${stopText}` }],
+    });
+    const ms = Date.now() - _t0;
+    const journal = response.content.find(b => b.type === 'text')?.text || '';
+    if (!journal) {
+      log('warn', 'journal_empty', { userId: req.user.id, ms });
+      return res.status(502).json({ error: 'AI returned empty response' });
+    }
+    log('info', 'journal_api_call', {
+      userId: req.user.id, tripId: req.params.id, ms,
+      inputTokens: response.usage?.input_tokens || 0,
+      outputTokens: response.usage?.output_tokens || 0,
+    });
+    res.json({ journal });
+  } catch (err) {
+    log('warn', 'journal_api_error', { userId: req.user.id, status: err.status || 0 });
+    const msg = err.status === 401 ? 'Anthropic API key rejected' :
+                err.status === 429 ? 'Rate limited by Anthropic' :
+                'Anthropic API error';
+    res.status(502).json({ error: msg });
+  }
+});
+
 // ── Website Import ───────────────────────────────────────
 const WEBSITE_IMPORT_ADAPTERS = [
   { pattern: /^(www\.)?timeout\./i, name: 'timeout', parse: require('./import-adapters/timeout').parseTimeoutArticle },

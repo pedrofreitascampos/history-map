@@ -184,7 +184,7 @@ describe('Year in Review — static markup', () => {
   });
 
   test('Escape handler closes yr-overlay before modals', () => {
-    const escBlock = indexHtml.match(/key !== 'Escape'[\s\S]{0,1200}const modals = \[/);
+    const escBlock = indexHtml.match(/key !== 'Escape'[\s\S]{0,1800}const modals = \[/);
     expect(escBlock).not.toBeNull();
     const block = escBlock[0];
     const yrPos = block.indexOf('year-review-overlay');
