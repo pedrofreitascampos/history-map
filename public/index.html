@@ -3153,21 +3153,21 @@ function _delegate(eventName, dataKey) {
 /* DATA MODEL & CONSTANTS                                                */
 /* ═══════════════════════════════════════════════════════════════════════ */
 const CATEGORIES = {
-  restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)', hasPrice: true },
-  hotel:      { emoji: '🛏️', label: 'Sleep', color: 'var(--cat-hotel)', hasPrice: true },
-  bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)', hasPrice: true },
-  club:       { emoji: '🎶', label: 'Club', color: 'var(--cat-club)', hasPrice: true },
-  monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)' },
-  museum:     { emoji: '🏺', label: 'Museum', color: 'var(--cat-entertainment)', hasPrice: true },
-  park:       { emoji: '🌿', label: 'Nature', color: 'var(--cat-park)' },
-  stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)' },
+  restaurant: { emoji: '🍽️', label: 'Restaurant', color: 'var(--cat-restaurant)', hasPrice: true, shape: 'squircle' },
+  hotel:      { emoji: '🛏️', label: 'Sleep', color: 'var(--cat-hotel)', hasPrice: true, shape: 'squircle' },
+  bar:        { emoji: '🍸', label: 'Bar', color: 'var(--cat-bar)', hasPrice: true, shape: 'squircle' },
+  club:       { emoji: '🎶', label: 'Club', color: 'var(--cat-club)', hasPrice: true, shape: 'squircle' },
+  monument:   { emoji: '🏛️', label: 'Monument', color: 'var(--cat-monument)', shape: 'teardrop' },
+  museum:     { emoji: '🏺', label: 'Museum', color: 'var(--cat-entertainment)', hasPrice: true, shape: 'teardrop' },
+  park:       { emoji: '🌿', label: 'Nature', color: 'var(--cat-park)', shape: 'glyph' },
+  stadium:    { emoji: '🏟️', label: 'Stadium', color: 'var(--cat-stadium)', shape: 'squircle' },
   festival:   { emoji: '🎪', label: 'Festival', color: 'var(--cat-event)' },
   event:      { emoji: '🎫', label: 'Event', color: 'var(--cat-event)' },
-  location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)' },
-  airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)' },
-  show:       { emoji: '🎭', label: 'Show', color: 'var(--cat-entertainment)' },
-  shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)', hasPrice: true },
-  cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)', hasPrice: true },
+  location:   { emoji: '📍', label: 'Location', color: 'var(--cat-location)', shape: 'teardrop' },
+  airport:    { emoji: '✈️', label: 'Airport', color: 'var(--cat-airport)', shape: 'teardrop' },
+  show:       { emoji: '🎭', label: 'Show', color: 'var(--cat-entertainment)', shape: 'squircle' },
+  shopping:   { emoji: '🛍️', label: 'Shopping', color: 'var(--cat-shopping)', hasPrice: true, shape: 'squircle' },
+  cafe:       { emoji: '☕', label: 'Café', color: 'var(--cat-cafe)', hasPrice: true, shape: 'squircle' },
 };
 
 // CSS var → hex lookup for contexts that need raw hex (Leaflet, Chart.js, canvas)
@@ -3816,7 +3816,9 @@ function createMarkerIcon(loc, opts) {
     ratingLabel += `<span class="marker-rating">${typeof rl === 'number' ? rl.toFixed(1) : esc(String(rl))}</span>`;
   }
 
-  const style = (state && state.markerStyle) || 'circle';
+  const globalStyle = (state && state.markerStyle) || 'circle';
+  const catShape = (CATEGORIES[loc.category] && CATEGORIES[loc.category].shape) || 'circle';
+  const style = globalStyle === 'circle' ? catShape : globalStyle;
   const styleClass = style === 'circle' ? '' : ' style-' + style;
   const emojiChar = esc(pickMarkerEmoji(loc, opts));
 
