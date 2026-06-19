@@ -45,10 +45,11 @@ Five parallel auditors; findings validated against source. Sequencing:
 - More emoji/color collisions: festival≡event color, museum(🏺)≡show(🎭) color.
 
 ### Cool ideas (delight ÷ effort)
-- "On This Day" → one-tap Replay · Year-in-Review shareable card (reuse WebM export path) · collection completion rings · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay~~ ✅ + ⌘K quick-add · LLM trip-journal from visits · per-category marker style.
+- "On This Day" → one-tap Replay · Year-in-Review shareable card (reuse WebM export path) · collection completion rings · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay + ⌘K quick-add~~ ✅ · LLM trip-journal from visits · per-category marker style.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **⌘K quick-add** | **2026-06-19** | **+24 (1725)** | **`openQuickAddModal` · `#quick-add-modal` with debounced geocode search (400ms, /api/geocode) · `quickAddSearch` → `_quickAddHits[]` → `quickAddPick` → `openAddModal(lat,lng)` pre-fills name+address · Ctrl+K/⌘K global key handler · `.quick-add-result` CSS · shortcuts overlay updated** |
 | **Keyboard shortcut overlay** | **2026-06-19** | **+18 (1701)** | **⌨️ topbar button · `?` key opens overlay · `/` key focuses map search · `<kbd>` CSS · closeShortcutsModal + Escape integration · 7-row shortcut table (general + rating)** |
 | **Google Maps share-target** | **2026-06-16** | **+25 (1573)** | **manifest share_target (GET /share-target) · sw.js offline fallback · _parseGoogleMapsCoords · _handleGoogleMapsShare + geocode fallback · _initGoogleMapsShareTarget (URLSearchParams) · _setBookmarkletHref · import guide: Android PWA + drag-to-bookmark link** |
 | **Regions filter** | **2026-06-16** | **+24 (1548)** | **🗺️ View on Atlas button in all 3 region popups · sidebar filter chip (📍 label + × dismiss) · filterAtlasByLocs / clearRegionFilter · drill-down fitBounds zoom on region/country click · state.filters.regionLocs fast-exit** |

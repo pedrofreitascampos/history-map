@@ -2695,10 +2695,11 @@ describe('Sidebar+modal restructure (2026-05-31)', () => {
     expect(indexHtml).not.toMatch(/id="loc-search-results"/);
   });
 
-  test('sidebar has map-search-input; quick-add-input replaced by FAB', () => {
+  test('sidebar has map-search-input; inline sidebar quick-add-input replaced by FAB + ⌘K modal', () => {
     expect(indexHtml).toMatch(/id="map-search-input"[^>]*placeholder="Search place"/);
-    expect(indexHtml).not.toMatch(/id="quick-add-input"/);
     expect(indexHtml).toMatch(/id="add-place-fab"/);
+    // #quick-add-input now lives inside #quick-add-modal (⌘K feature), not the sidebar
+    expect(indexHtml).toMatch(/id="quick-add-modal"[\s\S]{0,700}id="quick-add-input"/);
   });
 
   test('legacy bottom "+ Add New Location" button is gone', () => {

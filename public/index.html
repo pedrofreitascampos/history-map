@@ -673,6 +673,16 @@ kbd {
   border: 1px solid var(--border); border-radius: 4px;
   box-shadow: 0 1px 0 var(--border);
 }
+.quick-add-result {
+  display: block; width: 100%; text-align: left; padding: 10px 12px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 4px; cursor: pointer;
+  transition: background var(--transition); color: var(--text-primary);
+}
+.quick-add-result:hover, .quick-add-result:focus { background: var(--accent); color: #fff; }
+.quick-add-result:hover .qa-sub, .quick-add-result:focus .qa-sub { color: rgba(255,255,255,.8); }
+.qa-name { font-weight: 600; font-size: 14px; }
+.qa-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .modal-header {
   padding: 20px 24px 0; display: flex;
@@ -3938,6 +3948,8 @@ document.addEventListener('keydown', e => {
   if (dedupOv && dedupOv.style.display !== 'none') { closeDedupModal(); return; }
   const shareLinkOv = document.getElementById('share-link-modal');
   if (shareLinkOv && shareLinkOv.style.display !== 'none') { closeShareLinkModal(); return; }
+  const qaOv2 = document.getElementById('quick-add-modal');
+  if (qaOv2 && qaOv2.classList.contains('open')) { closeQuickAddModal(); return; }
   const modals = ['shortcuts-modal', 'fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
@@ -3960,6 +3972,16 @@ document.addEventListener('keydown', e => {
   if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
     const s = document.getElementById('map-search-input');
     if (s) { e.preventDefault(); s.focus(); s.select(); }
+  }
+});
+
+// ── ⌘K / Ctrl+K: quick-add modal (global, bypasses inInput guard) ──
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    const qaOv = document.getElementById('quick-add-modal');
+    if (qaOv && qaOv.classList.contains('open')) { closeQuickAddModal(); return; }
+    openQuickAddModal();
   }
 });
 
@@ -11329,6 +11351,63 @@ function closeShortcutsModal() {
   restoreFocus();
 }
 
+/* ── Quick-add (⌘K / Ctrl+K) ── */
+let _quickAddTimer = null, _quickAddHits = [];
+
+function openQuickAddModal() {
+  _lastFocusedElement = document.activeElement;
+  document.getElementById('quick-add-results').innerHTML = '';
+  const inp = document.getElementById('quick-add-input');
+  inp.value = '';
+  _quickAddHits = [];
+  document.getElementById('quick-add-modal').classList.add('open');
+  setTimeout(() => inp.focus(), 50);
+}
+
+function closeQuickAddModal() {
+  document.getElementById('quick-add-modal').classList.remove('open');
+  clearTimeout(_quickAddTimer);
+  restoreFocus();
+}
+
+function quickAddSearch(el) {
+  const q = el.value.trim();
+  clearTimeout(_quickAddTimer);
+  const res = document.getElementById('quick-add-results');
+  if (!q) { res.innerHTML = ''; _quickAddHits = []; return; }
+  res.innerHTML = '<p style="padding:8px 0;font-size:13px;color:var(--text-muted);">Searching…</p>';
+  _quickAddTimer = setTimeout(async () => {
+    try {
+      const hits = await api('GET', `/geocode?q=${encodeURIComponent(q)}&limit=5`);
+      _quickAddHits = Array.isArray(hits) ? hits : [];
+      const box = document.getElementById('quick-add-results');
+      if (!_quickAddHits.length) {
+        box.innerHTML = '<p style="padding:8px 0;font-size:13px;color:var(--text-muted);">No results.</p>';
+        return;
+      }
+      box.innerHTML = _quickAddHits.map((r, i) => {
+        const name = (r.name || r.display_name || '').split(',')[0].trim();
+        return `<button class="quick-add-result" role="listitem" data-click="quickAddPick" data-arg0="${i}">
+          <div class="qa-name">${esc(name)}</div>
+          <div class="qa-sub">${esc(r.display_name || '')}</div>
+        </button>`;
+      }).join('');
+    } catch {
+      document.getElementById('quick-add-results').innerHTML =
+        '<p style="padding:8px 0;font-size:13px;color:var(--text-muted);">Search failed — check connection.</p>';
+    }
+  }, 400);
+}
+
+function quickAddPick(el) {
+  const r = _quickAddHits[parseInt(el.dataset.arg0, 10)];
+  if (!r) return;
+  closeQuickAddModal();
+  openAddModal(parseFloat(r.lat).toFixed(6), parseFloat(r.lon).toFixed(6));
+  document.getElementById('loc-name').value = (r.name || r.display_name || '').split(',')[0].trim();
+  document.getElementById('loc-address').value = r.display_name || '';
+}
+
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* NARRATE-A-TRIP                                                         */
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -14570,6 +14649,23 @@ async function _handlePhotoFiles(fileList) {
     </div>
   </div>
 </div>
+<div id="quick-add-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="quick-add-title">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-body" style="padding:20px 20px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:20px;" aria-hidden="true">🔍</span>
+        <div style="flex:1;">
+          <label id="quick-add-title" style="display:block;font-weight:600;font-size:15px;margin-bottom:6px;">Quick Add Location</label>
+          <input id="quick-add-input" type="text" class="form-input" placeholder="Search for a place…"
+                 autocomplete="off" data-input="quickAddSearch">
+        </div>
+        <button class="modal-close" data-click="closeQuickAddModal" aria-label="Close">&times;</button>
+      </div>
+      <div id="quick-add-results" role="list" aria-live="polite"></div>
+      <p style="margin-top:10px;font-size:12px;color:var(--text-muted);">Select a result to open the add form · <kbd>Esc</kbd> to cancel</p>
+    </div>
+  </div>
+</div>
 <div id="shortcuts-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
@@ -14586,6 +14682,7 @@ async function _handlePhotoFiles(fileList) {
         </thead>
         <tbody>
           <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>?</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Open this overlay</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Quick add location</td></tr>
           <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>/</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Focus map search</td></tr>
           <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>Esc</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Close dialog / panel</td></tr>
           <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>Enter</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Confirm dialog</td></tr>
