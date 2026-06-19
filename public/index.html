@@ -6467,8 +6467,10 @@ async function saveLocation() {
     }
     stateIndex.generation++;
     _editSnapshot = null; // clear before close so dirty guard doesn't fire
+    const _wasNew = !state.editingId;
     closeModal();
     renderMarkers();
+    if (_wasNew && map) map.setView([lat, lng], Math.max(map.getZoom(), 15));
     populateFilterDropdowns();
     updateApprovalBadge();
   } catch (err) { showToast('Save failed: ' + err.message, 'error'); }
