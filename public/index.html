@@ -666,6 +666,13 @@ select.filter-select:focus { border-color: var(--accent); }
   animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+kbd {
+  display: inline-block; padding: 2px 6px; font-family: var(--font-mono, monospace);
+  font-size: 12px; font-weight: 600; line-height: 1.5;
+  color: var(--text-primary); background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border);
+}
 
 .modal-header {
   padding: 20px 24px 0; display: flex;
@@ -1710,6 +1717,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="btn-icon" data-click="exportData" title="Export Data" aria-label="Export Data">💾</button>
     <button class="btn-icon" data-click="openAccountModal" title="Account & Backups" aria-label="Account & Backups">👤</button>
     <button class="btn-icon" id="theme-toggle" data-click="cycleTheme" title="Change Theme" aria-label="Change Theme">🌙</button>
+    <button class="btn-icon" data-click="openShortcutsModal" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">⌨️</button>
     <div class="user-info">
       <span class="username" id="display-username"></span>
       <button class="btn-logout" data-click="logout">Sign out</button>
@@ -3930,7 +3938,7 @@ document.addEventListener('keydown', e => {
   if (dedupOv && dedupOv.style.display !== 'none') { closeDedupModal(); return; }
   const shareLinkOv = document.getElementById('share-link-modal');
   if (shareLinkOv && shareLinkOv.style.display !== 'none') { closeShareLinkModal(); return; }
-  const modals = ['fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
+  const modals = ['shortcuts-modal', 'fill-missing-modal', 'account-modal', 'trips-modal', 'people-modal', 'edit-modal', 'transit-modal', 'fr24-modal', 'attach-modal', 'narrate-modal', 'discover-modal', 'web-import-modal'];
   for (const id of modals) {
     const m = document.getElementById(id);
     if (m && m.classList.contains('open')) {
@@ -3939,6 +3947,19 @@ document.addEventListener('keydown', e => {
       restoreFocus();
       return;
     }
+  }
+});
+
+// ── ? key: open shortcuts overlay; / key: focus map search ──
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (inInput) return;
+  if (document.querySelector('.modal-overlay.open')) return;
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openShortcutsModal(); return; }
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+    const s = document.getElementById('map-search-input');
+    if (s) { e.preventDefault(); s.focus(); s.select(); }
   }
 });
 
@@ -11297,6 +11318,17 @@ function closeAccountModal() {
   restoreFocus();
 }
 
+function openShortcutsModal() {
+  const m = document.getElementById('shortcuts-modal');
+  focusModal(m);
+  m.classList.add('open');
+}
+
+function closeShortcutsModal() {
+  document.getElementById('shortcuts-modal').classList.remove('open');
+  restoreFocus();
+}
+
 /* ═══════════════════════════════════════════════════════════════════════ */
 /* NARRATE-A-TRIP                                                         */
 /* ═══════════════════════════════════════════════════════════════════════ */
@@ -14535,6 +14567,36 @@ async function _handlePhotoFiles(fileList) {
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-secondary" data-click="revokeShareLink" style="font-size:12px;margin-right:auto;">Revoke</button>
       <button class="btn btn-secondary" data-click="closeShareLinkModal">Close</button>
+    </div>
+  </div>
+</div>
+<div id="shortcuts-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 class="modal-title" id="shortcuts-title" style="font-size:18px;">⌨️ Keyboard Shortcuts</h3>
+      <button class="modal-close" data-click="closeShortcutsModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:16px 24px 8px;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:4px 0 8px;color:var(--text-muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;width:40%;">Key</th>
+            <th style="text-align:left;padding:4px 0 8px;color:var(--text-muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>?</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Open this overlay</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>/</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Focus map search</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>Esc</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Close dialog / panel</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>Enter</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Confirm dialog</td></tr>
+          <tr><td colspan="2" style="padding:12px 0 4px;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Rating (in edit modal)</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Adjust star / heart rating</td></tr>
+          <tr><td style="padding:6px 0;border-top:1px solid var(--border);"><kbd>Space</kbd></td><td style="padding:6px 0;border-top:1px solid var(--border);">Confirm rating</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer" style="padding:12px 24px 20px;">
+      <button class="btn btn-secondary" data-click="closeShortcutsModal">Close</button>
     </div>
   </div>
 </div>
