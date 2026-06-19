@@ -57,17 +57,18 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
     return { ctx, elements };
   }
 
-  function mockPhotonOk(feature) {
+  // Mock /api/geocode returning Nominatim-format array
+  function mockGeocodeOk(hit) {
     return () => Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ features: feature ? [feature] : [] }),
+      json: () => Promise.resolve(hit ? [hit] : []),
     });
   }
 
-  test('_autoGeocodeAddModalIfNeeded fills lat/lng + address from Photon', async () => {
-    const fetchImpl = mockPhotonOk({
-      geometry: { coordinates: [2.2945, 48.8584] }, // [lng, lat]
-      properties: { street: 'Champ de Mars', housenumber: '5 Av Anatole', city: 'Paris', country: 'France' },
+  test('_autoGeocodeAddModalIfNeeded fills lat/lng + address from geocode proxy', async () => {
+    const fetchImpl = mockGeocodeOk({
+      lat: '48.8584', lon: '2.2945',
+      display_name: 'Eiffel Tower, Champ de Mars, Paris, France',
     });
     const { ctx, elements } = makeAutoGeoCtx({ name: 'Eiffel Tower', fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
@@ -78,7 +79,7 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
 
   test('_autoGeocodeAddModalIfNeeded skipped when editing', async () => {
     let called = false;
-    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve({}) }); };
+    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve([]) }); };
     const { ctx } = makeAutoGeoCtx({ editingId: 'X1', fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
     expect(called).toBe(false);
@@ -86,7 +87,7 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
 
   test('_autoGeocodeAddModalIfNeeded skipped when both coords already set', async () => {
     let called = false;
-    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve({}) }); };
+    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve([]) }); };
     const { ctx } = makeAutoGeoCtx({ name: 'X', latVal: '10', lngVal: '20', fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
     expect(called).toBe(false);
@@ -94,31 +95,30 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
 
   test('_autoGeocodeAddModalIfNeeded skipped when name empty', async () => {
     let called = false;
-    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve({}) }); };
+    const fetchImpl = () => { called = true; return Promise.resolve({ ok: true, json: () => Promise.resolve([]) }); };
     const { ctx } = makeAutoGeoCtx({ name: '', fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
     expect(called).toBe(false);
   });
 
-  test('_autoGeocodeAddModalIfNeeded handles Photon failure gracefully', async () => {
+  test('_autoGeocodeAddModalIfNeeded handles network failure gracefully', async () => {
     const fetchImpl = () => Promise.reject(new Error('network error'));
     const { ctx, elements } = makeAutoGeoCtx({ fetchImpl });
-    // Should not throw
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
     expect(elements['loc-lat'].value).toBe('');
   });
 
-  test('_autoGeocodeAddModalIfNeeded handles empty features array', async () => {
-    const fetchImpl = mockPhotonOk(null);
+  test('_autoGeocodeAddModalIfNeeded handles empty results array', async () => {
+    const fetchImpl = mockGeocodeOk(null);
     const { ctx, elements } = makeAutoGeoCtx({ fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);
     expect(elements['loc-lat'].value).toBe('');
   });
 
   test('_autoGeocodeAddModalIfNeeded does not clobber address user typed during fetch', async () => {
-    const fetchImpl = mockPhotonOk({
-      geometry: { coordinates: [2.29, 48.85] },
-      properties: { city: 'Paris', country: 'France' },
+    const fetchImpl = mockGeocodeOk({
+      lat: '48.85', lon: '2.29',
+      display_name: 'Paris, France',
     });
     const { ctx, elements } = makeAutoGeoCtx({ addressVal: 'My address', fetchImpl });
     await vm.runInContext(`_autoGeocodeAddModalIfNeeded()`, ctx);

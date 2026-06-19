@@ -2424,7 +2424,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div class="form-row">
         <div class="form-group">
           <label>Name <a id="loc-google-maps-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--accent);text-decoration:none;margin-left:8px;font-weight:400;" title="Open in Google Maps">🗺️ View on Maps</a></label>
-          <input type="text" class="form-input" id="loc-name" placeholder="Location name">
+          <input type="text" class="form-input" id="loc-name" placeholder="Location name" data-focusout="_autoGeocodeAddModalIfNeeded">
         </div>
         <div class="form-group">
           <label>Address</label>
@@ -2435,7 +2435,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <!-- Enrich data: provider buttons fetch from Photon / Nominatim / Google
            and prompt the user to confirm which fields to apply (since enrichment
            may overwrite manually-entered data). -->
-      <div class="form-group" style="margin-bottom:14px;">
+      <div class="form-group" id="loc-enrich-section" style="margin-bottom:14px;display:none;">
         <label style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);">Enrich data <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted);font-size:12px;">— fetch fields from a provider, you'll confirm overwrites</span></label>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
           <button type="button" id="loc-photon-sync-btn" class="add-small-btn" data-click="syncPhotonFromEditModal" style="border-style:solid;font-size:12px;padding:6px 12px;" title="OpenStreetMap Fast (Photon by Komoot) — free">🌍 Fast</button>
@@ -5758,6 +5758,7 @@ function openAddModal(lat, lng) {
   document.getElementById('loc-google-rating').value = '';
   document.getElementById('loc-google-maps-link').style.display = 'none';
   document.getElementById('loc-google-sync-btn').style.display = 'none';
+  document.getElementById('loc-enrich-section').style.display = 'none';
   document.getElementById('loc-notes').value = '';
   document.getElementById('loc-cost').value = '';
   document.getElementById('loc-trip').value = '';
@@ -5812,6 +5813,7 @@ function openEditModal(id) {
   // Show sync button only if Google is the active search provider AND
   // Places API is configured. Provider selection (Account → Search Provider)
   // gates Google chrome end-to-end so Photon/Nominatim users don't see it.
+  document.getElementById('loc-enrich-section').style.display = '';
   const syncBtn = document.getElementById('loc-google-sync-btn');
   syncBtn.style.display = 'none';
   shouldUseGoogle().then(ok => { if (ok) syncBtn.style.display = ''; });
@@ -5900,21 +5902,15 @@ async function _autoGeocodeAddModalIfNeeded() {
   const name = (nameEl.value || '').trim();
   if (!name) return;
   try {
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(name)}&limit=1`;
-    const r = await fetch(url);
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(name)}&limit=1`);
     if (!r.ok) return;
-    const json = await r.json();
-    const feat = (json.features || [])[0];
-    if (!feat) return;
-    const coords = feat.geometry?.coordinates || [];
-    if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return;
-    if (!latEl.value) latEl.value = coords[1];
-    if (!lngEl.value) lngEl.value = coords[0];
-    const props = feat.properties || {};
-    const streetLine = [props.street, props.housenumber].filter(Boolean).join(' ');
-    const parts = [streetLine, props.city, props.state, props.country].filter(Boolean);
+    const hits = await r.json();
+    const hit = Array.isArray(hits) ? hits[0] : null;
+    if (!hit || !hit.lat || !hit.lon) return;
+    if (!latEl.value) latEl.value = parseFloat(hit.lat);
+    if (!lngEl.value) lngEl.value = parseFloat(hit.lon);
     const addressEl = document.getElementById('loc-address');
-    if (addressEl && !addressEl.value && parts.length) addressEl.value = parts.join(', ');
+    if (addressEl && !addressEl.value && hit.display_name) addressEl.value = hit.display_name;
   } catch {}
 }
 
