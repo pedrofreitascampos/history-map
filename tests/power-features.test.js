@@ -36,8 +36,8 @@ describe('On This Day — static markup', () => {
   });
 
   test('dismiss button uses data-click dispatcher (no inline handler)', () => {
-    expect(indexHtml).toMatch(/id="on-this-day-banner"[\s\S]{0,300}data-click="dismissOnThisDay"/);
-    expect(indexHtml).not.toMatch(/id="on-this-day-banner"[\s\S]{0,300}onclick=/);
+    expect(indexHtml).toMatch(/id="on-this-day-banner"[\s\S]{0,500}data-click="dismissOnThisDay"/);
+    expect(indexHtml).not.toMatch(/id="on-this-day-banner"[\s\S]{0,500}onclick=/);
   });
 
   test('checkOnThisDay function defined', () => {

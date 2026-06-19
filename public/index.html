@@ -1754,6 +1754,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div class="view active" id="map-view">
     <div id="on-this-day-banner" role="status" aria-live="polite" style="display:none">
       <span id="on-this-day-text"></span>
+      <button id="on-this-day-replay-btn" data-click="replayOnThisDay" title="Replay this day" style="margin-left:8px;background:none;border:none;cursor:pointer;font-size:13px;line-height:1;color:var(--accent);padding:0 4px;font-weight:600;" aria-label="Replay on this day">▶ Replay</button>
       <button data-click="dismissOnThisDay" aria-label="Dismiss">×</button>
     </div>
     <div id="map"></div>
@@ -13168,6 +13169,8 @@ function applyTheme(name) {
   }
 }
 
+let _otdYears = {}; // { year: [name, ...] } — populated by checkOnThisDay for replayOnThisDay
+
 function checkOnThisDay() {
   const todayDate = new Date();
   const todayStr = todayDate.toISOString().split('T')[0];
@@ -13188,6 +13191,7 @@ function checkOnThisDay() {
       }
     }
   }
+  _otdYears = byYear;
   const years = Object.keys(byYear).sort((a, b) => b - a);
   if (years.length === 0) return;
   const parts = years.map(y => {
@@ -13210,6 +13214,22 @@ function dismissOnThisDay() {
   localStorage.setItem('hm_otd_dismissed', todayStr);
   const banner = document.getElementById('on-this-day-banner');
   if (banner) banner.style.display = 'none';
+}
+
+function replayOnThisDay() {
+  // Pick the most recent year that has OTD visits
+  const years = Object.keys(_otdYears).sort((a, b) => b - a);
+  if (!years.length) return;
+  const year = years[0];
+  dismissOnThisDay();
+  switchView('chrono-view');
+  // Set the year filter and rebuild frames, then open the replay panel
+  setTimeout(() => {
+    const yearEl = document.getElementById('chrono-year');
+    if (yearEl) { yearEl.value = year; onChronoFilterChange(); }
+    if (!replayState.panelOpen) toggleReplay();
+    setTimeout(() => { if (!replayState.isPlaying) toggleReplayPlay(); }, 200);
+  }, 150);
 }
 
 // ── Smart import deduplication ───────────────────────────────────────────────
