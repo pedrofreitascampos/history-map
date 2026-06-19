@@ -962,6 +962,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   margin-top: 6px; overflow: hidden;
 }
 .cat-stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.coll-ring-wrap {
+  position: relative; width: 48px; height: 48px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.coll-ring {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  transform: rotate(-90deg);
+}
+.coll-ring-bg { fill: none; stroke: var(--border); stroke-width: 3; }
+.coll-ring-fill {
+  fill: none; stroke-width: 3; stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+}
+.coll-ring-wrap .cat-stat-emoji { font-size: 20px; position: relative; z-index: 1; line-height: 1; }
 
 .people-leaderboard { display: flex; flex-direction: column; gap: 8px; }
 .people-row {
@@ -9772,23 +9786,34 @@ function renderCollections() {
     return;
   }
 
+  const CIRC = 113.1; // 2π × r(18)
   container.innerHTML = state.collections.map(col => {
     const locs = stateIndex.locationsByCollection.get(col.id) || [];
     const visited = locs.filter(l => l.status === 'been').length;
     const total = col.totalItems || locs.length;
     const pct = total > 0 ? Math.round(visited / total * 100) : 0;
+    const dashOffset = (CIRC * (1 - pct / 100)).toFixed(1);
+    const ringStroke = pct === 100 ? 'var(--success)' : pct > 0 ? 'var(--accent)' : 'transparent';
+    const label = `${pct}% complete (${visited}/${total})`;
     return `<div class="cat-stat-card" style="cursor:pointer;" data-click="viewCollection" data-arg0="${col.id}">
-      <span class="cat-stat-emoji">${esc(col.emoji || '📋')}</span>
+      <div class="coll-ring-wrap" aria-label="${label}" title="${label}">
+        <svg class="coll-ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle class="coll-ring-bg" cx="22" cy="22" r="18"/>
+          <circle class="coll-ring-fill" cx="22" cy="22" r="18"
+                  stroke-dasharray="${CIRC}" stroke-dashoffset="${dashOffset}"
+                  style="stroke:${ringStroke};"/>
+        </svg>
+        <span class="cat-stat-emoji">${esc(col.emoji || '📋')}</span>
+      </div>
       <div class="cat-stat-info" style="flex:1;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div class="cat-stat-name">${esc(col.name)}</div>
           <div style="display:flex;gap:4px;">
-            <button class="add-small-btn" data-stop="1" data-click="editCollection" data-arg0="${col.id}" style="border-style:solid;padding:2px 6px;font-size:10px;">edit</button>
-            <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:10px;font-family:var(--font-body);" data-stop="1" data-click="deleteCollection" data-arg0="${col.id}">×</button>
+            <button class="add-small-btn" data-stop="1" data-click="editCollection" data-arg0="${col.id}" style="border-style:solid;padding:2px 6px;font-size:12px;">edit</button>
+            <button style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:var(--radius);padding:2px 6px;cursor:pointer;font-size:12px;font-family:var(--font-body);" data-stop="1" data-click="deleteCollection" data-arg0="${col.id}">×</button>
           </div>
         </div>
         <div class="cat-stat-counts">${visited} of ${total} visited · ${pct}% complete</div>
-        <div class="cat-stat-bar"><div class="cat-stat-bar-fill" style="width:${pct}%;background:var(--accent);"></div></div>
       </div>
     </div>`;
   }).join('');
