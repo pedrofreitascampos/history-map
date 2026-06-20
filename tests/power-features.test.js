@@ -178,9 +178,26 @@ describe('Year in Review — static markup', () => {
   });
 
   test('all yr functions defined', () => {
-    ['showYearReview', '_showYearReviewForYear', '_renderYrCard', 'yearReviewNav', 'yearReviewGoTo', 'closeYearReview'].forEach(fn => {
+    ['showYearReview', '_showYearReviewForYear', '_renderYrCard', 'yearReviewNav', 'yearReviewGoTo', 'closeYearReview', 'shareYearReviewCard'].forEach(fn => {
       expect(indexHtml).toContain(`function ${fn}`);
     });
+  });
+
+  test('📤 Save button in overlay uses data-click="shareYearReviewCard"', () => {
+    expect(indexHtml).toContain('data-click="shareYearReviewCard"');
+    const idx = indexHtml.indexOf('id="year-review-overlay"');
+    const slice = indexHtml.slice(idx, idx + 800);
+    expect(slice).toContain('shareYearReviewCard');
+  });
+
+  test('shareYearReviewCard draws to canvas and triggers download', () => {
+    const fnIdx = indexHtml.indexOf('async function shareYearReviewCard(');
+    expect(fnIdx).toBeGreaterThan(0);
+    const slice = indexHtml.slice(fnIdx, fnIdx + 5000);
+    expect(slice).toContain('canvas.toBlob');
+    expect(slice).toContain('image/png');
+    expect(slice).toContain('URL.createObjectURL');
+    expect(slice).toContain('Oikumene');
   });
 
   test('Escape handler closes yr-overlay before modals', () => {

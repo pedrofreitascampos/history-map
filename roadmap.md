@@ -45,10 +45,11 @@ Five parallel auditors; findings validated against source. Sequencing:
 - More emoji/color collisions: festival≡event color, museum(🏺)≡show(🎭) color.
 
 ### Cool ideas (delight ÷ effort)
-- ~~"On This Day" → one-tap Replay~~ ✅ · Year-in-Review shareable card (reuse WebM export path) · ~~collection completion rings~~ ✅ · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay + ⌘K quick-add~~ ✅ · ~~LLM trip-journal from visits~~ ✅ · ~~per-category marker style~~ ✅.
+- ~~"On This Day" → one-tap Replay~~ ✅ · ~~Year-in-Review shareable card~~ ✅ · ~~collection completion rings~~ ✅ · isochrone wishlist scoring (Valhalla already in CSP) · ~~`?` keyboard-shortcut overlay + ⌘K quick-add~~ ✅ · ~~LLM trip-journal from visits~~ ✅ · ~~per-category marker style~~ ✅.
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Year-in-Review shareable card** | **2026-06-20** | **+2 (1796)** | **📤 Save button in overlay · shareYearReviewCard() draws card to 600×340 canvas (BG/ACCENT/MUTED palette, per-type text layout, Oikumene watermark) · toBlob→PNG download; Web Share API on supporting devices** |
 | **On This Day → one-tap Replay** | **2026-06-19** | **+0 (1794)** | **▶ Replay button in OTD banner · _otdYears stores byYear for replayOnThisDay · switches to chrono-view, sets year filter, opens replay panel, auto-plays** |
 | **Per-category marker style** | **2026-06-19** | **+17 (1794)** | **`shape` property on CATEGORIES entries (teardrop: monument/museum/airport/location · glyph: park · squircle: restaurant/hotel/bar/club/cafe/shopping/stadium/show) · marker builder resolves catShape from CATEGORIES when globalStyle==='circle'; global override still wins** |
 | **LLM trip-journal** | **2026-06-19** | **+30 (1777)** | **POST /api/trips/:id/journal · Haiku prose from stop list (name/category/visitDate/rating/notes) · 10 req/min rate limit · ✍️ button in trip detail · generateTripJournal (loading state) · #journal-modal + 📋 copy · openJournalModal/closeJournalModal · Escape integration** |
