@@ -49,6 +49,7 @@ Five parallel auditors; findings validated against source. Sequencing:
 
 | Batch | Date | Jest | Highlights |
 |---|---|---|---|
+| **Add-modal enrich + save-coords race** | **2026-06-26** | **+11 (1810)** | **Bug: enrich buttons silently returned in add mode — openAddModal now shows loc-enrich-section; syncPhotonFromEditModal + syncNominatimFromEditModal get !locId path that fills form fields via /api/geocode proxy · Bug: "add never works first time" — saveLocation now awaits _autoGeocodeAddModalIfNeeded() before failing on missing coords (race between save and blur-geocode)** |
 | **Year-in-Review shareable card** | **2026-06-20** | **+2 (1796)** | **📤 Save button in overlay · shareYearReviewCard() draws card to 600×340 canvas (BG/ACCENT/MUTED palette, per-type text layout, Oikumene watermark) · toBlob→PNG download; Web Share API on supporting devices** |
 | **On This Day → one-tap Replay** | **2026-06-19** | **+0 (1794)** | **▶ Replay button in OTD banner · _otdYears stores byYear for replayOnThisDay · switches to chrono-view, sets year filter, opens replay panel, auto-plays** |
 | **Per-category marker style** | **2026-06-19** | **+17 (1794)** | **`shape` property on CATEGORIES entries (teardrop: monument/museum/airport/location · glyph: park · squircle: restaurant/hotel/bar/club/cafe/shopping/stadium/show) · marker builder resolves catShape from CATEGORIES when globalStyle==='circle'; global override still wins** |
