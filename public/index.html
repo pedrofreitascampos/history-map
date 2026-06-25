@@ -5759,7 +5759,7 @@ function openAddModal(lat, lng) {
   document.getElementById('loc-google-rating').value = '';
   document.getElementById('loc-google-maps-link').style.display = 'none';
   document.getElementById('loc-google-sync-btn').style.display = 'none';
-  document.getElementById('loc-enrich-section').style.display = 'none';
+  document.getElementById('loc-enrich-section').style.display = '';
   document.getElementById('loc-notes').value = '';
   document.getElementById('loc-cost').value = '';
   document.getElementById('loc-trip').value = '';
@@ -6399,19 +6399,23 @@ function setModalPrice(val, btn) {
 
 async function saveLocation() {
   const name = document.getElementById('loc-name').value.trim();
-  const lat = parseFloat(document.getElementById('loc-lat').value);
-  const lng = parseFloat(document.getElementById('loc-lng').value);
-  if (!name || isNaN(lat) || isNaN(lng)) {
-    if (!name) {
-      showToast('Please fill in a name.', 'warn');
-    } else {
-      // Coords missing — unhide the row so the user can enter them manually.
-      // (The row is hidden by default after the 2026-05-31 declutter; the
-      // quickAddPlace flow tries Photon auto-geocode but it can miss.)
+  let lat = parseFloat(document.getElementById('loc-lat').value);
+  let lng = parseFloat(document.getElementById('loc-lng').value);
+  if (!name) {
+    showToast('Please fill in a name.', 'warn');
+    return;
+  }
+  if (isNaN(lat) || isNaN(lng)) {
+    if (!state.editingId) {
+      await _autoGeocodeAddModalIfNeeded();
+      lat = parseFloat(document.getElementById('loc-lat').value);
+      lng = parseFloat(document.getElementById('loc-lng').value);
+    }
+    if (isNaN(lat) || isNaN(lng)) {
       _unhideLocCoordsRow();
       showToast('Could not find coordinates. Please enter latitude and longitude.', 'warn');
+      return;
     }
-    return;
   }
 
   const data = {
@@ -11192,16 +11196,34 @@ async function syncFromEditModal() {
 // empty fills default on). Stamps _photonSyncedAt on the applied subset.
 async function syncPhotonFromEditModal() {
   const locId = state.editingId;
-  if (!locId) return;
-  const loc = stateIndex.locationById.get(locId);
-  if (!loc) return;
-  const name = (document.getElementById('loc-name')?.value || loc.name || '').trim();
-  if (!name) { showToast('Need a place name first.', 'warn'); return; }
   const btn = document.getElementById('loc-photon-sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
   try {
+    const name = (document.getElementById('loc-name')?.value || '').trim();
+    if (!name) { showToast('Need a place name first.', 'warn'); return; }
     const latVal = parseFloat(document.getElementById('loc-lat')?.value);
     const lngVal = parseFloat(document.getElementById('loc-lng')?.value);
+
+    // Add mode: no saved record to diff against — fill form fields directly via proxy
+    if (!locId) {
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(name)}&limit=1`);
+      if (!r.ok) throw new Error('Geocode ' + r.status);
+      const hits = await r.json();
+      const it = Array.isArray(hits) ? hits[0] : null;
+      if (!it) { showToast('Fast: no match.', 'warn'); return; }
+      const latEl = document.getElementById('loc-lat');
+      const lngEl = document.getElementById('loc-lng');
+      const addrEl = document.getElementById('loc-address');
+      if (latEl && !latEl.value) latEl.value = parseFloat(it.lat);
+      if (lngEl && !lngEl.value) lngEl.value = parseFloat(it.lon);
+      if (addrEl && !addrEl.value && it.display_name) addrEl.value = it.display_name;
+      _unhideLocCoordsRow();
+      showToast('Fast: location filled!', 'success');
+      return;
+    }
+
+    const loc = stateIndex.locationById.get(locId);
+    if (!loc) return;
     let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(name)}&limit=1`;
     if (Number.isFinite(latVal) && Number.isFinite(lngVal)) url += `&lat=${latVal}&lon=${lngVal}`;
     const r = await fetch(url);
@@ -11242,15 +11264,42 @@ async function syncPhotonFromEditModal() {
 // only conservatism as Photon. Stamps _nominatimSyncedAt.
 async function syncNominatimFromEditModal() {
   const locId = state.editingId;
-  if (!locId) return;
-  const loc = stateIndex.locationById.get(locId);
-  if (!loc) return;
   const btn = document.getElementById('loc-nominatim-sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
   try {
     const latVal = parseFloat(document.getElementById('loc-lat')?.value);
     const lngVal = parseFloat(document.getElementById('loc-lng')?.value);
-    const name = (document.getElementById('loc-name')?.value || loc.name || '').trim();
+    const name = (document.getElementById('loc-name')?.value || '').trim();
+
+    // Add mode: no saved record to diff against — fill form fields directly
+    if (!locId) {
+      let url;
+      if (Number.isFinite(latVal) && Number.isFinite(lngVal)) {
+        url = `/api/geocode/reverse?lat=${latVal}&lon=${lngVal}`;
+      } else if (name) {
+        url = `/api/geocode?q=${encodeURIComponent(name)}&limit=1`;
+      } else {
+        showToast('Need coords or a name first.', 'warn');
+        return;
+      }
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('Geocode ' + r.status);
+      const json = await r.json();
+      const it = Array.isArray(json) ? json[0] : json;
+      if (!it) { showToast('Detailed: no match.', 'warn'); return; }
+      const latEl = document.getElementById('loc-lat');
+      const lngEl = document.getElementById('loc-lng');
+      const addrEl = document.getElementById('loc-address');
+      if (latEl && !latEl.value && Number.isFinite(parseFloat(it.lat))) latEl.value = parseFloat(it.lat);
+      if (lngEl && !lngEl.value && Number.isFinite(parseFloat(it.lon))) lngEl.value = parseFloat(it.lon);
+      if (addrEl && !addrEl.value && it.display_name) addrEl.value = it.display_name;
+      _unhideLocCoordsRow();
+      showToast('Detailed: location filled!', 'success');
+      return;
+    }
+
+    const loc = stateIndex.locationById.get(locId);
+    if (!loc) return;
     let url;
     if (Number.isFinite(latVal) && Number.isFinite(lngVal)) {
       url = `/api/geocode/reverse?lat=${latVal}&lon=${lngVal}`;

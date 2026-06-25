@@ -139,7 +139,7 @@ describe('Save-modal lat/lng — auto-geocode + unhide on fail', () => {
   test('static pin: saveLocation unhides the row when name present but coords missing', () => {
     // The whole point of this batch: a stuck user with a name typed but no
     // coords must SEE the lat/lng inputs, not just get a toast about them.
-    expect(indexHtml).toMatch(/function\s+saveLocation[\s\S]{0,600}_unhideLocCoordsRow\(\)/);
+    expect(indexHtml).toMatch(/function\s+saveLocation[\s\S]{0,700}_unhideLocCoordsRow\(\)/);
   });
 
   test('static pin: quickAddPlace delegates to openAddModal (FAB replaces sidebar input)', () => {
