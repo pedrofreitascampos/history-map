@@ -1198,12 +1198,16 @@ describe('Frontend correctness fixes', () => {
     expect(html).toMatch(/function logout\(\)\s*\{[\s\S]*?_placesEnabled\s*=\s*null/);
   });
 
-  test('applyBulkEdit uses Promise.allSettled (rollback-safe)', () => {
-    expect(html).toMatch(/applyBulkEdit[\s\S]{0,2000}Promise\.allSettled/);
+  test('applyBulkEdit uses chunkedAllSettled (rollback-safe, rate-limit-safe)', () => {
+    // chunkedAllSettled batches requests via Promise.allSettled internally
+    // (isolated per-item failure) while capping fan-out size so a large bulk
+    // selection can't blow through the global rate limiter in one burst.
+    expect(html).toMatch(/applyBulkEdit[\s\S]{0,2000}chunkedAllSettled/);
+    expect(html).toMatch(/function chunkedAllSettled[\s\S]{0,500}Promise\.allSettled/);
   });
 
-  test('deleteCollection uses Promise.allSettled (rollback-safe)', () => {
-    expect(html).toMatch(/deleteCollection[\s\S]{0,2000}Promise\.allSettled/);
+  test('deleteCollection uses chunkedAllSettled (rollback-safe, rate-limit-safe)', () => {
+    expect(html).toMatch(/deleteCollection[\s\S]{0,2000}chunkedAllSettled/);
   });
 
   test('drawRoadRoutes takes version arg for race protection', () => {
@@ -1221,20 +1225,36 @@ describe('Frontend correctness fixes', () => {
     expect(html).not.toMatch(/api\('PUT', '\/locations\/' \+ locId,[^)]+\)\.catch\(\(\) => \{\}\)/);
   });
 
-  test('bulkAddToCollection uses Promise.allSettled (rollback-safe)', () => {
+  test('bulkAddToCollection uses chunkedAllSettled (rollback-safe, rate-limit-safe)', () => {
     // Old code: optimistic mutation + Promise.all (throws on first failure),
     // no rebuildIndexes before viewCollection — added rows didn't show up.
-    expect(html).toMatch(/bulkAddToCollection[\s\S]{0,2000}Promise\.allSettled/);
+    // chunkedAllSettled additionally caps fan-out so large selections can't
+    // trip the global rate limiter in one burst.
+    expect(html).toMatch(/bulkAddToCollection[\s\S]{0,2000}chunkedAllSettled/);
     expect(html).toMatch(/bulkAddToCollection[\s\S]{0,2000}rebuildIndexes\(\)/);
     // Mutation must happen AFTER the PUT (in the fulfilled branch),
     // not before the request goes out.
     expect(html).not.toMatch(/bulkAddToCollection[\s\S]{0,2000}loc\.collections\s*=\s*\[[\s\S]{0,200}api\('PUT'/);
   });
 
-  test('deleteBulkSelection uses Promise.allSettled (no unhandled rejection)', () => {
+  test('deleteBulkSelection uses chunkedAllSettled (no unhandled rejection, rate-limit-safe)', () => {
     // Old code: serial `await api('DELETE')` in a loop with no try/catch —
     // mid-loop failure leaves bulkSelected partially consistent + unhandled rejection.
-    expect(html).toMatch(/function deleteBulkSelection[\s\S]{0,2000}Promise\.allSettled/);
+    expect(html).toMatch(/function deleteBulkSelection[\s\S]{0,2000}chunkedAllSettled/);
+  });
+
+  test('chunkedAllSettled caps fan-out and is used by every bulk operation', () => {
+    // Bulk edit/delete/attach/collection-add/collection-delete used to fan out
+    // one HTTP request per selected item unthrottled — selecting >200 items
+    // (the global limiter's per-minute cap) tripped 429s that surfaced as an
+    // opaque "N failed" toast with no indication the cause was self-inflicted.
+    const fn = html.slice(html.indexOf('function chunkedAllSettled'), html.indexOf('function chunkedAllSettled') + 600);
+    expect(fn).toMatch(/chunkSize\s*=\s*50/);
+    expect(fn).toMatch(/Promise\.allSettled/);
+    const usages = html.match(/chunkedAllSettled\(/g) || [];
+    // 1 definition + 5 call sites (applyBulkEdit, deleteBulkSelection,
+    // submitAttachPicker, bulkAddToCollection, deleteCollection).
+    expect(usages.length).toBeGreaterThanOrEqual(6);
   });
 
   test('deleteTransit routes through showConfirm (not native confirm)', () => {

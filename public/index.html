@@ -3417,12 +3417,22 @@ async function api(method, path, body) {
   const opts = { method, headers: apiHeaders(), credentials: 'same-origin' };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
+  if (res.status === 429) {
+    // express-rate-limit's default body is plain text, not JSON — res.json()
+    // would throw and this fell through to the generic 'API error' message,
+    // giving no hint that the cause was self-inflicted (e.g. a large bulk op).
+    throw new Error('Rate limited — please wait a moment and try again.');
+  }
   if (res.status === 401) {
     const err = await res.json().catch(() => ({}));
     // Only logout on session expiry, not on login/register credential errors,
     // and not on /auth/me (which is also used at boot to probe whether a
     // cookie session exists — a 401 there means "no session" not "expired").
     if (!path.startsWith('/auth/login') && !path.startsWith('/auth/register') && !path.startsWith('/auth/google') && !path.startsWith('/auth/me')) {
+      // The thrown message below is never rendered anywhere — without this
+      // toast the login screen just reappears mid-task with no explanation,
+      // discarding whatever modal/form was open.
+      showToast('Session expired — please sign in again.', 'warn');
       logout();
       throw new Error('Session expired');
     }
@@ -3430,6 +3440,20 @@ async function api(method, path, body) {
   }
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'API error'); }
   return res.json();
+}
+
+// Bulk fan-out helper: chunks requests instead of firing hundreds at once.
+// The global limiter is 200 req/min — selecting more items than that in bulk
+// edit/delete used to blow straight through it, surfacing as an opaque
+// "N failed" toast with no indication the cause was self-inflicted.
+async function chunkedAllSettled(items, fn, chunkSize = 50) {
+  const results = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    results.push(...await Promise.allSettled(chunk.map(fn)));
+    if (i + chunkSize < items.length) await new Promise(r => setTimeout(r, 400));
+  }
+  return results;
 }
 
 // Map NeDB _id → id for frontend consistency
@@ -5189,6 +5213,9 @@ function selectAllBulk() {
   _bulkVScrollState = null;
   _bulkVScrollPaint();
   updateBulkCount();
+  if (bulkSelected.size > 200) {
+    showToast(`${bulkSelected.size} selected — large bulk actions are sent in batches and may take a moment.`, 'info');
+  }
 }
 
 function clearBulkSelection() {
@@ -5260,6 +5287,7 @@ async function bulkEnrichPhoton() {
           if (fieldsAdded > 0) {
             await api('PUT', '/locations/' + (loc.id || loc._id), updates);
             Object.assign(loc, updates);
+            if (updates.address !== undefined) loc._region = (loc.address || '').split(',').pop().trim();
             found++;
           }
         }
@@ -5274,6 +5302,9 @@ async function bulkEnrichPhoton() {
   updateBulkCount();
   _bulkVScrollState = null;
   _bulkVScrollPaint();
+  // Category/address were mutated in place above — bump the cache generation
+  // so computeStats()/region tallies don't keep showing pre-enrichment numbers.
+  if (found > 0) stateIndex.generation++;
   renderMarkers();
   showToast(`Enriched ${found}/${targets.length} via OpenStreetMap (Fast)`);
 }
@@ -5330,7 +5361,7 @@ async function applyBulkEdit() {
     if (Object.keys(patch).length > 0) items.push({ loc, locId, patch });
   }
 
-  const results = await Promise.allSettled(items.map(it => api('PUT', '/locations/' + it.locId, it.patch)));
+  const results = await chunkedAllSettled(items, it => api('PUT', '/locations/' + it.locId, it.patch));
   let ok = 0, failed = 0;
   const failedIds = new Set();
   results.forEach((r, i) => {
@@ -5364,7 +5395,7 @@ function deleteBulkSelection() {
   const count = bulkSelected.size;
   showConfirm(`Delete ${count} locations? This cannot be undone.`, async () => {
     const ids = Array.from(bulkSelected);
-    const results = await Promise.allSettled(ids.map(id => api('DELETE', '/locations/' + id)));
+    const results = await chunkedAllSettled(ids, id => api('DELETE', '/locations/' + id));
     const deletedIds = new Set();
     let failed = 0;
     results.forEach((r, i) => {
@@ -9787,7 +9818,7 @@ async function submitAttachPicker() {
   const btn = document.getElementById('attach-submit-btn');
   btn.disabled = true; btn.textContent = 'Attaching…';
   try {
-    const results = await Promise.allSettled(ids.map(id => api('PUT', '/transits/' + id, { tripId: _attachTripId })));
+    const results = await chunkedAllSettled(ids, id => api('PUT', '/transits/' + id, { tripId: _attachTripId }));
     const ok = results.filter(r => r.status === 'fulfilled').length;
     const fail = results.length - ok;
     results.forEach((r, i) => {
@@ -10016,9 +10047,7 @@ async function bulkAddToCollection(colId) {
     }
   });
   if (items.length === 0) { viewCollection(colId); return; }
-  const results = await Promise.allSettled(
-    items.map(it => api('PUT', '/locations/' + it.loc.id, { collections: it.nextCollections }))
-  );
+  const results = await chunkedAllSettled(items, it => api('PUT', '/locations/' + it.loc.id, { collections: it.nextCollections }));
   let ok = 0, failed = 0;
   results.forEach((r, i) => {
     if (r.status === 'fulfilled') { items[i].loc.collections = items[i].nextCollections; ok++; }
@@ -10169,9 +10198,8 @@ function deleteCollection(id) {
         items.push({ loc: l, newCols: l.collections.filter(c => c !== id) });
       }
     });
-    const results = await Promise.allSettled(items.map(it =>
-      api('PUT', '/locations/' + (it.loc.id || it.loc._id), { collections: it.newCols })
-    ));
+    const results = await chunkedAllSettled(items, it =>
+      api('PUT', '/locations/' + (it.loc.id || it.loc._id), { collections: it.newCols }));
     let appliedLocations = 0, failedLocations = 0;
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') { items[i].loc.collections = items[i].newCols; appliedLocations++; }
@@ -11018,7 +11046,7 @@ async function syncImportedLocations(locations) {
           if (r.found) {
             if (r.googleRating) loc.googleRating = r.googleRating;
             if (r.priceLevel) loc.priceLevel = r.priceLevel;
-            if (r.address && !loc.address) loc.address = r.address;
+            if (r.address && !loc.address) { loc.address = r.address; loc._region = (loc.address || '').split(',').pop().trim(); }
             if (r._googlePlaceId) loc._googlePlaceId = r._googlePlaceId;
             totalUpdated++;
           }
@@ -11027,6 +11055,7 @@ async function syncImportedLocations(locations) {
       });
     } catch { batchErrors++; }
   }
+  if (totalUpdated > 0) stateIndex.generation++;
   renderMarkers();
   const msg = `${totalUpdated}/${locations.length} imported locations synced with Google`;
   showToast(batchErrors > 0 ? `${msg} (${batchErrors} batch errors)` : msg, batchErrors > 0 ? 'warn' : 'info');
@@ -11052,7 +11081,7 @@ async function bulkGoogleSync() {
           if (r.found) {
             if (r.googleRating) loc.googleRating = r.googleRating;
             if (r.priceLevel) loc.priceLevel = r.priceLevel;
-            if (r.address && !loc.address) loc.address = r.address;
+            if (r.address && !loc.address) { loc.address = r.address; loc._region = (loc.address || '').split(',').pop().trim(); }
             if (r._googlePlaceId) loc._googlePlaceId = r._googlePlaceId;
             totalUpdated++;
           }
@@ -11064,6 +11093,7 @@ async function bulkGoogleSync() {
       showToast(`Batch ${Math.ceil((i+1)/50)} failed: ${err.message}`, 'error');
     }
   }
+  if (totalUpdated > 0) stateIndex.generation++;
   renderMarkers();
   const msg = `${totalUpdated}/${allUnsynced.length} locations synced`;
   showToast(batchErrors > 0 ? `${msg} (${batchErrors} batch errors)` : msg, batchErrors > 0 ? 'warn' : 'info');
@@ -11797,7 +11827,8 @@ async function downloadBackup(filename) {
 function restoreBackup(filename) {
   showConfirm('Restore this backup? This will ADD all locations from the backup. Existing data is not deleted.', async () => {
     try {
-      const res = await fetch('/api/admin/backups/' + encodeURIComponent(filename), { headers: apiHeaders() });
+      const res = await fetch('/api/my-backup/' + encodeURIComponent(filename), { headers: apiHeaders(), credentials: 'same-origin' });
+      if (!res.ok) { showToast('Restore failed: could not read backup', 'error'); return; }
       const data = await res.json();
       state.pendingImport = (data.locations || []).map(item => ({
         ...item,
@@ -12541,8 +12572,9 @@ async function enrichInBackground(locations, { onProgress } = {}) {
       loc.category = newCat;
       loc.suggestedCategory = newCat;
       loc.address = newAddress;
+      loc._region = (newAddress || '').split(',').pop().trim();
       const stateLoc = stateIndex.locationById.get(locId);
-      if (stateLoc && stateLoc !== loc) Object.assign(stateLoc, { category: newCat, suggestedCategory: newCat, address: newAddress });
+      if (stateLoc && stateLoc !== loc) Object.assign(stateLoc, { category: newCat, suggestedCategory: newCat, address: newAddress, _region: loc._region });
       return true;
     },
   }));
@@ -12551,6 +12583,9 @@ async function enrichInBackground(locations, { onProgress } = {}) {
 
   if (result.succeeded > 0) {
     console.log(`Background enrichment: updated ${result.succeeded} categories`);
+    // Category/address/_region were mutated in place — bump the cache
+    // generation so computeStats()/Regions view don't stay stale.
+    stateIndex.generation++;
     renderMarkers();
     renderApproval();
     updateApprovalBadge();
@@ -13488,11 +13523,35 @@ function _clusterLabel(locs) {
   return name ? `${name} · ${locs.length}` : `${locs.length} places`;
 }
 
+let _nhCacheKey = null;
+let _nhCacheClusters = null;
+
 function _updateNeighborhoodLayer() {
   if (!map) return;
   if (_nhLayer) { try { map.removeLayer(_nhLayer); } catch {} _nhLayer = null; }
-  if (map.getZoom() < 13) return;
-  const clusters = _clusterLocations(state.locations);
+  const zoom = map.getZoom();
+  if (zoom < 13) { _nhCacheKey = null; return; }
+
+  // Bound the O(n²) greedy pass to the visible viewport (padded 20%) instead
+  // of all of state.locations — at a few thousand places the unbounded pass
+  // visibly hung the tab on every zoom event, even when nothing had changed.
+  // Memoise on generation/zoom/bounds so re-firing zoomend with an unchanged
+  // view is a no-op. Also respects active filters, which the raw
+  // state.locations read previously did not.
+  const b = map.getBounds().pad(0.2);
+  const boundsKey = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(n => n.toFixed(3)).join(',');
+  const cacheKey = `${stateIndex.generation}|${zoom}|${boundsKey}`;
+  let clusters;
+  if (_nhCacheKey === cacheKey) {
+    clusters = _nhCacheClusters;
+  } else {
+    const visible = getFilteredLocations().filter(l =>
+      l.status === 'been' && Number.isFinite(l.lat) && Number.isFinite(l.lng) && b.contains([l.lat, l.lng])
+    );
+    clusters = _clusterLocations(visible);
+    _nhCacheKey = cacheKey;
+    _nhCacheClusters = clusters;
+  }
   if (!clusters.length) return;
   _nhLayer = L.layerGroup();
   for (const cluster of clusters) {
