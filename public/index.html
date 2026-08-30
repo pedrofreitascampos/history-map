@@ -5805,6 +5805,11 @@ function openAddModal(lat, lng) {
   const _m = document.getElementById('edit-modal');
   _m.classList.add('open');
   focusModal(_m);
+  // Snapshot the (now-reset) form so closeModal()'s dirty check applies to Add
+  // mode too — without this, typing a name/notes/etc. and hitting Cancel
+  // discarded it silently, same class of "no warning" bug as Ctrl+K over an
+  // open modal above.
+  _editSnapshot = _editFormSnapshot();
 }
 
 function openEditModal(id) {
