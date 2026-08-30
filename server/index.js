@@ -8,6 +8,10 @@ const compression = require('compression');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
+// Fixed hash of a value nobody can log in with. Compared against when the
+// submitted username has no account (or no password), so a miss costs the
+// same wall-clock time as a wrong password. Cost factor matches registration.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('oikumene-dummy-password-never-valid', 10);
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const { OAuth2Client } = require('google-auth-library');
@@ -172,6 +176,21 @@ app.use(cors({ origin: corsAllowed, credentials: false }));
 // exactly once at the appropriate limit.
 app.use(['/api/locations/bulk', '/api/transits/bulk'], express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '1mb' }));
+
+// Body-parser failures are client errors, not server errors. Without this an
+// unparseable body (`{"lat":NaN}`) or an over-limit payload fell through to the
+// terminal handler as a 500, which reads as "the server broke" in logs and
+// tells the caller nothing actionable.
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError && 'body' in err)) {
+    return res.status(400).json({ error: 'Malformed JSON body' });
+  }
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  next(err);
+});
+
 app.use(cookieParser());
 
 // Rate limiting — disabled in test environment to allow full test suite runs
@@ -351,6 +370,16 @@ async function auth(req, res, next) {
     // so this lookup is fast (microseconds) and not a meaningful throughput cost.
     const userExists = await db.users.findOne({ _id: decoded.id });
     if (!userExists) return res.status(401).json({ error: 'Account not found' });
+    // Password-change cutoff: a token minted before the account's password was
+    // last changed is dead. Without this an admin-forced reset (the response to
+    // a compromised account) left every existing session valid for the rest of
+    // the 30-day TTL — the attacker keeps their session, only the password moves.
+    if (userExists.pwChangedAt) {
+      const changedAt = Math.floor(new Date(userExists.pwChangedAt).getTime() / 1000);
+      if (Number.isFinite(changedAt) && decoded.iat && decoded.iat < changedAt) {
+        return res.status(401).json({ error: 'Session expired — password changed' });
+      }
+    }
     req.user = decoded;
     next();
   } catch {
@@ -415,7 +444,14 @@ app.post('/api/auth/login', async (req, res) => {
     }
     username = username.trim().toLowerCase();
     const user = await db.users.findOne({ username });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    // Always run a bcrypt compare, even when the user doesn't exist or is a
+    // Google-only account with no password hash. Skipping it made a miss
+    // return measurably faster (username enumeration), and passing an
+    // undefined hash made bcrypt throw -> 500 instead of 401, which leaked
+    // "this address is a Google-only account".
+    const hash = (user && typeof user.password === 'string') ? user.password : DUMMY_PASSWORD_HASH;
+    const ok = await bcrypt.compare(password, hash);
+    if (!user || !user.password || !ok) {
       audit('login_failed', { username, reason: 'invalid_credentials' }, req);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -540,11 +576,20 @@ app.post('/api/admin/reset-password', auth, requireAdmin, async (req, res) => {
     if (typeof username !== 'string' || typeof newPassword !== 'string' || !username || !newPassword) {
       return res.status(400).json({ error: 'username and newPassword required' });
     }
+    // Match the 8-char floor enforced at registration — an admin reset used to
+    // accept a 1-character password.
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
     username = username.trim().toLowerCase();
     const user = await db.users.findOne({ username });
     if (!user) return res.status(404).json({ error: `User "${username}" not found` });
     const hash = await bcrypt.hash(newPassword, 10);
-    await db.users.update({ _id: user._id }, { $set: { password: hash } });
+    // pwChangedAt kills every token issued before now (checked in auth()) —
+    // a forced reset must end the sessions it was called to end. +1s guards
+    // against a same-second token whose iat rounds equal to the cutoff.
+    const pwChangedAt = new Date(Date.now() + 1000).toISOString();
+    await db.users.update({ _id: user._id }, { $set: { password: hash, pwChangedAt } });
     audit('password_reset', { username, by: req.user.username }, req);
     res.json({ ok: true });
   } catch (err) {
@@ -581,6 +626,9 @@ app.get('/api/locations', auth, async (req, res) => {
 function validateLocation(body) {
   const { name, lat, lng } = body;
   if (!name || typeof name !== 'string') return 'Name required';
+  // Reject whitespace-only and markup-only names: sanitizeShortText strips tags
+  // and trims, so "   " or "<b></b>" would otherwise be stored as an empty name.
+  if (sanitizeShortText(name, MAX_NAME_LEN).length === 0) return 'Name required';
   if (typeof lat !== 'number' || isNaN(lat) || lat < -90 || lat > 90) return 'Invalid latitude';
   if (typeof lng !== 'number' || isNaN(lng) || lng < -180 || lng > 180) return 'Invalid longitude';
   return null;
@@ -602,7 +650,13 @@ app.post('/api/locations', auth, async (req, res) => {
 // Excludes _id/userId (ownership) and updatedAt (server-stamped). Also blocks __proto__.
 const LOCATION_FIELDS = ['name','lat','lng','address','category','status','myRating','googleRating',
   'priceLevel','tripId','tripOrder','collections','people','tags','notes','visits','needsApproval',
-  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength','iata','media'];
+  'suggestedCategory','createdAt','_googlePlaceId','_googleUrl','_googleSyncedAt','bucketStrength','iata','media','cost'];
+
+// Free-text length caps. The client has no maxlength on these inputs, and an
+// unbounded name/address bloats the doc, the /api/locations payload and every
+// render path that measures it.
+const MAX_NAME_LEN = 300;
+const MAX_ADDRESS_LEN = 500;
 
 function pickLocationFields(body) {
   const clean = {};
@@ -666,6 +720,28 @@ function sanitizeLocationUpdate(updates) {
     if (typeof updates.notes !== 'string') delete updates.notes;
     else updates.notes = sanitizeNotes(updates.notes);
   }
+  // name/address are free text with no client-side maxlength. Cap them and run
+  // name through the same script/URI stripper as notes — every render path
+  // escapes it today, but this is the only field with no server-side backstop.
+  if (updates.name !== undefined) {
+    if (typeof updates.name !== 'string') delete updates.name;
+    else updates.name = sanitizeShortText(updates.name, MAX_NAME_LEN);
+  }
+  if (updates.address !== undefined) {
+    if (typeof updates.address !== 'string') delete updates.address;
+    else updates.address = sanitizeShortText(updates.address, MAX_ADDRESS_LEN);
+  }
+  // cost — numeric, non-negative, bounded. Was missing from LOCATION_FIELDS
+  // entirely, so every cost the UI collected was silently dropped.
+  if (updates.cost !== undefined) {
+    if (updates.cost === null || updates.cost === '') {
+      updates.cost = null;
+    } else {
+      const n = parseFloat(updates.cost);
+      if (Number.isFinite(n) && n >= 0 && n <= 1e9) updates.cost = n;
+      else delete updates.cost;
+    }
+  }
   return updates;
 }
 
@@ -695,7 +771,9 @@ app.post('/api/locations/bulk', auth, async (req, res) => {
   const { locations: locs } = req.body;
   if (!Array.isArray(locs)) return res.status(400).json({ error: 'Expected array' });
   if (locs.length > MAX_LOCATIONS_PER_BULK) return res.status(400).json({ error: `Too many locations (max ${MAX_LOCATIONS_PER_BULK})` });
-  const valid = locs.filter(l => l.name && typeof l.lat === 'number' && typeof l.lng === 'number' && !isNaN(l.lat) && !isNaN(l.lng));
+  // Same bounds as validateLocation — bulk used to check only "is a number",
+  // so an import could persist lat=999 that the single-item POST rejects.
+  const valid = locs.filter(l => !validateLocation(l));
   if (valid.length === 0) return res.status(400).json({ error: 'No valid locations' });
   const toInsert = valid.map(l => {
     const clean = sanitizeLocationUpdate(pickLocationFields(l));
@@ -733,6 +811,24 @@ function sanitizeNotes(str) {
   return n.length > 10000 ? n.slice(0, 10000) : n;
 }
 
+// Short identifier-ish free text (place name, address). Unlike notes — where a
+// user may legitimately type "cost < 20 EUR" — these never carry markup, so we
+// strip tags outright rather than running a denylist. sanitizeNotes only knows
+// about <script>/<iframe>/javascript:, which leaves <img onerror>/<svg onload>
+// intact; every render path escapes today, but this is the field's only
+// server-side backstop and a denylist is the wrong shape for it.
+function sanitizeShortText(str, maxLen) {
+  if (typeof str !== 'string') return '';
+  // sanitizeNotes first: it removes <script>/<iframe> blocks INCLUDING their
+  // body, so "<script>alert(1)</script>" leaves nothing behind rather than a
+  // stray "alert(1)". Then strip every remaining tag and stray angle bracket.
+  return sanitizeNotes(str)
+    .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '')
+    .trim()
+    .slice(0, maxLen);
+}
+
 const TRIP_FIELDS = ['name', 'color', 'startDate', 'endDate', 'notes'];
 const COLOR_RE = /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]{1,20}$/;
 function sanitizeTripUpdate(body) {
@@ -767,8 +863,15 @@ app.put('/api/trips/:id', auth, async (req, res) => {
 app.delete('/api/trips/:id', auth, async (req, res) => {
   const count = await db.trips.remove({ _id: req.params.id, userId: req.user.id });
   if (count === 0) return res.status(404).json({ error: 'Not found' });
-  log('info', 'db_remove', { table: 'trips', id: req.params.id, userId: req.user.id });
-  res.json({ ok: true });
+  // Cascade: unlink locations and transits that pointed at this trip. The web
+  // client unlinks locations itself before calling DELETE, but transits were
+  // never unlinked by anyone, and any other API consumer left both dangling.
+  const [unlinkedLocs, unlinkedTransits] = await Promise.all([
+    db.locations.update({ userId: req.user.id, tripId: req.params.id }, { $set: { tripId: null } }, { multi: true }),
+    db.transits.update({ userId: req.user.id, tripId: req.params.id }, { $set: { tripId: null } }, { multi: true }),
+  ]);
+  log('info', 'db_remove', { table: 'trips', id: req.params.id, userId: req.user.id, unlinkedLocs, unlinkedTransits });
+  res.json({ ok: true, unlinkedLocs, unlinkedTransits });
 });
 
 // ── Trip share-link generation / revocation ───────────────
@@ -1256,6 +1359,16 @@ function sanitizeTransitUpdate(body) {
     if (body[k] !== undefined && body[k] !== null) {
       const n = parseFloat(body[k]);
       if (Number.isFinite(n) && n >= 0 && n <= 1e6) out[k] = n;
+    }
+  }
+  // cost — same omission as locations: the transit modal collected it and the
+  // allowlist silently dropped it, so trip cost roll-ups always read 0.
+  if (body.cost !== undefined) {
+    if (body.cost === null || body.cost === '') {
+      out.cost = null;
+    } else {
+      const n = parseFloat(body.cost);
+      if (Number.isFinite(n) && n >= 0 && n <= 1e9) out.cost = n;
     }
   }
   for (const k of TRANSIT_STRING_FIELDS) {

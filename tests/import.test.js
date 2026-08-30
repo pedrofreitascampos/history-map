@@ -2627,10 +2627,30 @@ describe('markerHash + incremental renderMarkers', () => {
     expect(hash(a)).not.toBe(hash({ ...a, needsApproval: true }));
   });
 
-  test('unrelated edits do NOT change hash (description, address, notes)', () => {
-    const a = { lat: 0, lng: 0, status: 'been', category: 'restaurant', myRating: 4 };
-    const b = { ...a, description: 'updated', address: 'new addr', notes: 'edit' };
-    expect(hash(a)).toBe(hash(b));
+  // Popup-rendered fields MUST change the hash. renderMarkers only rebuilds a
+  // marker when its hash changes, and saveLocation REPLACES state.locations[idx]
+  // with a new object — so a marker whose hash didn't move keeps a popup closure
+  // bound to the discarded pre-edit object and renders stale data forever.
+  // This test previously asserted the opposite ("unrelated edits do NOT change
+  // hash") and is why that bug shipped: address/notes are rendered in the popup,
+  // so they were never "unrelated".
+  test('popup-rendered edits DO change hash (name, address, notes, tags, people, tripId)', () => {
+    const a = { lat: 0, lng: 0, status: 'been', category: 'restaurant', myRating: 4, name: 'Cafe' };
+    expect(hash(a)).not.toBe(hash({ ...a, name: 'Cafe Renamed' }));
+    expect(hash(a)).not.toBe(hash({ ...a, address: 'new addr' }));
+    expect(hash(a)).not.toBe(hash({ ...a, notes: 'edit' }));
+    expect(hash(a)).not.toBe(hash({ ...a, tags: ['x'] }));
+    expect(hash(a)).not.toBe(hash({ ...a, people: ['Ana'] }));
+    expect(hash(a)).not.toBe(hash({ ...a, tripId: 'T1' }));
+  });
+
+  test('fields absent from every render path do NOT change hash', () => {
+    const a = { lat: 0, lng: 0, status: 'been', category: 'restaurant', myRating: 4, name: 'Cafe' };
+    // Server bookkeeping + a key the schema doesn't have: neither is rendered,
+    // so neither should force a marker rebuild.
+    expect(hash(a)).toBe(hash({ ...a, updatedAt: '2026-01-01T00:00:00Z' }));
+    expect(hash(a)).toBe(hash({ ...a, description: 'not a real field' }));
+    expect(hash(a)).toBe(hash({ ...a, _googleSyncedAt: '2026-01-01' }));
   });
 });
 

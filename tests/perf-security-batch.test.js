@@ -30,10 +30,15 @@ describe('topojson-client CDN script removed', () => {
 
 // ── 2. markerHash template literal ───────────────────────────────────────────
 describe('markerHash uses template literal (no array allocation)', () => {
-  test('function body uses template literal, not array join', () => {
+  test('function body builds one template literal, no intermediate array', () => {
     const fn = extractFunction('markerHash');
     expect(fn).toMatch(/return `\$/);
-    expect(fn).not.toMatch(/\.join\(/);
+    // The perf invariant is "don't allocate a throwaway array per call", i.e.
+    // no `[a, b, c].join('|')` to assemble the hash. Joining a location's OWN
+    // existing tags/people array allocates nothing extra and is required for
+    // correctness (those fields render in the popup — see the markerHash tests
+    // in import.test.js), so the original blanket `/\.join\(/` ban was too broad.
+    expect(fn).not.toMatch(/\]\s*\.join\(/);
   });
 });
 
@@ -246,10 +251,22 @@ describe('Express terminal error middleware', () => {
   });
 
   test('handler logs + returns 500', () => {
-    const handlerIdx = serverSrc.indexOf('app.use((err, req, res, next)');
+    // lastIndexOf, not indexOf: there is more than one 4-arg error handler now
+    // (an earlier one maps body-parser failures to 400/413). The TERMINAL
+    // handler — the catch-all that must return 500 — is by definition the last
+    // one registered.
+    const handlerIdx = serverSrc.lastIndexOf('app.use((err, req, res, next)');
     const block = serverSrc.slice(handlerIdx, handlerIdx + 250);
     expect(block).toMatch(/res\.status\(500\)/);
     expect(block).toMatch(/Internal server error/);
+  });
+
+  test('body-parser failures map to 4xx, not 500', () => {
+    // A malformed JSON body used to fall through to the terminal handler as a
+    // 500. Client errors must not read as server errors.
+    expect(serverSrc).toMatch(/entity\.parse\.failed/);
+    expect(serverSrc).toMatch(/Malformed JSON body/);
+    expect(serverSrc).toMatch(/entity\.too\.large/);
   });
 });
 

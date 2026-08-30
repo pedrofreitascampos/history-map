@@ -4000,6 +4000,10 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     const qaOv = document.getElementById('quick-add-modal');
     if (qaOv && qaOv.classList.contains('open')) { closeQuickAddModal(); return; }
+    // Don't stack quick-add on top of another open modal (e.g. edit-modal) —
+    // picking a result would route through openAddModal(), which reuses the
+    // same #edit-modal element and wipes any unsaved edits without warning.
+    if (document.querySelector('.modal-overlay.open')) return;
     openQuickAddModal();
   }
 });
@@ -4300,8 +4304,13 @@ const _renderState = { markerById: new Map(), mapStyle: null, markerSizeMode: nu
 // const directly).
 if (typeof window !== 'undefined') window._renderState = _renderState;
 
+// Any field the popup renders must be included here, or an edit that only
+// changes that field won't change the hash, renderMarkers() will skip
+// rebuilding the marker, and its popup keeps a closure over the discarded
+// pre-edit object (saveLocation replaces state.locations[idx] rather than
+// mutating it in place) — the popup then shows stale data indefinitely.
 function markerHash(loc) {
-  return `${loc.lat}|${loc.lng}|${loc.status}|${loc.category}|${loc.needsApproval ? 1 : 0}|${loc.bucketStrength || 0}|${loc.myRating || 0}|${loc.googleRating || 0}|${loc.userRatingsTotal || 0}|${(loc.visits || []).length}`;
+  return `${loc.lat}|${loc.lng}|${loc.status}|${loc.category}|${loc.needsApproval ? 1 : 0}|${loc.bucketStrength || 0}|${loc.myRating || 0}|${loc.googleRating || 0}|${loc.userRatingsTotal || 0}|${(loc.visits || []).length}|${loc.name}|${loc.address || ''}|${loc.notes || ''}|${(loc.tags || []).join(',')}|${(loc.people || []).join(',')}|${loc.tripId || ''}`;
 }
 
 function renderMarkers() {
@@ -5323,15 +5332,24 @@ async function applyBulkEdit() {
 
   const results = await Promise.allSettled(items.map(it => api('PUT', '/locations/' + it.locId, it.patch)));
   let ok = 0, failed = 0;
+  const failedIds = new Set();
   results.forEach((r, i) => {
     if (r.status === 'fulfilled') {
       Object.assign(items[i].loc, items[i].patch);
       ok++;
     } else {
+      failedIds.add(items[i].locId);
       failed++;
     }
   });
+  // Mirror deleteBulkSelection: leave ONLY the failed ids selected so the user
+  // can retry them, instead of clearing the whole selection and losing track of
+  // what didn't apply. Selected items that needed no patch (already had the
+  // target value) are no-ops, not failures, so they drop out of the selection
+  // too — otherwise a fully successful run would leave them stuck selected.
   bulkSelected.clear();
+  failedIds.forEach(id => bulkSelected.add(id));
+  updateBulkCount();
   document.getElementById('bulk-tag').value = '';
   rebuildIndexes();
   renderBulkList();
@@ -5739,6 +5757,11 @@ function _setBookmarkletHref(el) {
 
 function openAddModal(lat, lng) {
   state.editingId = null;
+  // Clear any dirty-check snapshot left by a prior openEditModal() that
+  // wasn't followed by closeModal() (e.g. Ctrl+K quick-add reusing this
+  // modal) — otherwise closeModal() compares this fresh Add form against
+  // the old Edit snapshot and falsely warns of unsaved changes.
+  _editSnapshot = null;
   state.modalPeople = [];
   state.modalVisits = [];
   state.modalRating = 0;
@@ -11046,7 +11069,7 @@ async function bulkGoogleSync() {
 // from a provider and lets the user pick which to apply (overwrites are
 // unchecked by default; empty-to-value fills are checked by default).
 // Returns a Promise<{appliedUpdates}|null> — null if cancelled.
-function showEnrichmentConfirm(sourceLabel, diffs) {
+function showEnrichmentConfirm(sourceLabel, diffs, placeName) {
   return new Promise(resolve => {
     if (!diffs || diffs.length === 0) {
       resolve({ appliedUpdates: {} });
@@ -11075,7 +11098,7 @@ function showEnrichmentConfirm(sourceLabel, diffs) {
       </label>`;
     }).join('');
     overlay.innerHTML = `<div class="confirm-box" style="max-width:480px;">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Apply enrichment from ${esc(sourceLabel)}?</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Apply enrichment from ${esc(sourceLabel)}${placeName ? ' to ' + esc(placeName) : ''}?</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">${diffs.length} field${diffs.length === 1 ? '' : 's'} returned. Unchecked items are skipped.</div>
       ${rows}
       <div class="confirm-actions">
@@ -11144,12 +11167,30 @@ async function applyEnrichmentUpdates(loc, updates, syncedAtField) {
   await api('PUT', '/locations/' + loc.id, payload);
   Object.assign(loc, payload);
   renderMarkers();
-  const setIf = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
-  setIf('loc-address', updates.address);
-  setIf('loc-lat', updates.lat);
-  setIf('loc-lng', updates.lng);
-  setIf('loc-category', updates.category);
-  setIf('loc-google-rating', updates.googleRating);
+  // Only touch the visible form/category UI if the modal is still showing
+  // THIS location. Without this guard, closing the modal on place A and
+  // opening place B before confirming an in-flight enrichment for A would
+  // write A's address/coords/category into B's open form (the DB PUT above
+  // is unaffected — it always targets loc's own id).
+  if (state.editingId === loc._id || state.editingId === loc.id) {
+    const setIf = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    setIf('loc-address', updates.address);
+    setIf('loc-lat', updates.lat);
+    setIf('loc-lng', updates.lng);
+    setIf('loc-google-rating', updates.googleRating);
+    // There is no #loc-category element — category is chosen via
+    // .category-option buttons driven by state.modalCategory. Writing to a
+    // nonexistent id silently no-ops, leaving the modal showing the old
+    // category and letting a subsequent Save overwrite the enrichment we
+    // just applied with the stale state.modalCategory. Mirror openEditModal's
+    // selection logic instead.
+    if (updates.category) {
+      state.modalCategory = updates.category;
+      document.querySelectorAll('.category-option').forEach(o => {
+        o.classList.toggle('selected', o.dataset.cat === updates.category);
+      });
+    }
+  }
   return Object.keys(updates).length;
 }
 
@@ -11179,7 +11220,7 @@ async function syncFromEditModal() {
       showToast('Google: nothing to add — all returned fields already match.', 'info');
       return;
     }
-    const confirmResult = await showEnrichmentConfirm('Google Places', diffs);
+    const confirmResult = await showEnrichmentConfirm('Google Places', diffs, loc.name);
     if (!confirmResult) { showToast('Google sync: cancelled.', 'info'); return; }
     const applied = await applyEnrichmentUpdates(loc, confirmResult.appliedUpdates, '_googleSyncedAt');
     showToast(applied ? `Google: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Google: nothing applied', applied ? 'success' : 'info');
@@ -11248,7 +11289,7 @@ async function syncPhotonFromEditModal() {
       showToast('Fast: nothing to add — all returned fields already match.', 'info');
       return;
     }
-    const result = await showEnrichmentConfirm('OpenStreetMap (Fast)', diffs);
+    const result = await showEnrichmentConfirm('OpenStreetMap (Fast)', diffs, loc.name);
     if (!result) { showToast('Fast: cancelled.', 'info'); return; }
     const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_photonSyncedAt');
     showToast(applied ? `Fast: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Fast: nothing applied', applied ? 'success' : 'info');
@@ -11327,7 +11368,7 @@ async function syncNominatimFromEditModal() {
       showToast('Detailed: nothing to add — all returned fields already match.', 'info');
       return;
     }
-    const result = await showEnrichmentConfirm('OpenStreetMap (Detailed)', diffs);
+    const result = await showEnrichmentConfirm('OpenStreetMap (Detailed)', diffs, loc.name);
     if (!result) { showToast('Detailed: cancelled.', 'info'); return; }
     const applied = await applyEnrichmentUpdates(loc, result.appliedUpdates, '_nominatimSyncedAt');
     showToast(applied ? `Detailed: applied ${applied} field${applied === 1 ? '' : 's'}` : 'Detailed: nothing applied', applied ? 'success' : 'info');
