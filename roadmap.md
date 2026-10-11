@@ -102,13 +102,14 @@ Five parallel auditors; findings validated against source. Sequencing:
 - ~~**Direct share-from-Google-Maps** — Mobile PWA share-target + Desktop bookmarklet.~~ ✅
 - **Bootstrap preset collections** — UNESCO (~1200), National Parks, Airports, Stadiums, Wonders. Open design Q: in `state.locations` vs overlay layer.
 - **Google Data Portability API OAuth** — blocked on Google restricted-scope verification.
+- **📷 Photo-org bridge (Google Photos → trips)** — the only remaining route to match photo albums to places/trips automatically (direct Library API is dead, see Blocked). Pull geotagged + dated media from the photo-org project instead of manual EXIF drops. Blocked on: (1) NAS decision, (2) photo-org Google-scope repair, (3) `lat`/`lon`/`creation_time` columns on its `processed_media`. Est. 3–5 days once unblocked. Today: EXIF drop zone + Photo Timeline cover the manual path.
 - **Strict `style-src` CSP** — Leaflet injects nonceless inline styles; gap accepted until replacement.
 
 ## 🟡 P2 — Polish backlog
 
 **Security** — ~~`npm update express` (path-to-regexp HIGH + qs MODERATE); missing `.env.example`.~~ ✅ | `revokedJtis` in-memory only; dev JWT secret hardcoded.
 
-**Infra** — `render.yaml` free tier wipes data on deploy (upgrade Starter + persistent disk).
+**Infra** — ~~`render.yaml` free tier wipes data on deploy.~~ ✅ stale: live service is on a paid plan with a persistent disk at `/data`; data survives deploys (see `render.yaml` header).
 
 **UX**
 - ~~Theme switch cycles blind — no preview, no `prefers-color-scheme`.~~ ✅
