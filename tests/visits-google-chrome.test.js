@@ -36,6 +36,19 @@ function extractAsyncFunction(name) {
   return indexHtml.substring(start, i + 1);
 }
 
+// `const NAME = {...};` extractor (same brace-depth walk as extractFunction).
+function extractConst(name) {
+  const start = indexHtml.indexOf(`const ${name}`);
+  if (start === -1) throw new Error(`Const ${name} not found`);
+  let depth = 0, i = start, foundFirst = false;
+  for (; i < indexHtml.length; i++) {
+    if (indexHtml[i] === '{') { depth++; foundFirst = true; }
+    if (indexHtml[i] === '}') depth--;
+    if (indexHtml[i] === ';' && depth === 0 && foundFirst) break;
+  }
+  return indexHtml.substring(start, i + 1);
+}
+
 let JSDOM;
 try { JSDOM = require('jsdom').JSDOM; } catch { JSDOM = null; }
 const describeDom = JSDOM ? describe : describe.skip;
@@ -54,10 +67,22 @@ describeDom('Visits modal: expand / custom-date / remove (regression)', () => {
       document: dom.window.document,
       console,
       Date, Array, Object, JSON, Math,
-      state: { modalVisits: [] },
+      state: { modalVisits: [], locations: [] },
+      stateIndex: { generation: 0 },
       showToast: () => {},
     });
     const code = [
+      // renderVisitFields renders each visit's "seen" sub-list (chips + datalists).
+      'let _seenAddOpenDate = null; let _seenLastType = "artist"; let _seenIdxCache = null; let _seenIdxGen = -1;',
+      extractConst('SEEN_TYPES'),
+      extractFunction('seenTypeOf'),
+      extractFunction('seenNormName'),
+      extractFunction('seenVisitEntries'),
+      extractFunction('computeSeenIndex'),
+      extractFunction('getSeenIndex'),
+      extractFunction('_seenChipText'),
+      extractFunction('_buildSeenBlock'),
+      extractFunction('_buildSeenDatalists'),
       extractFunction('renderVisitFields'),
       extractFunction('toggleVisitsExpanded'),
       extractFunction('addTodayVisit'),
@@ -112,7 +137,9 @@ describeDom('Visits modal: expand / custom-date / remove (regression)', () => {
     vm.runInContext('renderVisitFields()', ctx);
     const list = dom.window.document.getElementById('loc-visits-list');
     expect(list.querySelectorAll('input[type=date]').length).toBe(2);
-    expect(list.querySelectorAll('button').length).toBe(2);
+    // One "Remove visit" × per visit (each visit also carries a "+ seen" toggle).
+    expect(list.querySelectorAll('button[title="Remove visit"]').length).toBe(2);
+    expect(list.querySelectorAll('button.seen-toggle').length).toBe(2);
     // Sorted newest-first.
     expect(list.querySelectorAll('input[type=date]')[0].value).toBe('2024-06-22');
     expect(list.querySelectorAll('input[type=date]')[1].value).toBe('2024-01-10');

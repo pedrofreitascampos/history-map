@@ -641,7 +641,7 @@ app.post('/api/locations', auth, async (req, res) => {
   loc.userId = req.user.id;
   loc.updatedAt = new Date().toISOString();
   const saved = await db.locations.insert(loc);
-  log('info', 'db_insert', { table: 'locations', id: saved._id, name: saved.name, userId: req.user.id });
+  log('info', 'db_insert', { table: 'locations', id: saved._id, name: saved.name, seenEntries: countSeenEntries(saved.visits), userId: req.user.id });
   res.json(saved);
 });
 
@@ -663,6 +663,63 @@ function pickLocationFields(body) {
   if (!body || typeof body !== 'object') return clean;
   LOCATION_FIELDS.forEach(f => { if (body[f] !== undefined) clean[f] = body[f]; });
   return clean;
+}
+
+// ── Seen-at-a-place (per-visit) ───────────────────────────
+// visit.seen[] records WHAT the user saw during a visit: a band, a comedian,
+// an animal, a celebrity, a match. Plain text only — every field runs through
+// sanitizeShortText (strips tags / script / javascript: URIs) so a stored
+// value can never become markup, whatever a client or imported file sends.
+const SEEN_TYPES = ['artist', 'comedian', 'animal', 'celebrity', 'sport', 'other'];
+const MAX_SEEN_PER_VISIT = 300;
+const MAX_SEEN_NAME_LEN = 120;
+const MAX_SEEN_NOTE_LEN = 200;
+const MAX_SEEN_COUNT = 100000;
+
+// Count of seen entries across a visits array — for structured logs only
+// (names are never logged; they are user content).
+function countSeenEntries(visits) {
+  if (!Array.isArray(visits)) return 0;
+  return visits.reduce((n, v) => n + (v && Array.isArray(v.seen) ? v.seen.length : 0), 0);
+}
+
+function sanitizeSeenList(seen) {
+  if (!Array.isArray(seen)) return [];
+  const out = [];
+  for (const e of seen) {
+    if (out.length >= MAX_SEEN_PER_VISIT) break;
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    const name = sanitizeShortText(typeof e.name === 'string' ? e.name : '', MAX_SEEN_NAME_LEN);
+    if (!name) continue;
+    const entry = { type: SEEN_TYPES.includes(e.type) ? e.type : 'other', name };
+    const note = sanitizeShortText(typeof e.note === 'string' ? e.note : '', MAX_SEEN_NOTE_LEN);
+    if (note) entry.note = note;
+    if (e.count !== undefined && e.count !== null && e.count !== '' && typeof e.count !== 'boolean') {
+      const n = Math.floor(Number(e.count));
+      if (Number.isFinite(n) && n >= 1 && n <= MAX_SEEN_COUNT) entry.count = n;
+    }
+    if (e.wild === true || e.wild === 'true') entry.wild = true;
+    else if (e.wild === false || e.wild === 'false') entry.wild = false;
+    out.push(entry);
+  }
+  return out;
+}
+
+// Sanitize `seen` on every visit; the rest of each visit is passed through
+// untouched (date/notes handling is unchanged). A non-array `seen` is dropped.
+function sanitizeVisitsSeen(visits) {
+  if (!Array.isArray(visits)) return visits;
+  return visits.map(v => {
+    if (!v || typeof v !== 'object' || Array.isArray(v) || v.seen === undefined) return v;
+    const clean = { ...v };
+    if (Array.isArray(v.seen)) {
+      clean.seen = sanitizeSeenList(v.seen);
+      if (clean.seen.length === 0) delete clean.seen;
+    } else {
+      delete clean.seen;
+    }
+    return clean;
+  });
 }
 
 // Clamp/validate fields on a location update payload. Shared between POST and PUT
@@ -716,6 +773,7 @@ function sanitizeLocationUpdate(updates) {
         .slice(0, 100);
     }
   }
+  if (updates.visits !== undefined) updates.visits = sanitizeVisitsSeen(updates.visits);
   if (updates.notes !== undefined) {
     if (typeof updates.notes !== 'string') delete updates.notes;
     else updates.notes = sanitizeNotes(updates.notes);
@@ -754,7 +812,7 @@ app.put('/api/locations/:id', auth, async (req, res) => {
   );
   if (count === 0) return res.status(404).json({ error: 'Not found' });
   const updated = await db.locations.findOne({ _id: req.params.id });
-  log('info', 'db_update', { table: 'locations', id: req.params.id, fields: Object.keys(updates), userId: req.user.id });
+  log('info', 'db_update', { table: 'locations', id: req.params.id, fields: Object.keys(updates), seenEntries: countSeenEntries(updates.visits), userId: req.user.id });
   res.json(updated);
 });
 
@@ -782,7 +840,7 @@ app.post('/api/locations/bulk', auth, async (req, res) => {
     return clean;
   });
   const saved = await db.locations.insert(toInsert);
-  log('info', 'db_bulk_insert', { table: 'locations', count: saved.length, skipped: locs.length - valid.length, userId: req.user.id });
+  log('info', 'db_bulk_insert', { table: 'locations', count: saved.length, skipped: locs.length - valid.length, seenEntries: saved.reduce((n, l) => n + countSeenEntries(l.visits), 0), userId: req.user.id });
   res.json(saved);
 });
 
@@ -2173,5 +2231,9 @@ if (require.main === module) {
     setInterval(runBackup, 24 * 60 * 60 * 1000);
   });
 }
+
+// Exposed for unit tests (tests/seen-sanitizer.test.js).
+app.locals.sanitizeSeenList = sanitizeSeenList;
+app.locals.sanitizeVisitsSeen = sanitizeVisitsSeen;
 
 module.exports = app;

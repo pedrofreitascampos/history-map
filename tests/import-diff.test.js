@@ -18,6 +18,18 @@ function extractFunction(name) {
   return html.substring(start, i + 1);
 }
 
+function extractConst(name) {
+  const start = html.indexOf(`const ${name}`);
+  if (start === -1) throw new Error(`Const ${name} not found`);
+  let depth = 0, i = start, found = false;
+  for (; i < html.length; i++) {
+    if (html[i] === '{') { depth++; found = true; }
+    if (html[i] === '}') depth--;
+    if (html[i] === ';' && depth === 0 && found) break;
+  }
+  return html.substring(start, i + 1);
+}
+
 // ── Static markup ─────────────────────────────────────────────────────────
 describe('Import diff — static markup', () => {
   test('#import-diff-header exists', () => {
@@ -88,6 +100,12 @@ function makeClassifyCtx(existingLocs, incomingItems) {
     }`,
     `const state = { locations: ${JSON.stringify(existingLocs)} };`,
     extractFunction('findDuplicate'),
+    // _classifyImportItems delegates the visit/tag merge to these pure helpers.
+    extractConst('SEEN_TYPES'),
+    extractFunction('seenTypeOf'),
+    extractFunction('seenNormName'),
+    extractFunction('seenVisitEntries'),
+    extractFunction('mergeLocationVisits'),
     extractFunction('_classifyImportItems'),
     `__result = _classifyImportItems(${JSON.stringify(incomingItems)});`,
   ].join('\n');
@@ -165,3 +183,37 @@ describe('Import diff — _classifyImportItems', () => {
     expect(adds).toHaveLength(0);
   });
 });
+
+describe('Import diff — duplicates carrying visits merge instead of being dropped', () => {
+  const existing = [{ id: 'e1', name: 'Altice Arena', lat: 38.77, lng: -9.09, tags: ['venue'],
+    visits: [{ date: '2019-06-01', notes: 'Row 5', seen: [{ type: 'artist', name: 'Foo Fighters' }] }] }];
+
+  test('same-date visit with a new seen entry → update with a merge summary (not a skip)', () => {
+    const items = [{ name: 'Altice Arena', lat: 38.77, lng: -9.09, visits: [{ date: '2019-06-01', notes: '', seen: [{ type: 'artist', name: 'Muse' }] }] }];
+    const { adds, updates, skips } = makeClassifyCtx(existing, items);
+    expect(adds).toHaveLength(0);
+    expect(skips).toHaveLength(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].merge.changedVisits).toBe(1);
+    expect(updates[0].merge.seenAdded).toBe(1);
+    expect(updates[0].merge.touchedDates).toEqual(['2019-06-01']);
+    expect(updates[0].newVisits).toEqual([]);
+    expect(updates[0].merge.visits[0].seen.map(s => s.name)).toEqual(['Foo Fighters', 'Muse']);
+  });
+
+  test('identical seen entries (case/space differences) → skip', () => {
+    const items = [{ name: 'altice arena', lat: 38.77, lng: -9.09, visits: [{ date: '2019-06-01', notes: 'Row 5', seen: [{ type: 'artist', name: ' foo  FIGHTERS' }] }] }];
+    const { updates, skips } = makeClassifyCtx(existing, items);
+    expect(updates).toHaveLength(0);
+    expect(skips).toHaveLength(1);
+  });
+
+  test('new tags alone make the duplicate mergeable', () => {
+    const items = [{ name: 'Altice Arena', lat: 38.77, lng: -9.09, tags: ['venue', 'concert'], visits: [] }];
+    const { updates } = makeClassifyCtx(existing, items);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].merge.tags).toEqual(['venue', 'concert']);
+    expect(updates[0].merge.changedVisits).toBe(0);
+  });
+});
+

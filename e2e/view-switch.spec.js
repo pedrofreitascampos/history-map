@@ -8,6 +8,7 @@ const { test, expect } = require('@playwright/test');
 const TABS = [
   ['stats-view',       'Stats'],
   ['chrono-view',      'Chronology'],
+  ['seen-view',        'Seen'],
   ['trips-view',       'Trips'],
   ['transits-view',    'Transits'],
   ['collections-view', 'Collections'],

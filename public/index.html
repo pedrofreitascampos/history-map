@@ -998,6 +998,42 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .achievement-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
 .achievement-desc { font-size: 12px; color: var(--text-muted); line-height: 1.3; }
 .achievement-progress { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 4px; }
+.achievement-group { grid-column: 1 / -1; font-family: var(--font-display); font-size: 16px; margin: 12px 0 0; }
+
+/* Seen (what you saw, per visit) */
+.seen-block { margin: 0 0 6px 4px; }
+.seen-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.seen-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 4px 2px 8px; border-radius: 14px; font-size: 12px;
+  background: var(--accent-dim); color: var(--accent); max-width: 100%;
+}
+.seen-chip-x { background: none; border: none; color: inherit; cursor: pointer; opacity: .7; font-size: 12px; padding: 2px 6px; min-height: 24px; }
+.seen-chip-x:hover { opacity: 1; }
+.seen-toggle { padding: 2px 8px; }
+.seen-add-form { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+.seen-add-form .form-input { font-size: 12px; padding: 3px 6px; width: auto; }
+.seen-add-form .seen-name { flex: 1 1 140px; min-width: 120px; }
+.seen-add-form .seen-note { flex: 1 1 120px; min-width: 100px; }
+.seen-add-form .seen-count { width: 64px; }
+.seen-extras { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.seen-wild-lbl { display: inline-flex; align-items: center; cursor: pointer; }
+#seen-view { flex-direction: column; background: var(--bg-primary); overflow-y: auto; padding: 24px; }
+#seen-view .filter-chips { margin-bottom: 16px; }
+.seen-row {
+  display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; margin-bottom: 6px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.seen-row.repeat { border-color: var(--accent); background: var(--accent-dim); }
+.seen-emoji { font-size: 22px; line-height: 1.2; }
+.seen-main { flex: 1; min-width: 0; }
+.seen-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.seen-times { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; color: var(--accent); font-size: 12px; margin-left: 4px; }
+.seen-dates, .seen-more { font-size: 12px; color: var(--text-muted); }
+.seen-places { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.seen-place { background: none; border: none; padding: 2px 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
+.seen-place:hover { text-decoration: underline; }
+.seen-empty { color: var(--text-muted); font-size: 13px; padding: 12px 0; }
 
 /* Stats tabs */
 .stats-tabs {
@@ -1713,6 +1749,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <button class="nav-tab" role="tab" aria-selected="false" data-view="chrono-view" data-click="switchView" data-arg0="chrono-view">
       📅 <span class="tab-label">Chronology</span>
     </button>
+    <button class="nav-tab" role="tab" aria-selected="false" data-view="seen-view" data-click="switchView" data-arg0="seen-view">
+      👁️ <span class="tab-label">Seen</span>
+    </button>
     <button class="nav-tab" role="tab" aria-selected="false" data-view="plan-view" data-click="switchView" data-arg0="plan-view">
       🗺️ <span class="tab-label">Plan</span>
     </button>
@@ -1839,6 +1878,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <h4>People <button class="clear-btn" type="button" data-click="openPeopleManager">manage</button></h4>
       <select class="filter-select" id="people-filter" data-change="applyFilters">
         <option value="">Everyone</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <h4>Seen</h4>
+      <select class="filter-select" id="seen-filter" aria-label="Show only places where you saw…" data-change="applyFilters">
+        <option value="">Any place</option>
+        <option value="_any">Anything seen</option>
+        <option value="artist">🎤 Artists</option>
+        <option value="comedian">🎙️ Comedians</option>
+        <option value="animal">🐾 Animals</option>
+        <option value="celebrity">⭐ Celebrities</option>
+        <option value="sport">🏟️ Sport</option>
+        <option value="other">✨ Other</option>
       </select>
     </div>
 
@@ -2141,6 +2194,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- SEEN VIEW -->
+  <div class="view" id="seen-view">
+    <div class="chrono-header">
+      <div>
+        <h1>Seen</h1>
+        <p style="color:var(--text-muted);font-size:14px;">Every artist, animal, celebrity and match you have crossed paths with.</p>
+      </div>
+      <div class="chrono-filters">
+        <input type="search" id="seen-search" class="form-input" placeholder="Search names…" aria-label="Search seen names" data-input="renderSeenView" style="min-width:180px;font-size:12px;padding:6px 10px;">
+      </div>
+    </div>
+    <div class="stats-top-row" id="seen-counters"></div>
+    <div class="filter-chips" id="seen-type-chips" role="group" aria-label="Filter by type"></div>
+    <div id="seen-list"></div>
   </div>
 
   <!-- COLLECTIONS VIEW -->
@@ -3029,6 +3098,11 @@ const ACTIONS = {
       state.modalVisits[idx][field] = el.value;
     }
   },
+  // Edit-modal "seen" editor (per-visit chips): thin wrappers over the seenModal* functions.
+  modalSeenToggle: (el) => seenModalToggle(el),
+  modalSeenTypeChange: (el) => seenModalTypeChange(el),
+  modalSeenAdd: (el) => seenModalAdd(el),
+  modalSeenRemove: (el) => seenModalRemove(el),
   // Sync-all Google Places button: showConfirm + withLoading + bulkGoogleSync.
   // Wrapped as a custom action because the prior inline form passed an arrow
   // function literal as showConfirm's second arg, which can't survive the
@@ -3228,7 +3302,7 @@ let state = {
   trips: [],
   collections: [],
   transits: [],
-  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, minBucketStrength: 0, tags: new Set(), priceLevels: new Set(), regionLocs: null, regionLabel: '' },
+  filters: { status: 'all', categories: new Set(), trip: '', person: '', minRating: 0, minGoogleRating: 0, minBucketStrength: 0, tags: new Set(), priceLevels: new Set(), regionLocs: null, regionLabel: '', seen: '' },
   editingId: null,
   modalPeople: [],
   modalVisits: [],
@@ -4458,6 +4532,7 @@ function getFilteredLocations() {
     state.filters.minGoogleRating,
     state.filters.minBucketStrength,
     state.filters.regionLabel || '',
+    state.filters.seen || '',
     ...[...state.filters.categories].sort(),
     ...[...state.filters.tags].sort(),
     ...[...state.filters.priceLevels].sort(),
@@ -4474,6 +4549,7 @@ function getFilteredLocations() {
     if (state.filters.categories.size > 0 && !state.filters.categories.has(loc.category)) return false;
     if (state.filters.trip && loc.tripId !== state.filters.trip) return false;
     if (state.filters.person && !(loc.people || []).includes(state.filters.person)) return false;
+    if (state.filters.seen && !locationHasSeen(loc, state.filters.seen)) return false;
     if (state.filters.minRating > 0 && loc.status === 'been' && (loc.myRating || 0) < state.filters.minRating) return false;
     if (state.filters.minGoogleRating > 0 && (loc.googleRating || 0) > 0 && (loc.googleRating || 0) < state.filters.minGoogleRating) return false;
     if (state.filters.minBucketStrength > 0 && loc.status === 'bucket' && (loc.bucketStrength || 0) < state.filters.minBucketStrength) return false;
@@ -4642,6 +4718,8 @@ let _filterTimer = null;
 function applyFilters() {
   state.filters.trip = document.getElementById('trip-filter').value;
   state.filters.person = document.getElementById('people-filter').value;
+  const seenSel = document.getElementById('seen-filter');
+  state.filters.seen = seenSel ? seenSel.value : '';
   state.filters.minRating = parseFloat(document.getElementById('rating-filter').value);
   state.filters.minGoogleRating = parseFloat(document.getElementById('google-rating-filter').value);
   const bs = document.getElementById('bucket-strength-filter');
@@ -5667,7 +5745,7 @@ const VIEW_HASHES = {
   'map-view': 'map', 'stats-view': 'stats', 'chrono-view': 'chrono',
   'trips-view': 'trips', 'collections-view': 'collections',
   'regions-view': 'regions', 'bulk-view': 'bulk', 'import-view': 'import',
-  'transits-view': 'transits', 'plan-view': 'plan',
+  'transits-view': 'transits', 'plan-view': 'plan', 'seen-view': 'seen',
 };
 const HASH_TO_VIEW = Object.fromEntries(Object.entries(VIEW_HASHES).map(([k, v]) => [v, k]));
 
@@ -5698,6 +5776,7 @@ function switchView(viewId, skipHash) {
   if (viewId === 'import-view') { renderApproval(); refreshWebImportEngineHint(); }
   if (viewId === 'stats-view') renderStats();
   if (viewId === 'chrono-view') renderChronology();
+  if (viewId === 'seen-view') renderSeenView();
   if (viewId === 'plan-view') renderPlanView();
   if (viewId === 'collections-view') renderCollections();
   if (viewId === 'bulk-view') initBulkView();
@@ -5849,7 +5928,11 @@ function openEditModal(id) {
 
   state.editingId = id;
   state.modalPeople = [...(loc.people || [])];
-  state.modalVisits = [...(loc.visits || [])];
+  // Deep-copy visits (and their seen lists) so editing chips never mutates state.locations before Save.
+  state.modalVisits = (loc.visits || []).map(v => (v && typeof v === 'object')
+    ? Object.assign({}, v, Array.isArray(v.seen) ? { seen: v.seen.map(x => Object.assign({}, x)) } : {})
+    : v);
+  _seenAddOpenDate = null;
   state.modalRating = loc.myRating || 0;
   state.modalCategory = loc.category;
   state.modalStatus = loc.status;
@@ -5930,7 +6013,7 @@ function _editFormSnapshot() {
     [...(state.modalTags || [])].sort().join(','),
     [...(state.modalCollections || [])].sort().join(','),
     [...(state.modalPeople || [])].join(','),
-    (state.modalVisits || []).map(v => v.date).sort().join(','),
+    (state.modalVisits || []).map(v => v.date + ':' + (Array.isArray(v.seen) ? v.seen.map(x => [x.type, x.name, x.note || '', x.count || '', x.wild ? 1 : 0].join('~')).join('/') : '')).sort().join(','),
   ].join('|');
   return fieldVals + '||' + stateVals;
 }
@@ -6353,9 +6436,210 @@ function renderVisitFields() {
     rm.addEventListener('click', () => removeVisit(realIdx));
     row.appendChild(dateInput);
     row.appendChild(rm);
-    list.appendChild(row);
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+    wrap.appendChild(row);
+    wrap.appendChild(_buildSeenBlock(v, realIdx));
+    list.appendChild(wrap);
   });
+  list.appendChild(_buildSeenDatalists());
 }
+/* ── Seen (per-visit) editor inside the edit modal ──
+   Chips + a "+ seen" toggle under every visit row. All user text goes in via
+   textContent / .value — never innerHTML. Events use the data-click dispatcher
+   (ACTIONS.modalSeen*), no inline handlers. */
+let _seenAddOpenDate = null;   // date of the visit whose add-form is open
+let _seenLastType = 'artist';  // remember the last type picked
+
+function _seenChipText(s) {
+  const meta = SEEN_TYPES[seenTypeOf(s.type)];
+  let t = meta.emoji + ' ' + s.name;
+  if (Number.isFinite(s.count) && s.count > 1) t += ' ×' + s.count;
+  if (s.wild === true) t += ' · wild';
+  return t;
+}
+
+function _buildSeenBlock(v, realIdx) {
+  const block = document.createElement('div');
+  block.className = 'seen-block';
+  const chips = document.createElement('div');
+  chips.className = 'seen-chips';
+  (Array.isArray(v.seen) ? v.seen : []).forEach((s, sIdx) => {
+    const chip = document.createElement('span');
+    chip.className = 'seen-chip';
+    if (s.note) chip.title = s.note;
+    const label = document.createElement('span');
+    label.textContent = _seenChipText(s);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'seen-chip-x';
+    x.textContent = '✕';
+    x.setAttribute('aria-label', 'Remove ' + s.name);
+    x.dataset.click = 'modalSeenRemove';
+    x.dataset.idx = String(realIdx);
+    x.dataset.sidx = String(sIdx);
+    chip.appendChild(label);
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  });
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'add-small-btn seen-toggle';
+  toggle.textContent = '+ seen';
+  toggle.dataset.click = 'modalSeenToggle';
+  toggle.dataset.idx = String(realIdx);
+  toggle.setAttribute('aria-expanded', _seenAddOpenDate === v.date ? 'true' : 'false');
+  chips.appendChild(toggle);
+  block.appendChild(chips);
+
+  if (_seenAddOpenDate === v.date) {
+    const form = document.createElement('div');
+    form.className = 'seen-add-form';
+    form.dataset.idx = String(realIdx);
+    const sel = document.createElement('select');
+    sel.className = 'form-input seen-type';
+    sel.setAttribute('aria-label', 'What did you see');
+    sel.dataset.change = 'modalSeenTypeChange';
+    Object.keys(SEEN_TYPES).forEach(t => {
+      const o = document.createElement('option');
+      o.value = t;
+      o.textContent = SEEN_TYPES[t].emoji + ' ' + SEEN_TYPES[t].single;
+      sel.appendChild(o);
+    });
+    sel.value = _seenLastType;
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'form-input seen-name';
+    name.maxLength = 120;
+    name.placeholder = 'Name…';
+    name.autocomplete = 'off';
+    name.setAttribute('aria-label', 'Name');
+    name.setAttribute('list', 'seen-names-' + _seenLastType);
+    name.dataset.keydown = 'enterKey';
+    name.dataset.arg0 = 'modalSeenAdd';
+    name.dataset.prevent = '1';
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.className = 'form-input seen-note';
+    note.maxLength = 200;
+    note.placeholder = 'note (optional)';
+    note.setAttribute('aria-label', 'Note');
+    note.dataset.keydown = 'enterKey';
+    note.dataset.arg0 = 'modalSeenAdd';
+    note.dataset.prevent = '1';
+    const extras = document.createElement('span');
+    extras.className = 'seen-extras';
+    extras.style.display = _seenLastType === 'animal' ? 'inline-flex' : 'none';
+    const count = document.createElement('input');
+    count.type = 'number';
+    count.className = 'form-input seen-count';
+    count.min = '1';
+    count.max = '100000';
+    count.placeholder = '#';
+    count.setAttribute('aria-label', 'How many');
+    const wildLbl = document.createElement('label');
+    wildLbl.className = 'seen-wild-lbl';
+    const wild = document.createElement('input');
+    wild.type = 'checkbox';
+    wild.className = 'seen-wild';
+    wildLbl.appendChild(wild);
+    wildLbl.appendChild(document.createTextNode(' wild'));
+    extras.appendChild(count);
+    extras.appendChild(wildLbl);
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'add-small-btn';
+    add.style.borderStyle = 'solid';
+    add.textContent = 'Add';
+    add.dataset.click = 'modalSeenAdd';
+    form.appendChild(sel);
+    form.appendChild(name);
+    form.appendChild(extras);
+    form.appendChild(note);
+    form.appendChild(add);
+    block.appendChild(form);
+  }
+  return block;
+}
+
+// <datalist>s of every name already in the user's data, one per type.
+function _buildSeenDatalists() {
+  const frag = document.createDocumentFragment();
+  const rows = getSeenIndex().rows;
+  Object.keys(SEEN_TYPES).forEach(t => {
+    const dl = document.createElement('datalist');
+    dl.id = 'seen-names-' + t;
+    rows.filter(r => r.type === t).slice(0, 500).forEach(r => {
+      const o = document.createElement('option');
+      o.value = r.name;
+      dl.appendChild(o);
+    });
+    frag.appendChild(dl);
+  });
+  return frag;
+}
+
+function _focusSeenName(idx) {
+  const el = document.querySelector('.seen-add-form[data-idx="' + idx + '"] .seen-name');
+  if (el) el.focus();
+}
+
+// Handlers behind ACTIONS.modalSeen* (el = the clicked/changed control).
+function seenModalToggle(el) {
+  const v = state.modalVisits[parseInt(el.dataset.idx, 10)];
+  if (!v) return;
+  _seenAddOpenDate = (_seenAddOpenDate === v.date) ? null : v.date;
+  renderVisitFields();
+  if (_seenAddOpenDate) _focusSeenName(el.dataset.idx);
+}
+function seenModalTypeChange(el) {
+  const form = el.closest('.seen-add-form');
+  if (!form) return;
+  _seenLastType = seenTypeOf(el.value);
+  const extras = form.querySelector('.seen-extras');
+  if (extras) extras.style.display = _seenLastType === 'animal' ? 'inline-flex' : 'none';
+  const nameEl = form.querySelector('.seen-name');
+  if (nameEl) nameEl.setAttribute('list', 'seen-names-' + _seenLastType);
+}
+function seenModalAdd(el) {
+  const form = el.closest('.seen-add-form');
+  if (!form) return;
+  const idx = parseInt(form.dataset.idx, 10);
+  const v = state.modalVisits[idx];
+  if (!v) return;
+  const type = seenTypeOf(form.querySelector('.seen-type').value);
+  const nameEl = form.querySelector('.seen-name');
+  const name = nameEl.value.replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!name) { showToast('Enter a name first.', 'warn'); nameEl.focus(); return; }
+  v.seen = Array.isArray(v.seen) ? v.seen : [];
+  if (v.seen.length >= 300) { showToast('Too many entries for one visit (max 300).', 'warn'); return; }
+  const key = type + '|' + seenNormName(name);
+  if (v.seen.some(s => seenTypeOf(s.type) + '|' + seenNormName(s.name) === key)) {
+    showToast('Already listed for this visit.', 'info');
+    return;
+  }
+  const entry = { type, name };
+  const note = form.querySelector('.seen-note').value.trim().slice(0, 200);
+  if (note) entry.note = note;
+  if (type === 'animal') {
+    const n = parseInt(form.querySelector('.seen-count').value, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 100000) entry.count = n;
+    if (form.querySelector('.seen-wild').checked) entry.wild = true;
+  }
+  v.seen.push(entry);
+  _seenLastType = type;
+  renderVisitFields();
+  _focusSeenName(idx);
+}
+function seenModalRemove(el) {
+  const v = state.modalVisits[parseInt(el.dataset.idx, 10)];
+  const sIdx = parseInt(el.dataset.sidx, 10);
+  if (!v || !Array.isArray(v.seen) || !Number.isInteger(sIdx)) return;
+  v.seen.splice(sIdx, 1);
+  if (v.seen.length === 0) delete v.seen;
+  renderVisitFields();
+}
+
 function toggleVisitsExpanded() {
   const list = document.getElementById('loc-visits-list');
   const chevron = document.getElementById('loc-visits-chevron');
@@ -7266,6 +7550,14 @@ function renderStats() {
       <div class="achievement-desc">${a.desc}</div>
       ${unlocked ? '' : `<div class="achievement-progress">${a.current}/${a.threshold} (${pct}%)</div>`}
     </div>`;
+  }).join('') + `<h4 class="achievement-group">🎟️ Events</h4>` + computeSeenBadges(state.locations).map(a => {
+    const unlocked = a.current >= a.threshold;
+    return `<div class="achievement-card ${unlocked ? 'unlocked' : 'locked'}">
+      <div class="achievement-emoji">${a.emoji}</div>
+      <div class="achievement-name">${esc(a.name)}</div>
+      <div class="achievement-desc">${esc(a.desc)}</div>
+      ${unlocked ? '' : `<div class="achievement-progress">${a.current} / ${a.threshold}</div>`}
+    </div>`;
   }).join('');
 
   // Populate timing category filter (categories that have ≥1 been visit)
@@ -7470,6 +7762,309 @@ function _buildPeopleColorMap(entries) {
   const map = new Map();
   seen.forEach((name, i) => map.set(name, PEOPLE_COLORS[i % PEOPLE_COLORS.length]));
   return map;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* SEEN — what you saw at a place, per visit                              */
+/* visit = { date, notes, seen?: [{ type, name, note?, count?, wild? }] }   */
+/* ═══════════════════════════════════════════════════════════════════════ */
+const SEEN_TYPES = {
+  artist:    { emoji: '🎤', label: 'Artists',     single: 'Artist' },
+  comedian:  { emoji: '🎙️', label: 'Comedians',   single: 'Comedian' },
+  animal:    { emoji: '🐾', label: 'Animals',     single: 'Animal' },
+  celebrity: { emoji: '⭐', label: 'Celebrities', single: 'Celebrity' },
+  sport:     { emoji: '🏟️', label: 'Sport',       single: 'Sport' },
+  other:     { emoji: '✨', label: 'Other',       single: 'Other' },
+};
+
+// Own-property check: a hostile type such as "__proto__" or "constructor" must
+// never resolve to an inherited Object.prototype member.
+function seenTypeOf(t) {
+  return (typeof t === 'string' && Object.prototype.hasOwnProperty.call(SEEN_TYPES, t)) ? t : 'other';
+}
+
+// Case-insensitive, whitespace-normalised identity for a seen name.
+function seenNormName(s) {
+  return String(s == null ? '' : s).normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Distinct (type, name) entries of ONE visit — a name listed twice in the same
+// visit counts once. Returns [{ key, type, name, norm, count, wild }].
+function seenVisitEntries(visit) {
+  const out = new Map();
+  const list = visit && Array.isArray(visit.seen) ? visit.seen : [];
+  for (const e of list) {
+    if (!e || typeof e.name !== 'string') continue;
+    const norm = seenNormName(e.name);
+    if (!norm) continue;
+    const type = seenTypeOf(e.type);
+    const key = type + '|' + norm;
+    if (!out.has(key)) {
+      out.set(key, { key, type, name: e.name.replace(/\s+/g, ' ').trim(), norm, count: e.count, wild: e.wild });
+    }
+  }
+  return Array.from(out.values());
+}
+
+// True when any visit of the location lists something of `type`
+// ('any' / '_any' matches every type).
+function locationHasSeen(loc, type) {
+  const visits = loc && Array.isArray(loc.visits) ? loc.visits : [];
+  for (const v of visits) {
+    const entries = seenVisitEntries(v);
+    if (type === '_any' ? entries.length > 0 : entries.some(e => e.type === type)) return true;
+  }
+  return false;
+}
+
+// One row per distinct (type, name). Sorted: times seen desc, most recent desc,
+// name. Counters feed the Seen-view header.
+function computeSeenIndex(locations) {
+  const rowsByKey = new Map();
+  const placeIds = new Map();
+  const counters = { artists: 0, concerts: 0, comedians: 0, species: 0, celebrities: 0, sportEvents: 0, visitsWithSeen: 0 };
+  for (const loc of (locations || [])) {
+    if (!loc || loc.needsApproval) continue;
+    const locId = loc.id || loc._id || '';
+    for (const visit of (loc.visits || [])) {
+      const entries = seenVisitEntries(visit);
+      if (entries.length === 0) continue;
+      counters.visitsWithSeen++;
+      if (entries.some(e => e.type === 'artist')) counters.concerts++;
+      for (const en of entries) {
+        if (en.type === 'sport') counters.sportEvents++;
+        let row = rowsByKey.get(en.key);
+        if (!row) {
+          row = { key: en.key, type: en.type, name: en.name, norm: en.norm, times: 0, dates: [], first: '', last: '', places: [], totalCount: 0 };
+          rowsByKey.set(en.key, row);
+          placeIds.set(en.key, new Set());
+        }
+        row.times++;
+        if (visit.date && !row.dates.includes(visit.date)) row.dates.push(visit.date);
+        const n = Number(en.count);
+        if (Number.isFinite(n) && n >= 1) row.totalCount += Math.floor(n);
+        const seenPlaces = placeIds.get(en.key);
+        if (locId && !seenPlaces.has(locId)) {
+          seenPlaces.add(locId);
+          row.places.push({ id: locId, name: loc.name || '' });
+        }
+      }
+    }
+  }
+  const rows = Array.from(rowsByKey.values());
+  for (const r of rows) {
+    r.dates.sort();
+    r.first = r.dates.length ? r.dates[0] : '';
+    r.last = r.dates.length ? r.dates[r.dates.length - 1] : '';
+    r.places.sort((a, b) => a.name.localeCompare(b.name));
+    if (r.type === 'artist') counters.artists++;
+    else if (r.type === 'comedian') counters.comedians++;
+    else if (r.type === 'animal') counters.species++;
+    else if (r.type === 'celebrity') counters.celebrities++;
+  }
+  rows.sort((a, b) => (b.times - a.times) || (a.last < b.last ? 1 : a.last > b.last ? -1 : 0) || a.name.localeCompare(b.name));
+  return { rows, counters };
+}
+
+// Whole calendar years between two YYYY-MM-DD strings (a <= b).
+function seenYearsBetween(a, b) {
+  const [y1, m1, d1] = a.split('-').map(Number);
+  const [y2, m2, d2] = b.split('-').map(Number);
+  if (![y1, m1, d1, y2, m2, d2].every(Number.isFinite)) return 0;
+  let years = y2 - y1;
+  if (m2 < m1 || (m2 === m1 && d2 < d1)) years--;
+  return Math.max(0, years);
+}
+
+// Event badges derived from seen data. Region = same derivation as the Regions /
+// Stats code (last comma-separated address segment, via loc._region when set).
+function computeSeenBadges(locations) {
+  const idx = computeSeenIndex(locations);
+  const regionOf = (l) => String(l._region != null ? l._region : (l.address || '').split(',').pop() || '').trim();
+  let concertVisits = 0, comedianVisits = 0, sportVisits = 0, festivalVisits = 0;
+  const concertRegions = new Set(), festivalRegions = new Set(), sportRegions = new Set();
+  const concertDates = [];
+  for (const loc of (locations || [])) {
+    if (!loc || loc.needsApproval) continue;
+    const region = regionOf(loc);
+    for (const visit of (loc.visits || [])) {
+      if (!visit) continue;
+      if (loc.category === 'festival') {
+        festivalVisits++;
+        if (region) festivalRegions.add(region);
+      }
+      const types = new Set(seenVisitEntries(visit).map(e => e.type));
+      if (types.has('artist')) {
+        concertVisits++;
+        if (region) concertRegions.add(region);
+        if (visit.date) concertDates.push(visit.date);
+      }
+      if (types.has('comedian')) comedianVisits++;
+      if (types.has('sport')) {
+        sportVisits++;
+        if (region) sportRegions.add(region);
+      }
+    }
+  }
+  concertDates.sort();
+  const spanYears = concertDates.length > 1 ? seenYearsBetween(concertDates[0], concertDates[concertDates.length - 1]) : 0;
+  const maxArtistDates = idx.rows.reduce((m, r) => (r.type === 'artist' ? Math.max(m, r.dates.length) : m), 0);
+  const animalNames = idx.rows.filter(r => r.type === 'animal').map(r => r.norm);
+  const bigFive = ['lion', 'leopard', 'elephant', 'rhino', 'buffalo'].filter(k => animalNames.some(n => n.includes(k))).length;
+  const whale = animalNames.some(n => n.includes('whale')) ? 1 : 0;
+  return [
+    { emoji: '🎤', name: 'First Gig', desc: 'See an artist live', threshold: 1, current: concertVisits },
+    { emoji: '🎸', name: 'Regular', desc: '10 concert visits', threshold: 10, current: concertVisits },
+    { emoji: '🤘', name: 'Veteran', desc: '50 concert visits', threshold: 50, current: concertVisits },
+    { emoji: '🎪', name: 'Festival-goer', desc: '5 festival visits', threshold: 5, current: festivalVisits },
+    { emoji: '🏕️', name: 'Festival Nomad', desc: 'Festivals in 3 regions', threshold: 3, current: festivalRegions.size },
+    { emoji: '🎶', name: 'Hundred Acts', desc: '100 distinct artists', threshold: 100, current: idx.counters.artists },
+    { emoji: '🔁', name: 'Encore', desc: 'Same artist on 2 dates', threshold: 2, current: maxArtistDates },
+    { emoji: '🔂', name: 'Superfan', desc: 'Same artist on 3 dates', threshold: 3, current: maxArtistDates },
+    { emoji: '🌍', name: 'Gig Tourist', desc: 'Concerts in 5 regions', threshold: 5, current: concertRegions.size },
+    { emoji: '🕰️', name: 'Two Decades', desc: 'Concerts 20 years apart', threshold: 20, current: spanYears },
+    { emoji: '😂', name: 'Stand-up Fan', desc: '3 comedian visits', threshold: 3, current: comedianVisits },
+    { emoji: '🐾', name: 'Spotter', desc: '10 animal species', threshold: 10, current: idx.counters.species },
+    { emoji: '🦁', name: 'Big Five', desc: 'Lion, leopard, elephant, rhino, buffalo', threshold: 5, current: bigFive },
+    { emoji: '🐋', name: 'Ocean Giant', desc: 'See a whale', threshold: 1, current: whale },
+    { emoji: '⭐', name: 'Star-struck', desc: 'Meet a celebrity', threshold: 1, current: idx.counters.celebrities },
+    { emoji: '🌟', name: 'Paparazzo', desc: '10 distinct celebrities', threshold: 10, current: idx.counters.celebrities },
+    { emoji: '🏟️', name: 'Matchday', desc: 'Attend a sport event', threshold: 1, current: sportVisits },
+    { emoji: '📣', name: 'Season Ticket', desc: '10 sport visits', threshold: 10, current: sportVisits },
+    { emoji: '🧳', name: 'Away Days', desc: 'Sport in 3 regions', threshold: 3, current: sportRegions.size },
+  ];
+}
+
+// Merge an incoming location's visits (and tags) into an existing place.
+// Visits match by date; same-date visits union their `seen` lists (dedupe by
+// type + normalised name) and keep the existing notes, appending incoming notes
+// on a new line when they differ. Pure: neither argument is mutated.
+function mergeLocationVisits(existing, incoming) {
+  const clone = (v) => {
+    const c = Object.assign({}, v);
+    if (Array.isArray(v.seen)) c.seen = v.seen.map(s => Object.assign({}, s));
+    return c;
+  };
+  const visits = ((existing && existing.visits) || []).filter(v => v && typeof v === 'object').map(clone);
+  const existingDates = new Set(visits.map(v => v.date).filter(Boolean));
+  let changedVisits = 0, seenAdded = 0;
+  const touchedDates = [];
+  const newVisits = [];
+  for (const inc of ((incoming && incoming.visits) || [])) {
+    if (!inc || typeof inc !== 'object' || !inc.date) continue;
+    let cur = visits.find(v => v.date === inc.date);
+    let changed = false;
+    if (!cur) {
+      cur = { date: inc.date, notes: '' };
+      visits.push(cur);
+      if (!existingDates.has(inc.date)) newVisits.push(clone(inc));
+      changed = true;
+    }
+    const curNotes = String(cur.notes || '').trim();
+    const incNotes = String(inc.notes || '').trim();
+    if (incNotes && !curNotes.split('\n').map(x => x.trim()).includes(incNotes)) {
+      cur.notes = curNotes ? curNotes + '\n' + incNotes : incNotes;
+      changed = true;
+    }
+    if (Array.isArray(inc.seen) && inc.seen.length) {
+      const have = new Set(seenVisitEntries(cur).map(e => e.key));
+      for (const s of inc.seen) {
+        if (!s || typeof s.name !== 'string') continue;
+        const norm = seenNormName(s.name);
+        if (!norm) continue;
+        const key = seenTypeOf(s.type) + '|' + norm;
+        if (have.has(key)) continue;
+        have.add(key);
+        if (!Array.isArray(cur.seen)) cur.seen = [];
+        cur.seen.push(Object.assign({}, s));
+        seenAdded++;
+        changed = true;
+      }
+    }
+    if (changed) {
+      changedVisits++;
+      if (!touchedDates.includes(inc.date)) touchedDates.push(inc.date);
+    }
+  }
+  const tags = Array.isArray(existing && existing.tags) ? existing.tags.slice() : [];
+  let tagsChanged = false;
+  for (const t of ((incoming && incoming.tags) || [])) {
+    if (typeof t !== 'string' || !t.trim()) continue;
+    const tag = t.trim();
+    if (!tags.includes(tag)) { tags.push(tag); tagsChanged = true; }
+  }
+  return { visits, tags, changedVisits, seenAdded, touchedDates, newVisits, tagsChanged, changed: changedVisits > 0 || tagsChanged };
+}
+
+let _seenIdxCache = null;
+let _seenIdxGen = -1;
+function getSeenIndex() {
+  if (_seenIdxCache && _seenIdxGen === stateIndex.generation) return _seenIdxCache;
+  _seenIdxCache = computeSeenIndex(state.locations);
+  _seenIdxGen = stateIndex.generation;
+  return _seenIdxCache;
+}
+
+// ── Seen view ──
+let _seenViewFilter = 'all';
+function setSeenFilter(type) {
+  _seenViewFilter = (type === 'all' || Object.prototype.hasOwnProperty.call(SEEN_TYPES, type)) ? type : 'all';
+  renderSeenView();
+}
+
+function renderSeenView() {
+  const idx = getSeenIndex();
+  const c = idx.counters;
+  const countersEl = document.getElementById('seen-counters');
+  if (countersEl) {
+    countersEl.innerHTML = [
+      { value: c.artists, label: 'Artists' },
+      { value: c.concerts, label: 'Concerts' },
+      { value: c.species, label: 'Species' },
+      { value: c.celebrities, label: 'Celebrities' },
+      { value: c.sportEvents, label: 'Sport events' },
+    ].map(x => `<div class="stat-card"><div class="stat-value">${x.value}</div><div class="stat-label">${x.label}</div></div>`).join('');
+  }
+  const perType = {};
+  idx.rows.forEach(r => { perType[r.type] = (perType[r.type] || 0) + 1; });
+  const chipsEl = document.getElementById('seen-type-chips');
+  if (chipsEl) {
+    const chips = [{ t: 'all', emoji: '', label: 'All', n: idx.rows.length }].concat(
+      Object.keys(SEEN_TYPES).map(t => ({ t, emoji: SEEN_TYPES[t].emoji, label: SEEN_TYPES[t].label, n: perType[t] || 0 }))
+    );
+    chipsEl.innerHTML = chips.map(ch =>
+      `<button type="button" class="filter-chip${_seenViewFilter === ch.t ? ' active' : ''}" aria-pressed="${_seenViewFilter === ch.t}" data-click="setSeenFilter" data-arg0="${esc(ch.t)}">${ch.emoji ? `<span class="chip-emoji">${ch.emoji}</span> ` : ''}${esc(ch.label)} <span style="opacity:.6">${ch.n}</span></button>`
+    ).join('');
+  }
+  const q = seenNormName((document.getElementById('seen-search') || {}).value || '');
+  const rows = idx.rows.filter(r => (_seenViewFilter === 'all' || r.type === _seenViewFilter) && (!q || r.norm.includes(q)));
+  const listEl = document.getElementById('seen-list');
+  if (!listEl) return;
+  if (idx.rows.length === 0) {
+    listEl.innerHTML = '<p class="seen-empty">Nothing logged yet. Open a place, expand its visits and tap <b>+ seen</b> — or import a JSON file whose visits carry a <code>seen</code> list.</p>';
+    return;
+  }
+  if (rows.length === 0) {
+    listEl.innerHTML = '<p class="seen-empty">No matches.</p>';
+    return;
+  }
+  const MAX_ROWS = 500, MAX_PLACES = 6;
+  listEl.innerHTML = rows.slice(0, MAX_ROWS).map(r => {
+    const meta = SEEN_TYPES[r.type];
+    const dates = r.first ? (r.first === r.last ? esc(r.first) : `${esc(r.first)} → ${esc(r.last)}`) : '';
+    const placeBtns = r.places.slice(0, MAX_PLACES).map(p =>
+      `<button type="button" class="seen-place" data-click="showOnMapFromWishlist" data-arg0="${esc(p.id)}">${esc(p.name || 'Unnamed')}</button>`
+    ).join(', ') + (r.places.length > MAX_PLACES ? ` <span class="seen-more">+${r.places.length - MAX_PLACES} more</span>` : '');
+    const total = (r.type === 'animal' && r.totalCount > 0) ? ` <span class="seen-more">(${r.totalCount} animals)</span>` : '';
+    return `<div class="seen-row${r.times >= 2 ? ' repeat' : ''}">
+      <div class="seen-emoji" title="${esc(meta.single)}">${meta.emoji}</div>
+      <div class="seen-main">
+        <div class="seen-name">${esc(r.name)} <span class="seen-times">×${r.times}</span>${total}</div>
+        ${dates ? `<div class="seen-dates">${dates}</div>` : ''}
+        <div class="seen-places">${placeBtns}</div>
+      </div>
+    </div>`;
+  }).join('') + (rows.length > MAX_ROWS ? `<p class="seen-empty">…and ${rows.length - MAX_ROWS} more — refine the search.</p>` : '');
 }
 
 function computeChronologyMilestones(locations, trips) {
@@ -12047,14 +12642,26 @@ function parseJSON(content) {
 
   // 7. Generic JSON array or object
   const arr = Array.isArray(data) ? data : (data.features || data.locations || [data]);
-  return arr.map(item => ({
-    name: item.name || item.title || item.properties?.name || 'Unknown',
-    lat: item.lat || item.latitude || item.geometry?.coordinates?.[1] || 0,
-    lng: item.lng || item.longitude || item.lon || item.geometry?.coordinates?.[0] || 0,
-    category: inferCategory(item.name || item.category || ''),
-    address: item.address || item.properties?.address || '',
-    status: 'been',
-  })).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
+  return arr.map(item => {
+    const out = {
+      name: item.name || item.title || item.properties?.name || 'Unknown',
+      lat: item.lat || item.latitude || item.geometry?.coordinates?.[1] || 0,
+      lng: item.lng || item.longitude || item.lon || item.geometry?.coordinates?.[0] || 0,
+      category: (typeof item.category === 'string' && Object.prototype.hasOwnProperty.call(CATEGORIES, item.category))
+        ? item.category : inferCategory(item.name || item.category || ''),
+      address: item.address || item.properties?.address || '',
+      status: item.status === 'bucket' ? 'bucket' : 'been',
+    };
+    // Oikumene-shaped records: carry visits (incl. each visit's `seen` list,
+    // passed through untouched — the server sanitises it), tags and notes.
+    if (Array.isArray(item.visits)) {
+      out.visits = item.visits.filter(v => v && typeof v === 'object');
+      out._oikumeneJson = true;
+    }
+    if (Array.isArray(item.tags)) out.tags = item.tags.filter(t => typeof t === 'string');
+    if (typeof item.notes === 'string') out.notes = item.notes;
+    return out;
+  }).filter(l => isFinite(l.lat) && isFinite(l.lng) && (l.lat !== 0 || l.lng !== 0));
 }
 
 // Extract Google Place ID from a Google Maps URL
@@ -12855,11 +13462,11 @@ function _classifyImportItems(items) {
     if (!existing) {
       adds.push(item);
     } else {
-      const incomingVisits = item.visits || [];
-      const existingDates = new Set((existing.visits || []).map(v => v.date).filter(Boolean));
-      const newVisits = incomingVisits.filter(v => v.date && !existingDates.has(v.date));
-      if (newVisits.length > 0) {
-        updates.push({ item, existing, newVisits });
+      // Duplicate of an existing place: merge its visits (by date; same-date
+      // `seen` lists union) and tags instead of dropping the row.
+      const merge = mergeLocationVisits(existing, item);
+      if (merge.changed) {
+        updates.push({ item, existing, newVisits: merge.newVisits, merge });
       } else {
         skips.push({ item, existing });
       }
@@ -12896,7 +13503,8 @@ function showImportPreview(items) {
   }
 
   // Standard import: classify into adds / updates / skips
-  const format = items.some(i => i.visits?.length) ? '📅 Google Timeline' :
+  const format = items.some(i => i._oikumeneJson) ? '📁 Oikumene JSON' :
+    items.some(i => i.visits?.length) ? '📅 Google Timeline' :
     items[0]?._googleUrl !== undefined ? '⭐ Google Saved Places' :
     items[0]?._folderName ? '🗺️ Google My Maps' : '📁 File Import';
 
@@ -12910,7 +13518,7 @@ function showImportPreview(items) {
     <h4>${format} — ${items.length} location${items.length !== 1 ? 's' : ''}</h4>
     <div class="diff-badges">
       ${adds.length ? `<span class="diff-badge diff-badge-add">➕ ${adds.length} new</span>` : ''}
-      ${updates.length ? `<span class="diff-badge diff-badge-update">🔄 ${updates.length} visit update${updates.length !== 1 ? 's' : ''}</span>` : ''}
+      ${updates.length ? `<span class="diff-badge diff-badge-update">🔄 ${updates.length} merge${updates.length !== 1 ? 's' : ''}</span>` : ''}
       ${skips.length ? `<span class="diff-badge diff-badge-skip">⊘ ${skips.length} already here</span>` : ''}
     </div>`;
 
@@ -12922,12 +13530,18 @@ function showImportPreview(items) {
       <td>${cat.emoji} ${cat.label}</td><td>${item.status}</td></tr>`;
   }).join('') + (adds.length > 200 ? `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">…and ${adds.length - 200} more</td></tr>` : '');
 
-  const updatesRows = updates.map(({ existing, newVisits }, idx) =>
-    `<tr><td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+  const updatesRows = updates.map(({ existing, merge }, idx) => {
+    const n = merge.changedVisits;
+    const what = n > 0
+      ? `merge ${n} visit${n !== 1 ? 's' : ''} into existing «${esc(existing.name)}»`
+      : `add tags to existing «${esc(existing.name)}»`;
+    const dates = merge.touchedDates.slice(0, 6).join(', ') + (merge.touchedDates.length > 6 ? ` …+${merge.touchedDates.length - 6}` : '');
+    const extra = merge.seenAdded > 0 ? ` · +${merge.seenAdded} seen` : '';
+    return `<tr><td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
       <input type="checkbox" class="import-update-cb" data-uidx="${idx}" checked>
-      ${esc(existing.name)}</label></td>
-      <td style="color:var(--accent);font-size:12px;">${newVisits.map(v => v.date).join(', ')}</td></tr>`
-  ).join('');
+      ${what}</label></td>
+      <td style="color:var(--accent);font-size:12px;">${esc(dates)}${extra}</td></tr>`;
+  }).join('');
 
   const skipsRows = skips.slice(0, 50).map(({ item, existing }) =>
     `<tr style="opacity:.5;"><td>${esc(item.name)}</td><td>${esc(existing.name)}</td></tr>`
@@ -12942,9 +13556,9 @@ function showImportPreview(items) {
         <tbody>${addsRows}</tbody>
       </table></details>` : '',
     updates.length ? `<details class="diff-section diff-section-update" open>
-      <summary>🔄 ${updates.length} visit update${updates.length !== 1 ? 's' : ''}</summary>
+      <summary>🔄 ${updates.length} merge${updates.length !== 1 ? 's' : ''} into existing places</summary>
       <table class="import-table">
-        <thead><tr><th><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="import-updates-all" checked> Existing place</label></th><th>New date(s)</th></tr></thead>
+        <thead><tr><th><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="import-updates-all" checked> Merge into existing place</label></th><th>Dates touched</th></tr></thead>
         <tbody>${updatesRows}</tbody>
       </table></details>` : '',
     skips.length ? `<details class="diff-section diff-section-skip">
@@ -12967,7 +13581,7 @@ function showImportPreview(items) {
   });
 
   // Confirm button label
-  const parts = [adds.length ? `Add ${adds.length}` : '', updates.length ? `update ${updates.length}` : ''].filter(Boolean);
+  const parts = [adds.length ? `Add ${adds.length}` : '', updates.length ? `merge ${updates.length}` : ''].filter(Boolean);
   document.getElementById('import-confirm-btn').textContent = parts.length ? parts.join(' + ') : 'Done';
 
   shouldUseGoogle().then(e => { const l = document.getElementById('import-sync-label'); if (l) l.style.display = e ? 'flex' : 'none'; });
@@ -13060,13 +13674,24 @@ async function confirmImport() {
     // Pre-classified path: apply visit-date updates directly (dedup done at preview time)
     if (state._importPreClassified) {
       const pendingUpdates = state.pendingImportUpdates || [];
-      for (const { existing, newVisits } of pendingUpdates) {
+      let mergedCount = 0, mergeFailed = 0;
+      for (const { existing, item: incoming } of pendingUpdates) {
         const loc = state.locations.find(l => l.id === existing.id);
-        if (loc && newVisits.length) {
-          const merged = [...(loc.visits || []), ...newVisits];
-          try { await api('PUT', `/locations/${loc.id}`, { visits: merged }); loc.visits = merged; } catch (_e) {}
-        }
+        if (!loc) continue;
+        // Re-merge against the live record (state may have changed since the preview).
+        const m = mergeLocationVisits(loc, incoming);
+        if (!m.changed) continue;
+        const payload = { visits: m.visits };
+        if (m.tagsChanged) payload.tags = m.tags;
+        try {
+          const saved = mapId(await api('PUT', `/locations/${loc.id}`, payload));
+          loc.visits = saved.visits || m.visits;
+          if (m.tagsChanged) loc.tags = saved.tags || m.tags;
+          mergedCount++;
+        } catch (_e) { mergeFailed++; }
       }
+      if (mergedCount > 0) stateIndex.generation++;
+      if (mergeFailed > 0) showToast(`${mergeFailed} merge${mergeFailed > 1 ? 's' : ''} failed — try again.`, 'warn');
       if (toImport.length === 0) {
         state.pendingImportUpdates = []; state._importPreClassified = false;
         state.pendingImport = [];
